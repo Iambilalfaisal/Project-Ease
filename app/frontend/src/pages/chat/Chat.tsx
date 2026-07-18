@@ -297,7 +297,9 @@ const Chat = () => {
                         language: i18n.language,
                         use_agentic_knowledgebase: useAgenticKnowledgeBase,
                         use_web_source: webSourceSupported ? webSourceEnabled : false,
-                        use_sharepoint_source: sharePointSourceSupported ? sharePointSourceEnabled : false
+                        use_sharepoint_source: sharePointSourceSupported ? sharePointSourceEnabled : false,
+                        // PROJECT EASE: multi-tenancy — hardcoded for local dev, replace with auth token claim in production
+                        organization_id: "org-placeholder"
                     }
                 },
                 // AI Chat Protocol: Client must pass on any session state received from the server

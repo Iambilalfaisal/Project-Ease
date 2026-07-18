@@ -72,6 +72,7 @@ class FileStrategy(Strategy):
         enforce_access_control: bool = False,
         use_web_source: bool = False,
         use_sharepoint_source: bool = False,
+        organization_id: Optional[str] = None,  # PROJECT EASE: multi-tenancy
     ):
         self.list_file_strategy = list_file_strategy
         self.blob_manager = blob_manager
@@ -88,6 +89,7 @@ class FileStrategy(Strategy):
         self.enforce_access_control = enforce_access_control
         self.use_web_source = use_web_source
         self.use_sharepoint_source = use_sharepoint_source
+        self.organization_id = organization_id  # PROJECT EASE: multi-tenancy
 
     def setup_search_manager(self):
         self.search_manager = SearchManager(
@@ -132,7 +134,7 @@ class FileStrategy(Strategy):
                         figure_processor=self.figure_processor,
                     )
                     if sections:
-                        await self.search_manager.update_content(sections, url=blob_url)
+                        await self.search_manager.update_content(sections, url=blob_url, organization_id=self.organization_id)
                 finally:
                     if file:
                         file.close()
@@ -180,7 +182,8 @@ class UploadUserFileStrategy:
         )
         self.search_field_name_embedding = search_field_name_embedding
 
-    async def add_file(self, file: File, user_oid: str):
+    async def add_file(self, file: File, user_oid: str, organization_id: Optional[str] = None):
+        # PROJECT EASE: organization_id tags the document to a tenant at ingestion time
         sections = await parse_file(
             file,
             self.file_processors,
@@ -191,7 +194,7 @@ class UploadUserFileStrategy:
             user_oid=user_oid,
         )
         if sections:
-            await self.search_manager.update_content(sections, url=file.url)
+            await self.search_manager.update_content(sections, url=file.url, organization_id=organization_id)
 
     async def remove_file(self, filename: str, oid: str):
         if filename is None or filename == "":
