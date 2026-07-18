@@ -66,6 +66,7 @@ export default defineConfig(() => {
             target: "esnext"
         },
         server: {
+            port: 3000,
             proxy: {
                 "/content/": backendUrl,
                 "/auth_setup": backendUrl,
@@ -76,7 +77,9 @@ export default defineConfig(() => {
                 "/upload": backendUrl,
                 "/delete_uploaded": backendUrl,
                 "/list_uploaded": backendUrl,
-                "/chat_history": backendUrl
+                "/chat_history": backendUrl,
+                "/admin": backendUrl,
+                "/auth": backendUrl
             }
         }
     };

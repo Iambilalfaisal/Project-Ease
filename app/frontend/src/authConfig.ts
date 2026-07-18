@@ -61,6 +61,29 @@ interface AuthSetup {
     };
 }
 
+// Safe defaults used when the backend is unreachable (local dev, landing page only).
+// All auth features are disabled — the app loads but protected routes won't work.
+const DEFAULT_AUTH_SETUP: AuthSetup = {
+    useLogin: false,
+    requireAccessControl: false,
+    enableUnauthenticatedAccess: true,
+    msalConfig: {
+        auth: {
+            clientId: "",
+            authority: "",
+            redirectUri: "/redirect",
+            postLogoutRedirectUri: "/",
+            navigateToLoginRequestUrl: false
+        },
+        cache: {
+            cacheLocation: "sessionStorage",
+            storeAuthStateInCookie: false
+        }
+    },
+    loginRequest: { scopes: [] },
+    tokenRequest: { scopes: [] }
+};
+
 // Fetch the auth setup JSON data from the API if not already cached
 async function fetchAuthSetup(): Promise<AuthSetup> {
     // Use redirect: "manual" so that a 302 to a cross-origin login provider (e.g. login.microsoftonline.com)
@@ -84,7 +107,9 @@ async function fetchAuthSetup(): Promise<AuthSetup> {
     return await response.json();
 }
 
-const authSetup = await fetchAuthSetup();
+// PROJECT EASE: fall back to safe defaults if backend is unreachable.
+// The landing page works without the backend; /app routes still need it.
+const authSetup = await fetchAuthSetup().catch(() => DEFAULT_AUTH_SETUP);
 
 export const useLogin = authSetup.useLogin;
 

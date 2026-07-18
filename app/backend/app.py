@@ -277,6 +277,80 @@ def auth_setup():
     return jsonify(auth_helper.get_auth_setup_for_client())
 
 
+# ─── PROJECT EASE: Simple credential auth ────────────────────────────────────
+# DEV-ONLY: Three hardcoded test accounts, one per role.
+# Replace with a proper users DB + bcrypt when multi-tenant auth is built.
+import secrets as _secrets
+
+# email → {password, role, name, org}
+_DEV_USERS: dict[str, dict] = {
+    "admin@projectease.com": {
+        "password": "admin123",
+        "role":     "platform_admin",
+        "name":     "Platform Admin",
+        "org":      None,                 # superuser — sees all orgs
+    },
+    "owner@lawfirm.com": {
+        "password": "owner123",
+        "role":     "org_owner",
+        "name":     "Firm Owner",
+        "org":      "lawfirm",
+    },
+    "employee@lawfirm.com": {
+        "password": "emp123",
+        "role":     "employee",
+        "name":     "Team Member",
+        "org":      "lawfirm",
+    },
+}
+
+_sessions: dict[str, dict] = {}  # token → user dict  (in-memory, dev only)
+
+
+@bp.route("/auth/login", methods=["POST"])
+async def auth_login():
+    """Check email + password and return a session token."""
+    data = await request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"error": "Email and password are required"}), 400
+
+    user = _DEV_USERS.get(email)
+    if not user or user["password"] != password:
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    token = _secrets.token_hex(32)
+    session_data = {
+        "email": email,
+        "name":  user["name"],
+        "role":  user["role"],
+        "org":   user["org"],
+    }
+    _sessions[token] = session_data
+
+    return jsonify({"token": token, "user": session_data})
+
+
+@bp.route("/auth/me", methods=["GET"])
+async def auth_me():
+    """Return the current user for a valid session token."""
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    session = _sessions.get(token)
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify(session)
+
+
+@bp.route("/auth/logout", methods=["POST"])
+async def auth_logout():
+    """Invalidate a session token."""
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    _sessions.pop(token, None)
+    return jsonify({"success": True})
+
+
 # PROJECT EASE: admin eval endpoints
 # Protected by a shared secret — set ADMIN_EVAL_API_KEY in your environment.
 # Callers must send:  Authorization: Bearer <ADMIN_EVAL_API_KEY>
@@ -440,6 +514,19 @@ async def list_uploaded(auth_claims: dict[str, Any]):
 
 @bp.before_app_serving
 async def setup_clients():
+    # ── PROJECT EASE: graceful local-dev mode ──────────────────────────────────
+    # When Azure credentials are not configured the app starts in auth-only mode.
+    # /auth/* endpoints work; Azure-backed routes (/chat, /config, etc.) will
+    # return 503 until real credentials are provided.
+    if not os.environ.get("AZURE_STORAGE_ACCOUNT"):
+        current_app.logger.warning(
+            "AZURE_STORAGE_ACCOUNT not set — starting in auth-only mode. "
+            "Chat and search features require Azure credentials."
+        )
+        current_app.config["AZURE_CONFIGURED"] = False
+        return
+    current_app.config["AZURE_CONFIGURED"] = True
+
     # Replace these with your own values, either in environment variables or directly here
     AZURE_STORAGE_ACCOUNT = os.environ["AZURE_STORAGE_ACCOUNT"]
     AZURE_STORAGE_CONTAINER = os.environ["AZURE_STORAGE_CONTAINER"]

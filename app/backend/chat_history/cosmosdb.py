@@ -204,6 +204,10 @@ async def delete_chat_history_session(auth_claims: dict[str, Any], session_id: s
 
 @chat_history_cosmosdb_bp.before_app_serving
 async def setup_clients():
+    # PROJECT EASE: skip entirely when running in auth-only mode (no Azure credentials)
+    if not current_app.config.get("AZURE_CONFIGURED", True):
+        return
+
     USE_CHAT_HISTORY_COSMOS = os.getenv("USE_CHAT_HISTORY_COSMOS", "").lower() == "true"
     AZURE_COSMOSDB_ACCOUNT = os.getenv("AZURE_COSMOSDB_ACCOUNT")
     AZURE_CHAT_HISTORY_DATABASE = os.getenv("AZURE_CHAT_HISTORY_DATABASE")
