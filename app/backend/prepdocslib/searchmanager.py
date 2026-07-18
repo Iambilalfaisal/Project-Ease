@@ -283,6 +283,13 @@ class SearchManager:
                         filterable=True,
                         facetable=False,
                     ),
+                    # PROJECT EASE: multi-tenancy — every document tagged with its org
+                    SimpleField(
+                        name="organization_id",
+                        type="Edm.String",
+                        filterable=True,
+                        facetable=True,
+                    ),
                 ]
                 if self.use_acls:
                     fields.append(oids_field)
@@ -362,6 +369,19 @@ class SearchManager:
                             type="Edm.String",
                             filterable=True,
                             facetable=False,
+                        ),
+                    )
+                    await search_index_client.create_or_update_index(existing_index)
+
+                # PROJECT EASE: add organization_id to existing indexes that predate this change
+                if not any(field.name == "organization_id" for field in existing_index.fields):
+                    logger.info("Adding organization_id field to index %s", self.search_info.index_name)
+                    existing_index.fields.append(
+                        SimpleField(
+                            name="organization_id",
+                            type="Edm.String",
+                            filterable=True,
+                            facetable=True,
                         ),
                     )
                     await search_index_client.create_or_update_index(existing_index)
@@ -600,7 +620,7 @@ class SearchManager:
                     ", ".join(created_kb_names),
                 )
 
-    async def update_content(self, sections: list[Section], url: Optional[str] = None):
+    async def update_content(self, sections: list[Section], url: Optional[str] = None, organization_id: Optional[str] = None):
         MAX_BATCH_SIZE = 1000
         section_batches = [sections[i : i + MAX_BATCH_SIZE] for i in range(0, len(sections), MAX_BATCH_SIZE)]
 
@@ -631,6 +651,8 @@ class SearchManager:
                         "sourcefile": section.content.filename(),
                         **image_fields,
                         **section.content.acls,
+                        # PROJECT EASE: tag every chunk with its org so search can filter by tenant
+                        "organization_id": organization_id,
                     }
                     documents.append(document)
                 if url:

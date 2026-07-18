@@ -29,6 +29,8 @@ export type ChatAppRequestOverrides = {
     use_agentic_knowledgebase: boolean;
     use_web_source?: boolean;
     use_sharepoint_source?: boolean;
+    // PROJECT EASE: multi-tenancy — identifies which org's documents to search
+    organization_id?: string;
 };
 
 export type ResponseMessage = {

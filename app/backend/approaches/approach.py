@@ -282,6 +282,10 @@ class Approach(ABC):
             filters.append("category eq '{}'".format(include_category.replace("'", "''")))
         if exclude_category:
             filters.append("category ne '{}'".format(exclude_category.replace("'", "''")))
+        # PROJECT EASE: multi-tenancy — restrict every search to the requesting org's documents
+        organization_id = overrides.get("organization_id")
+        if organization_id:
+            filters.append("organization_id eq '{}'".format(organization_id.replace("'", "''")))
         return None if not filters else " and ".join(filters)
 
     async def search(
