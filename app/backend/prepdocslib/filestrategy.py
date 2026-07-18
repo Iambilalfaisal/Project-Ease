@@ -124,7 +124,8 @@ class FileStrategy(Strategy):
             files = self.list_file_strategy.list()
             async for file in files:
                 try:
-                    blob_url = await self.blob_manager.upload_blob(file)
+                    # PROJECT EASE: pass org_id so blob lands in orgs/{org_id}/filename
+                    blob_url = await self.blob_manager.upload_blob(file, organization_id=self.organization_id)
                     sections = await parse_file(
                         file,
                         self.file_processors,
@@ -141,10 +142,12 @@ class FileStrategy(Strategy):
         elif self.document_action == DocumentAction.Remove:
             paths = self.list_file_strategy.list_paths()
             async for path in paths:
-                await self.blob_manager.remove_blob(path)
+                # PROJECT EASE: delete only from this org's prefix
+                await self.blob_manager.remove_blob(path, organization_id=self.organization_id)
                 await self.search_manager.remove_content(path)
         elif self.document_action == DocumentAction.RemoveAll:
-            await self.blob_manager.remove_blob()
+            # PROJECT EASE: scoped delete — only removes this org's files, not all tenants'
+            await self.blob_manager.remove_blob(organization_id=self.organization_id)
             await self.search_manager.remove_content()
 
 
