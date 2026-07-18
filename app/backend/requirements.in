@@ -32,3 +32,7 @@ msgraph-sdk
 jinja2
 rich
 typing-extensions
+# Project Ease: RAGAs eval layer
+ragas>=0.4.0
+datasets
+langchain-openai  # required by ragas 0.4.x LangchainLLMWrapper
