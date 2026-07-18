@@ -195,6 +195,9 @@ class ExtraInfo:
     thoughts: list[ThoughtStep] = field(default_factory=list)
     followup_questions: Optional[list[Any]] = None
     answer: Optional[str] = None  # Only when web knowledge source is used
+    # PROJECT EASE: eval params stored here so we can fire the eval AFTER the answer
+    # is generated (eval needs the real answer text for faithfulness + relevancy metrics)
+    eval_params: Optional[dict] = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -274,7 +277,7 @@ class Approach(ABC):
         self.global_blob_manager = global_blob_manager
         self.user_blob_manager = user_blob_manager
 
-    def build_filter(self, overrides: dict[str, Any]) -> Optional[str]:
+    def build_filter(self, overrides: dict[str, Any], auth_claims: Optional[dict[str, Any]] = None) -> Optional[str]:
         include_category = overrides.get("include_category")
         exclude_category = overrides.get("exclude_category")
         filters = []
@@ -282,8 +285,27 @@ class Approach(ABC):
             filters.append("category eq '{}'".format(include_category.replace("'", "''")))
         if exclude_category:
             filters.append("category ne '{}'".format(exclude_category.replace("'", "''")))
-        # PROJECT EASE: multi-tenancy — restrict every search to the requesting org's documents
-        organization_id = overrides.get("organization_id")
+
+        # PROJECT EASE: multi-tenancy — restrict every search to the requesting org's documents.
+        #
+        # SECURITY: organization_id MUST come from the server-verified JWT claim, NOT from the
+        # client-supplied overrides dict.  A malicious user could set organization_id to another
+        # firm's ID in the request body and read their documents.
+        #
+        # Resolution order (most to least trusted):
+        #   1. auth_claims["organization_id"]  — decoded from the JWT on the server (trusted)
+        #   2. overrides["organization_id"]    — client-supplied (only used when auth is OFF,
+        #                                        i.e. local dev with AZURE_USE_AUTHENTICATION=false)
+        #
+        # When Azure AD auth is enabled (AZURE_USE_AUTHENTICATION=true), auth_claims will contain
+        # the org claim and the client value is ignored.
+        organization_id = None
+        if auth_claims:
+            organization_id = auth_claims.get("organization_id")
+        if not organization_id:
+            # Fallback: local dev / auth disabled
+            organization_id = overrides.get("organization_id")
+
         if organization_id:
             filters.append("organization_id eq '{}'".format(organization_id.replace("'", "''")))
         return None if not filters else " and ".join(filters)

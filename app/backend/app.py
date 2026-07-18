@@ -277,6 +277,47 @@ def auth_setup():
     return jsonify(auth_helper.get_auth_setup_for_client())
 
 
+# PROJECT EASE: admin eval endpoints
+# Protected by a shared secret — set ADMIN_EVAL_API_KEY in your environment.
+# Callers must send:  Authorization: Bearer <ADMIN_EVAL_API_KEY>
+# This keeps law-firm query data from leaking to unauthenticated callers.
+def _require_admin_key():
+    """Returns an error response if the bearer token is missing or wrong, else None."""
+    expected = os.environ.get("ADMIN_EVAL_API_KEY", "")
+    if not expected:
+        # Key not configured → block all access (fail-closed, not fail-open)
+        return jsonify({"error": "Admin API is disabled. Set ADMIN_EVAL_API_KEY to enable it."}), 403
+    auth_header = request.headers.get("Authorization", "")
+    provided = auth_header.removeprefix("Bearer ").strip()
+    if not provided or provided != expected:
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
+
+
+@bp.route("/admin/evals", methods=["GET"])
+async def admin_evals():
+    """Return recent eval results. Optional ?org=<org_id> to filter by tenant."""
+    if err := _require_admin_key():
+        return err
+    from evals.db import fetch_recent, fetch_summary
+    org = request.args.get("org")
+    results = fetch_recent(limit=100)
+    if org:
+        results = [r for r in results if r.get("organization_id") == org]
+    summary = fetch_summary(organization_id=org)
+    return jsonify({"summary": summary, "results": results})
+
+
+@bp.route("/admin/evals/summary", methods=["GET"])
+async def admin_evals_summary():
+    """Aggregate stats across all orgs or a specific org."""
+    if err := _require_admin_key():
+        return err
+    from evals.db import fetch_summary
+    org = request.args.get("org")
+    return jsonify(fetch_summary(organization_id=org))
+
+
 @bp.route("/config", methods=["GET"])
 def config():
     return jsonify(

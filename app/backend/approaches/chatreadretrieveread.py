@@ -1,4 +1,6 @@
+import asyncio
 import re
+import time
 from collections.abc import AsyncGenerator, Awaitable
 from dataclasses import asdict
 from typing import Any, Optional, cast
@@ -21,6 +23,7 @@ from approaches.approach import (
     ExtraInfo,
     ThoughtStep,
 )
+from evals.evaluator import run_eval
 from approaches.promptmanager import PromptManager
 from prepdocslib.blobmanager import AdlsBlobManager, BlobManager
 from prepdocslib.embeddings import ImageEmbeddings
@@ -123,6 +126,9 @@ class ChatReadRetrieveReadApproach(Approach):
         )
         response: Response = await cast(Awaitable[Response], response_coroutine)
         content = response.output_text
+        # PROJECT EASE: fire eval now that we have the real answer text
+        if extra_info.eval_params and content:
+            asyncio.create_task(run_eval(**extra_info.eval_params, answer=content))
         if overrides.get("suggest_followup_questions"):
             content, followup_questions = self.extract_followup_questions(content)
             extra_info.followup_questions = followup_questions
@@ -195,6 +201,11 @@ class ChatReadRetrieveReadApproach(Approach):
                 if event.response.usage and extra_info.thoughts and self.include_token_usage:
                     extra_info.thoughts[-1].update_token_usage(event.response.usage)
                     yield {"type": "response.context", "context": extra_info, "session_state": session_state}
+                # PROJECT EASE: fire eval with the completed answer from the stream
+                if extra_info.eval_params:
+                    _full_answer = event.response.output_text or ""
+                    if _full_answer:
+                        asyncio.create_task(run_eval(**extra_info.eval_params, answer=_full_answer))
 
         if followup_content:
             _, followup_questions = self.extract_followup_questions(followup_content)
@@ -308,6 +319,7 @@ class ChatReadRetrieveReadApproach(Approach):
     async def run_search_approach(
         self, messages: list[EasyInputMessageParam], overrides: dict[str, Any], auth_claims: dict[str, Any]
     ):
+        _start_time = time.monotonic()
         use_text_search = overrides.get("retrieval_mode") in ["text", "hybrid", None]
         use_vector_search = overrides.get("retrieval_mode") in ["vectors", "hybrid", None]
         use_semantic_ranker = True if overrides.get("semantic_ranker") else False
@@ -316,7 +328,7 @@ class ChatReadRetrieveReadApproach(Approach):
         top = overrides.get("top", 5)
         minimum_search_score = overrides.get("minimum_search_score", 0.0)
         minimum_reranker_score = overrides.get("minimum_reranker_score", 0.0)
-        search_index_filter = self.build_filter(overrides)
+        search_index_filter = self.build_filter(overrides, auth_claims)
         access_token = auth_claims.get("access_token")
         send_text_sources = overrides.get("send_text_sources", True)
         send_image_sources = overrides.get("send_image_sources", self.multimodal_enabled) and self.multimodal_enabled
@@ -383,8 +395,25 @@ class ChatReadRetrieveReadApproach(Approach):
             download_image_sources=send_image_sources,
             user_oid=auth_claims.get("oid"),
         )
+        # PROJECT EASE: store eval params now, fire AFTER the answer is generated
+        # (faithfulness + answer_relevancy both require the real answer text;
+        #  firing with answer="" would skip all three metrics)
+        _serialized = [result.serialize_for_results() for result in results]
+        _eval_params = dict(
+            openai_client=self.openai_client,
+            judge_model=self.chatgpt_model,
+            organization_id=overrides.get("organization_id"),
+            original_query=original_user_query,
+            rewritten_query=query_text,
+            retrieved_docs=[r.get("sourcepage", "") for r in _serialized],
+            retrieved_texts=[r.get("content", "") for r in _serialized],
+            chat_model=self.chatgpt_model,
+            latency_ms=int((time.monotonic() - _start_time) * 1000),
+        )
+
         extra_info = ExtraInfo(
             data_points,
+            eval_params=_eval_params,
             thoughts=[
                 self.format_thought_step_for_chatcompletion(
                     title="Prompt to generate search query",
@@ -427,7 +456,7 @@ class ChatReadRetrieveReadApproach(Approach):
         overrides: dict[str, Any],
         auth_claims: dict[str, Any],
     ):
-        search_index_filter = self.build_filter(overrides)
+        search_index_filter = self.build_filter(overrides, auth_claims)
         access_token = auth_claims.get("access_token")
         minimum_reranker_score = overrides.get("minimum_reranker_score", 0)
         send_text_sources = overrides.get("send_text_sources", True)
