@@ -420,7 +420,7 @@ class BlobManager(BaseBlobManager):
             raise ValueError("Account, resource group, and subscription ID must be set to generate connection string.")
         return f"ResourceId=/subscriptions/{self.subscription_id}/resourceGroups/{self.resource_group}/providers/Microsoft.Storage/storageAccounts/{self.account};"
 
-    async def upload_blob(self, file: File) -> str:
+    async def upload_blob(self, file: File, organization_id: Optional[str] = None) -> str:
         container_client = self.blob_service_client.get_container_client(self.container)
         if not await container_client.exists():
             await container_client.create_container()
@@ -429,8 +429,12 @@ class BlobManager(BaseBlobManager):
         # URL may be a path to a local file or already set to a blob URL
         if file.url is None or os.path.exists(file.url):
             with open(file.content.name, "rb") as reopened_file:
-                blob_name = self.blob_name_from_file_name(file.content.name)
-                logger.info("Uploading blob for document '%s'", blob_name)
+                base_name = self.blob_name_from_file_name(file.content.name)
+                # PROJECT EASE: prefix with org so each firm's docs are isolated in storage.
+                # Without this, two firms uploading "contract.pdf" would overwrite each other.
+                # Path: orgs/{org_id}/contract.pdf  (or just contract.pdf for legacy/no-auth)
+                blob_name = f"orgs/{organization_id}/{base_name}" if organization_id else base_name
+                logger.info("Uploading blob for document '%s' (org=%s)", blob_name, organization_id)
                 blob_client = await container_client.upload_blob(blob_name, reopened_file, overwrite=True)
                 file.url = blob_client.url
 
@@ -523,22 +527,33 @@ class BlobManager(BaseBlobManager):
             logger.warning("Blob not found: %s", blob_path)
             return None
 
-    async def remove_blob(self, path: Optional[str] = None):
+    async def remove_blob(self, path: Optional[str] = None, organization_id: Optional[str] = None):
         container_client = self.blob_service_client.get_container_client(self.container)
         if not await container_client.exists():
             return
+
+        # PROJECT EASE: every blob lives under orgs/{org_id}/ when org is known.
+        # RemoveAll scoped to an org only deletes that org's files, not everyone's.
+        org_prefix = f"orgs/{organization_id}/" if organization_id else ""
+
         if path is None:
-            prefix = None
-            blobs = container_client.list_blob_names()
+            # Delete all blobs, optionally scoped to one org
+            blobs = container_client.list_blob_names(name_starts_with=org_prefix or None)
+            async for blob_path in blobs:
+                logger.info("Removing blob %s", blob_path)
+                await container_client.delete_blob(blob_path)
         else:
-            prefix = os.path.splitext(os.path.basename(path))[0]
-            blobs = container_client.list_blob_names(name_starts_with=os.path.splitext(os.path.basename(prefix))[0])
-        async for blob_path in blobs:
-            # This still supports PDFs split into individual pages, but we could remove in future to simplify code
-            if (
-                prefix is not None
-                and (not re.match(rf"{prefix}-\d+\.pdf", blob_path) or not re.match(rf"{prefix}-\d+\.png", blob_path))
-            ) or (path is not None and blob_path == os.path.basename(path)):
-                continue
-            logger.info("Removing blob %s", blob_path)
-            await container_client.delete_blob(blob_path)
+            # Delete a specific file and any page-split variants (base-1.pdf, base-1.png …)
+            base = os.path.splitext(os.path.basename(path))[0]
+            full_prefix = f"{org_prefix}{base}"
+            blobs = container_client.list_blob_names(name_starts_with=full_prefix)
+            async for blob_path in blobs:
+                # Strip the org prefix so pattern matching works on the bare filename
+                bare = blob_path[len(org_prefix):]
+                if (
+                    bare == os.path.basename(path)
+                    or re.match(rf"{re.escape(base)}-\d+\.pdf$", bare)
+                    or re.match(rf"{re.escape(base)}-\d+\.png$", bare)
+                ):
+                    logger.info("Removing blob %s", blob_path)
+                    await container_client.delete_blob(blob_path)
