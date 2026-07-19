@@ -495,7 +495,7 @@ const SignInForm = () => {
             sessionStorage.setItem("pe_user", JSON.stringify(data.user));
             // Route by role — admin goes to /admin dashboard, everyone else to /app
             const role: string = data.user?.role ?? "";
-            window.location.hash = role === "platform_admin" ? "/admin" : "/app";
+            window.location.hash = role === "platform_admin" ? "/admin" : role === "org_owner" ? "/owner" : "/app";
         } catch {
             setError("Could not reach the server. Is the backend running?");
         } finally {

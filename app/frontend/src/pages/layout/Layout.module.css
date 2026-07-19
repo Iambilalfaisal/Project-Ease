@@ -11,24 +11,28 @@
 }
 
 .header {
-    background-color: #222222;
-    color: #f2f2f2;
+    background: var(--bg-1);
+    color: var(--text-1);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
 .headerContainer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-left: 1rem;
-    padding-right: 1rem;
+    padding: 0 1.25rem;
+    height: 56px;
     position: relative;
 }
 
+/* ── Brand / title ─────────────────────────────────────────────── */
 .headerTitleContainer {
     display: flex;
     align-items: center;
-    color: #f2f2f2;
+    color: var(--text-1);
     text-decoration: none;
+    gap: 0.5rem;
 }
 
 .headerLogo {
@@ -37,17 +41,116 @@
 }
 
 .headerTitle {
-    margin-left: 0.5rem;
-    font-weight: 600;
+    font-family: var(--serif, Georgia, serif);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: -0.02em;
+    margin: 0;
 }
 
+/* ── Org context pill ──────────────────────────────────────────── */
+.orgContextBar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.orgPill {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border-md);
+    border-radius: 100px;
+    padding: 0.3rem 0.85rem 0.3rem 0.5rem;
+}
+
+.orgPillDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    flex-shrink: 0;
+}
+
+.orgPillName {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-1);
+}
+
+.roleBadge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.6rem;
+    border-radius: 100px;
+    background: var(--gold-dim);
+    border: 1px solid var(--gold-border);
+    color: var(--gold);
+}
+
+/* ── Right side controls ───────────────────────────────────────── */
+.loginMenuContainer {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.userName {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-1);
+    white-space: nowrap;
+}
+
+.themeBtn {
+    background: var(--bg-2);
+    border: 1px solid var(--border-md);
+    border-radius: 7px;
+    padding: 0.3rem 0.75rem;
+    font-family: var(--sans, system-ui, sans-serif);
+    font-size: 0.75rem;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+
+.themeBtn:hover {
+    border-color: var(--gold-border);
+    color: var(--gold);
+}
+
+.signOutBtn {
+    background: none;
+    border: 1px solid var(--border-md);
+    border-radius: 7px;
+    padding: 0.3rem 0.75rem;
+    font-family: var(--sans, system-ui, sans-serif);
+    font-size: 0.78rem;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+
+.signOutBtn:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* ── Nav links (kept for compatibility) ────────────────────────── */
 .headerNavList {
     z-index: 100;
     display: none;
     flex-direction: column;
-    background-color: #222222;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
     position: absolute;
-    top: 2.7rem;
+    top: 56px;
     right: 0;
     width: auto;
     list-style: none;
@@ -55,66 +158,50 @@
     align-items: flex-end;
 }
 
-.headerNavList.show {
-    display: flex; /* Show when toggled */
-}
+.headerNavList.show { display: flex; }
 
 .headerNavPageLink {
     padding: 1rem;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border);
     text-align: right;
-    color: #f2f2f2;
+    color: var(--text-1);
     text-decoration: none;
     opacity: 0.75;
-    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-    transition-duration: 500ms;
-    transition-property: opacity;
+    transition: opacity 0.2s;
     font-size: 1.2rem;
 }
 
-.headerNavPageLink:hover {
-    opacity: 1;
-}
+.headerNavPageLink:hover { opacity: 1; }
 
 .headerNavPageLinkActive {
-    color: #f2f2f2;
+    color: var(--text-1);
     text-decoration: none;
     font-size: 1.2rem;
     text-align: right;
     padding: 1rem;
 }
 
-.headerNavLeftMargin {
-    display: none;
-}
+.headerNavLeftMargin { display: none; }
 
 .menuToggle {
     display: block;
     background: none;
     border: none;
-    color: #f2f2f2;
+    color: var(--text-1);
     font-size: 1.5rem;
     cursor: pointer;
     z-index: 101;
 }
 
-.loginMenuContainer {
-    display: flex;
-    align-items: center;
-    gap: 0; /* Ensure no gap between login button and menu toggle */
-}
-
 @media (min-width: 992px) {
-    .headerTitle {
-        font-weight: 600;
-    }
-
     .headerNavList {
         display: flex;
         flex-direction: row;
         list-style: none;
         padding: 0;
         position: static;
+        border: none;
+        background: transparent;
         width: auto;
     }
 
@@ -124,12 +211,8 @@
         display: block;
     }
 
-    .headerNavPageLink:hover {
-        opacity: 1;
-    }
-
     .headerNavPageLinkActive {
-        color: #f2f2f2;
+        color: var(--text-1);
         text-decoration: none;
     }
 
@@ -144,7 +227,5 @@
         vertical-align: middle;
     }
 
-    .menuToggle {
-        display: none;
-    }
+    .menuToggle { display: none; }
 }

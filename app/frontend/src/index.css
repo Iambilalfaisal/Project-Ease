@@ -2,6 +2,57 @@
     box-sizing: border-box;
 }
 
+/* ── Project Ease global design tokens ───────────────────────────────────────
+   Dark is the default; add data-theme="light" to <html> for light mode.
+   All components reference these vars — never hardcode colours.
+─────────────────────────────────────────────────────────────────────────────*/
+:root,
+:root[data-theme="dark"] {
+    --bg-0:          #05080F;
+    --bg-1:          #0A1020;
+    --bg-2:          #101828;
+    --gold:          #C9A84C;
+    --gold-light:    #E2C96E;
+    --gold-dim:      rgba(201, 168, 76, 0.10);
+    --gold-border:   rgba(201, 168, 76, 0.22);
+    --text-1:        #F1F5F9;
+    --text-2:        #94A3B8;
+    --text-3:        #475569;
+    --border:        rgba(255, 255, 255, 0.07);
+    --border-md:     rgba(255, 255, 255, 0.11);
+    --shadow:        0 4px 28px rgba(0, 0, 0, 0.40);
+    --danger:        #F87171;
+    --success:       #4ADE80;
+    --warning:       #FBBF24;
+    --serif:         Georgia, "Times New Roman", serif;
+    --sans:          "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+    --radius:        12px;
+    --radius-lg:     20px;
+}
+
+:root[data-theme="light"] {
+    --bg-0:          #F2F5FC;
+    --bg-1:          #FFFFFF;
+    --bg-2:          #E6EAF4;
+    --gold:          #9C7A28;
+    --gold-light:    #B8922E;
+    --gold-dim:      rgba(156, 122, 40, 0.08);
+    --gold-border:   rgba(156, 122, 40, 0.20);
+    --text-1:        #0F172A;
+    --text-2:        #475569;
+    --text-3:        #94A3B8;
+    --border:        rgba(0, 0, 0, 0.08);
+    --border-md:     rgba(0, 0, 0, 0.13);
+    --shadow:        0 4px 28px rgba(0, 0, 0, 0.08);
+    --danger:        #DC2626;
+    --success:       #16A34A;
+    --warning:       #D97706;
+    --serif:         Georgia, "Times New Roman", serif;
+    --sans:          "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+    --radius:        12px;
+    --radius-lg:     20px;
+}
+
 html {
     height: 100%;
     background: #f2f2f2;

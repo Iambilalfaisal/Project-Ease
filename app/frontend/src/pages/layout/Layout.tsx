@@ -1,76 +1,111 @@
+import { useState } from "react";
 import { Outlet, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import styles from "./Layout.module.css";
 
 import { useLogin } from "../../authConfig";
+import { toggleTheme, getTheme, Theme } from "../../theme";
 
 import { LoginButton } from "../../components/LoginButton";
 
-// ── Project Ease session logout ───────────────────────────────────────────────
-const PeUserMenu = () => {
-    const raw = sessionStorage.getItem("pe_user");
-    if (!raw) return null;                          // no PE session — hide
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-    const user = JSON.parse(raw) as { name: string; email: string; role: string };
+interface PeUser {
+    name: string;
+    email: string;
+    role: string;
+    org: string | null;
+}
 
-    const signOut = async () => {
+const ROLE_LABELS: Record<string, string> = {
+    platform_admin: "Platform Admin",
+    org_owner:      "Firm Owner",
+    employee:       "Employee",
+};
+
+const ORG_DISPLAY_NAMES: Record<string, string> = {
+    lawfirm: "Hassan & Associates",
+};
+
+// ── Org context pill shown in the centre of the header ────────────────────────
+
+const OrgContextBar = ({ user }: { user: PeUser }) => {
+    const orgName = user.org ? (ORG_DISPLAY_NAMES[user.org] ?? user.org) : null;
+    const roleLabel = ROLE_LABELS[user.role] ?? user.role;
+
+    return (
+        <div className={styles.orgContextBar}>
+            {orgName && (
+                <div className={styles.orgPill}>
+                    <span className={styles.orgPillDot} />
+                    <span className={styles.orgPillName}>{orgName}</span>
+                </div>
+            )}
+            <span className={styles.roleBadge}>{roleLabel}</span>
+        </div>
+    );
+};
+
+// ── User menu ─────────────────────────────────────────────────────────────────
+
+const PeUserMenu = ({ user }: { user: PeUser }) => {
+    const signOut = () => {
         const token = sessionStorage.getItem("pe_token") ?? "";
-        // fire-and-forget — even if the backend is down we still clear locally
         fetch("/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
         sessionStorage.removeItem("pe_token");
         sessionStorage.removeItem("pe_user");
         window.location.hash = "/";
     };
 
-    const roleLabel: Record<string, string> = {
-        platform_admin: "Platform Admin",
-        org_owner:      "Firm Owner",
-        employee:       "Employee",
-    };
+    const goSettings = () => { window.location.hash = "/settings"; };
 
     return (
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <div style={{ textAlign: "right", lineHeight: 1.3 }}>
-                <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "#1b1b1b" }}>{user.name}</div>
-                <div style={{ fontSize: "0.72rem", color: "#6b6b6b" }}>{roleLabel[user.role] ?? user.role}</div>
-            </div>
-            <button
-                onClick={signOut}
-                style={{
-                    background: "none",
-                    border: "1px solid #d0d0d0",
-                    borderRadius: 6,
-                    padding: "0.35rem 0.85rem",
-                    fontSize: "0.8rem",
-                    cursor: "pointer",
-                    color: "#444",
-                    fontFamily: "inherit",
-                    whiteSpace: "nowrap",
-                    transition: "border-color 0.2s, color 0.2s"
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#999"; (e.currentTarget as HTMLButtonElement).style.color = "#111"; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#d0d0d0"; (e.currentTarget as HTMLButtonElement).style.color = "#444"; }}
-            >
-                Sign Out
-            </button>
-        </div>
+        <>
+            <span className={styles.userName}>{user.name}</span>
+            <button className={styles.themeBtn} onClick={goSettings}>Settings</button>
+            <button className={styles.signOutBtn} onClick={signOut}>Sign Out</button>
+        </>
     );
 };
 
+// ── Main layout ───────────────────────────────────────────────────────────────
+
 const Layout = () => {
     const { t } = useTranslation();
+    const [theme, setTheme] = useState<Theme>(getTheme());
+
+    const handleTheme = () => {
+        const next = toggleTheme();
+        setTheme(next);
+    };
+
+    const rawUser = sessionStorage.getItem("pe_user");
+    const peUser: PeUser | null = rawUser ? (JSON.parse(rawUser) as PeUser) : null;
 
     return (
         <div className={styles.layout}>
-            <header className={styles.header} role={"banner"}>
+            <header className={styles.header} role="banner">
                 <div className={styles.headerContainer}>
+
+                    {/* Left: brand */}
                     <Link to="/" className={styles.headerTitleContainer}>
                         <h3 className={styles.headerTitle}>{t("headerTitle")}</h3>
                     </Link>
+
+                    {/* Centre: org + role context */}
+                    {peUser && <OrgContextBar user={peUser} />}
+
+                    {/* Right: theme + user controls */}
                     <div className={styles.loginMenuContainer}>
-                        <PeUserMenu />
-                        {useLogin && <LoginButton />}
+                        <button className={styles.themeBtn} onClick={handleTheme} title="Toggle theme">
+                            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+                        </button>
+                        {peUser
+                            ? <PeUserMenu user={peUser} />
+                            : useLogin && <LoginButton />
+                        }
                     </div>
+
                 </div>
             </header>
 

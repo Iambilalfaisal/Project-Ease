@@ -1,0 +1,351 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Project Ease — Account Settings Page
+   Uses global CSS variables from index.css (dark / light via data-theme)
+═══════════════════════════════════════════════════════════════════ */
+
+.page {
+    min-height: 100vh;
+    background: var(--bg-0);
+    color: var(--text-1);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    padding: 2.5rem 1.5rem 4rem;
+}
+
+.container {
+    max-width: 820px;
+    margin: 0 auto;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────── */
+.topBar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.backBtn {
+    background: none;
+    border: 1px solid var(--border-md);
+    border-radius: 7px;
+    padding: 0.35rem 0.9rem;
+    font-family: var(--sans);
+    font-size: 0.82rem;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+
+.backBtn:hover {
+    border-color: var(--gold-border);
+    color: var(--gold);
+}
+
+.breadcrumb {
+    font-size: 0.8rem;
+    color: var(--text-3);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.breadcrumbBrand {
+    font-family: var(--serif);
+    font-weight: 700;
+    color: var(--gold);
+}
+
+.breadcrumbSep { color: var(--text-3); }
+
+/* ── Page header ─────────────────────────────────────────────────── */
+.pageHeader { margin-bottom: 2rem; }
+
+.pageTitle {
+    font-family: var(--serif);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-1);
+    margin: 0 0 0.4rem;
+    letter-spacing: -0.03em;
+}
+
+.pageSub {
+    font-size: 0.9rem;
+    color: var(--text-3);
+    margin: 0;
+}
+
+/* ── Cards grid ──────────────────────────────────────────────────── */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+.card {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.cardDanger {
+    border-color: rgba(248, 113, 113, 0.22);
+}
+
+.cardTitle {
+    font-family: var(--serif);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-1);
+    margin: 0 0 0.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.02em;
+}
+
+/* ── Profile card ────────────────────────────────────────────────── */
+.avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold) 0%, #9C7A28 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--serif);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #05080F;
+    flex-shrink: 0;
+}
+
+.fieldGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.fieldLabel {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+}
+
+.fieldValue {
+    font-size: 0.9rem;
+    color: var(--text-1);
+    font-weight: 500;
+}
+
+.roleBadge {
+    display: inline-block;
+    background: var(--gold-dim);
+    border: 1px solid var(--gold-border);
+    color: var(--gold);
+    border-radius: 100px;
+    padding: 0.2rem 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    width: fit-content;
+}
+
+/* ── Security card ───────────────────────────────────────────────── */
+.formGroup { display: flex; flex-direction: column; gap: 0.35rem; }
+
+.formLabel {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+}
+
+.formInput {
+    background: var(--bg-2);
+    border: 1px solid var(--border-md);
+    border-radius: 7px;
+    padding: 0.6rem 0.85rem;
+    color: var(--text-1);
+    font-family: var(--sans);
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.formInput:focus {
+    border-color: var(--gold-border);
+    background: var(--gold-dim);
+}
+
+.formInput::placeholder { color: var(--text-3); }
+
+.alertSuccess {
+    background: rgba(74, 222, 128, 0.1);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    color: var(--success);
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.82rem;
+}
+
+.alertError {
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.82rem;
+}
+
+.secNote {
+    font-size: 0.75rem;
+    color: var(--text-3);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ── Preferences card ────────────────────────────────────────────── */
+.prefRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.prefLabel {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-1);
+    margin-bottom: 0.2rem;
+}
+
+.prefSub {
+    font-size: 0.78rem;
+    color: var(--text-3);
+    line-height: 1.4;
+}
+
+.themeToggle {
+    background: var(--bg-2);
+    border: 1px solid var(--border-md);
+    border-radius: 8px;
+    padding: 0.45rem 1rem;
+    font-family: var(--sans);
+    font-size: 0.8rem;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.themeToggle:hover {
+    border-color: var(--gold-border);
+    color: var(--gold);
+}
+
+.langSelect {
+    background: var(--bg-2);
+    border: 1px solid var(--border-md);
+    border-radius: 7px;
+    padding: 0.45rem 0.85rem;
+    color: var(--text-1);
+    font-family: var(--sans);
+    font-size: 0.82rem;
+    cursor: pointer;
+    outline: none;
+    flex-shrink: 0;
+}
+
+.langSelect option {
+    background: var(--bg-1);
+    color: var(--text-1);
+}
+
+.divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0.25rem 0;
+}
+
+/* ── Danger card ─────────────────────────────────────────────────── */
+.dangerText {
+    font-size: 0.875rem;
+    color: var(--text-3);
+    margin: 0;
+    line-height: 1.6;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+.btnPrimary {
+    background: linear-gradient(135deg, var(--gold) 0%, #9C7A28 100%);
+    color: #05080F;
+    border: none;
+    border-radius: 8px;
+    padding: 0.6rem 1.35rem;
+    font-family: var(--sans);
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+    width: fit-content;
+}
+
+.btnPrimary:hover { opacity: 0.88; transform: translateY(-1px); }
+
+.btnDanger {
+    background: none;
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    padding: 0.6rem 1.35rem;
+    font-family: var(--sans);
+    font-size: 0.875rem;
+    color: var(--danger);
+    cursor: pointer;
+    transition: background 0.15s;
+    width: fit-content;
+}
+
+.btnDanger:hover { background: rgba(248, 113, 113, 0.08); }
+
+/* ── No session state ────────────────────────────────────────────── */
+.noSession {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 3rem;
+    text-align: center;
+    color: var(--text-3);
+    font-size: 0.9rem;
+}
+
+.link {
+    color: var(--gold);
+    text-decoration: none;
+}
+
+.link:hover { text-decoration: underline; }
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 680px) {
+    .grid { grid-template-columns: 1fr; }
+    .prefRow { flex-direction: column; align-items: flex-start; }
+}

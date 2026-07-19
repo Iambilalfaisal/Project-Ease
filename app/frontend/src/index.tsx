@@ -8,31 +8,19 @@ import { AuthenticationResult, EventType, PublicClientApplication } from "@azure
 
 import "./index.css";
 
+// Apply saved theme before first paint to avoid flash
+import { applyTheme, getTheme } from "./theme";
+applyTheme(getTheme());
+
 import Chat from "./pages/chat/Chat";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import OwnerPortal from "./pages/owner/OwnerPortal";
+import SettingsPage from "./pages/settings/SettingsPage";
 import Landing from "./pages/landing/Landing";
 import LayoutWrapper from "./layoutWrapper";
 import i18next from "./i18n/config";
 import { msalConfig, useLogin } from "./authConfig";
 
-// Inline admin placeholder — replace with real AdminDashboard component once built
-const AdminPlaceholder = () => {
-    const raw = sessionStorage.getItem("pe_user");
-    const user = raw ? JSON.parse(raw) : {};
-    return (
-        <div style={{ background: "#05080F", minHeight: "100vh", color: "#F1F5F9", fontFamily: "Segoe UI, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "1rem" }}>
-            <div style={{ color: "#C9A84C", fontSize: "2rem", fontFamily: "Georgia, serif", fontWeight: 700 }}>Project Ease</div>
-            <div style={{ color: "#94A3B8", fontSize: "1rem" }}>Admin Dashboard — coming soon</div>
-            <div style={{ background: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.2)", borderRadius: 10, padding: "1rem 2rem", textAlign: "center" }}>
-                <div style={{ color: "#C9A84C", fontWeight: 700 }}>{user.name ?? "Admin"}</div>
-                <div style={{ color: "#64748B", fontSize: "0.8rem" }}>{user.email} &middot; {user.role}</div>
-            </div>
-            <button
-                onClick={() => { sessionStorage.clear(); window.location.hash = "/"; }}
-                style={{ marginTop: "1rem", background: "none", border: "1px solid rgba(255,255,255,0.1)", color: "#94A3B8", padding: "0.5rem 1.5rem", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}
-            >Sign Out</button>
-        </div>
-    );
-};
 
 const router = createHashRouter([
     {
@@ -41,9 +29,16 @@ const router = createHashRouter([
         element: <Landing />
     },
     {
-        // Platform admin dashboard
         path: "/admin",
-        element: <AdminPlaceholder />
+        element: <AdminDashboard />
+    },
+    {
+        path: "/owner",
+        element: <OwnerPortal />
+    },
+    {
+        path: "/settings",
+        element: <SettingsPage />
     },
     {
         // The main app (chat) lives at /app — auth will gate this route later

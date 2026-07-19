@@ -36,6 +36,12 @@ import { LanguagePicker } from "../../i18n/LanguagePicker";
 import { Settings } from "../../components/Settings/Settings";
 
 const Chat = () => {
+    // PROJECT EASE: read org from session — drives multi-tenant Azure AI Search filter
+    const peUser = (() => {
+        try { return JSON.parse(sessionStorage.getItem("pe_user") ?? "null"); } catch { return null; }
+    })();
+    const peOrgId: string | undefined = peUser?.org ?? undefined;
+
     const [isConfigPanelOpen, setIsConfigPanelOpen] = useState(false);
     const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
     const [promptTemplate, setPromptTemplate] = useState<string>("");
@@ -298,8 +304,8 @@ const Chat = () => {
                         use_agentic_knowledgebase: useAgenticKnowledgeBase,
                         use_web_source: webSourceSupported ? webSourceEnabled : false,
                         use_sharepoint_source: sharePointSourceSupported ? sharePointSourceEnabled : false,
-                        // PROJECT EASE: multi-tenancy — hardcoded for local dev, replace with auth token claim in production
-                        organization_id: "org-placeholder"
+                        // PROJECT EASE: multi-tenancy — org from sessionStorage, filters Azure AI Search per tenant
+                        organization_id: peOrgId
                     }
                 },
                 // AI Chat Protocol: Client must pass on any session state received from the server

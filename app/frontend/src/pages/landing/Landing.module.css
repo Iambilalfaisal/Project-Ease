@@ -3,23 +3,8 @@
    Luxury dark · gold accent · professional
 ───────────────────────────────────────────── */
 
-/* ── Design tokens ── */
+/* ── Design tokens come from :root in index.css (supports dark/light toggle) ── */
 .page {
-    --bg-0:          #05080F;
-    --bg-1:          #0A1020;
-    --bg-2:          #101828;
-    --gold:          #C9A84C;
-    --gold-light:    #E2C96E;
-    --gold-dim:      rgba(201, 168, 76, 0.10);
-    --gold-border:   rgba(201, 168, 76, 0.22);
-    --text-1:        #F1F5F9;
-    --text-2:        #94A3B8;
-    --text-3:        #475569;
-    --radius:        12px;
-    --radius-lg:     20px;
-    --serif:         Georgia, 'Times New Roman', serif;
-    --sans:          "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
-
     min-height: 100vh;
     background: var(--bg-0);
     color: var(--text-1);
