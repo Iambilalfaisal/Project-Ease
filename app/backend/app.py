@@ -16,6 +16,7 @@ from azure.cognitiveservices.speech import (
     SpeechSynthesisResult,
     SpeechSynthesizer,
 )
+from azure.core.credentials import AzureKeyCredential
 from azure.identity.aio import (
     AzureDeveloperCliCredential,
     ManagedIdentityCredential,
@@ -186,12 +187,28 @@ async def content_file(path: str, auth_claims: dict[str, Any]):
     return await send_file(blob_file, mimetype=mime_type, as_attachment=False, attachment_filename=path)
 
 
+def _safe_asdict(o: Any) -> Any:
+    """Like dataclasses.asdict() but without deepcopy, and skips non-serializable objects."""
+    if dataclasses.is_dataclass(o) and not isinstance(o, type):
+        return {f.name: _safe_asdict(getattr(o, f.name)) for f in dataclasses.fields(o)}
+    elif isinstance(o, list):
+        return [_safe_asdict(v) for v in o]
+    elif isinstance(o, dict):
+        return {k: _safe_asdict(v) for k, v in o.items()}
+    elif isinstance(o, tuple):
+        return tuple(_safe_asdict(v) for v in o)
+    elif isinstance(o, (str, int, float, bool)) or o is None:
+        return o
+    else:
+        # Skip non-primitive objects (e.g. AsyncOpenAI client, thread locks)
+        return None
+
+
 class JSONEncoder(json.JSONEncoder):
     def default(self, o):
         if dataclasses.is_dataclass(o) and not isinstance(o, type):
-            as_dict = dataclasses.asdict(o)
+            as_dict = _safe_asdict(o)
             if isinstance(o, DataPoints):
-                # Drop optional data point collections that are not populated to keep API surface stable
                 return {k: v for k, v in as_dict.items() if v is not None}
             data_points_payload = as_dict.get("data_points") if isinstance(as_dict, dict) else None
             if isinstance(data_points_payload, dict) and data_points_payload.get("citation_activity_details") is None:
@@ -514,6 +531,10 @@ async def list_uploaded(auth_claims: dict[str, Any]):
 
 @bp.before_app_serving
 async def setup_clients():
+    # Load .env — works whether entry point is main.py or quart --app app:create_app
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
+
     # ── PROJECT EASE: graceful local-dev mode ──────────────────────────────────
     # When Azure credentials are not configured the app starts in auth-only mode.
     # /auth/* endpoints work; Azure-backed routes (/chat, /config, etc.) will
@@ -642,10 +663,12 @@ async def setup_clients():
     current_app.config[CONFIG_CREDENTIAL] = azure_credential
 
     # Set up clients for AI Search and Storage
+    AZURE_SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
+    search_credential = AzureKeyCredential(AZURE_SEARCH_KEY) if AZURE_SEARCH_KEY else azure_credential
     search_client = SearchClient(
         endpoint=AZURE_SEARCH_ENDPOINT,
         index_name=AZURE_SEARCH_INDEX,
-        credential=azure_credential,
+        credential=search_credential,
     )
 
     knowledgebase_client = KnowledgeBaseRetrievalClient(

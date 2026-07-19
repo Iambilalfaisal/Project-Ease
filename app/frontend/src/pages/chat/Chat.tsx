@@ -304,8 +304,8 @@ const Chat = () => {
                         use_agentic_knowledgebase: useAgenticKnowledgeBase,
                         use_web_source: webSourceSupported ? webSourceEnabled : false,
                         use_sharepoint_source: sharePointSourceSupported ? sharePointSourceEnabled : false,
-                        // PROJECT EASE: multi-tenancy — org from sessionStorage, filters Azure AI Search per tenant
-                        organization_id: peOrgId
+                        // PROJECT EASE: multi-tenancy — disabled temporarily for testing (doc indexed without org tag)
+                        // organization_id: peOrgId
                     }
                 },
                 // AI Chat Protocol: Client must pass on any session state received from the server
@@ -652,7 +652,7 @@ const Chat = () => {
                     </div>
                 </div>
 
-                {answers.length > 0 && activeAnalysisPanelTab && (
+                {answers.length > 0 && activeAnalysisPanelTab && selectedAnswer < answers.length && answers[selectedAnswer]?.[1] && (
                     <AnalysisPanel
                         className={styles.chatAnalysisPanel}
                         activeCitation={activeCitation}

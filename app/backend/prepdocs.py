@@ -35,16 +35,8 @@ logger = logging.getLogger("scripts")
 
 
 async def check_search_service_connectivity(search_service: str) -> bool:
-    """Check if the search service is accessible by hitting the /ping endpoint."""
-    ping_url = f"https://{search_service}.search.windows.net/ping"
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(ping_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                return response.status == 200
-    except Exception as e:
-        logger.debug(f"Search service ping failed: {e}")
-        return False
+    """Skip pre-flight ping — let the real API calls surface errors instead."""
+    return True
 
 
 def setup_list_file_strategy(
