@@ -316,6 +316,7 @@ from db import (
     get_documents, create_document, update_document_status, delete_document,
     get_doc_counts, get_users_for_org, create_user, delete_user,
     get_permitted_categories, set_permissions, get_docs_for_categories,
+    get_user_by_id, get_user_by_whatsapp, update_user_whatsapp,
     # admin
     get_all_orgs, create_org, update_org, delete_org,
     get_org_details, get_platform_stats,
@@ -846,6 +847,146 @@ async def set_member_permissions(user_id: str):
     category_ids = data.get("category_ids", [])
     set_permissions(user_id, category_ids, actor=session.get("user_id") or SYSTEM)
     return jsonify({"success": True})
+
+
+@bp.route("/team/<user_id>/whatsapp", methods=["PATCH"])
+async def update_member_whatsapp(user_id: str):
+    """Set or clear the WhatsApp number for a team member (owner only)."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data    = await request.get_json(silent=True) or {}
+    number  = (data.get("whatsapp_number") or "").strip()
+    if number and not number.startswith("+"):
+        number = "+" + number
+    org_id  = session.get("org") or ""
+    member  = get_user_by_id(user_id)
+    if not member or member.get("org_id") != org_id:
+        return jsonify({"error": "User not found"}), 404
+    update_user_whatsapp(user_id, number or None, session.get("user_id") or SYSTEM)
+    return jsonify({"success": True, "whatsapp_number": number or None})
+
+
+# ─── PROJECT EASE: WhatsApp Webhook ──────────────────────────────────────────
+
+# In-memory conversation history keyed by phone number (survives restarts poorly
+# but is sufficient for MVP — a Redis cache can replace this later).
+_wa_sessions: dict[str, list] = {}
+
+
+def _twiml_reply(text: str):
+    """Return a Twilio TwiML XML response containing a WhatsApp message."""
+    safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    xml  = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{safe}</Message></Response>'
+    return current_app.response_class(xml, mimetype="text/xml")
+
+
+async def _transcribe_voice(media_url: str) -> str | None:
+    """Download a Twilio voice note and transcribe it with Azure OpenAI Whisper.
+    Returns None if no Whisper deployment is configured or if transcription fails."""
+    whisper_dep = os.getenv("AZURE_OPENAI_WHISPER_DEPLOYMENT", "").strip()
+    if not whisper_dep:
+        return None
+    try:
+        import httpx
+        sid   = os.getenv("TWILIO_ACCOUNT_SID", "")
+        token = os.getenv("TWILIO_AUTH_TOKEN", "")
+        auth  = (sid, token) if sid and token else None
+        async with httpx.AsyncClient() as client:
+            r = await client.get(media_url, auth=auth, timeout=30.0)
+            r.raise_for_status()
+            audio_bytes = r.content
+            content_type = r.headers.get("content-type", "audio/ogg")
+        openai_client = current_app.config[CONFIG_OPENAI_CLIENT]
+        result = await openai_client.audio.transcriptions.create(
+            model=whisper_dep,
+            file=("voice_note.ogg", audio_bytes, content_type),
+        )
+        return result.text.strip() or None
+    except Exception as exc:
+        logging.warning("Whisper transcription failed: %s", exc)
+        return None
+
+
+@bp.route("/webhook/whatsapp", methods=["POST"])
+async def whatsapp_webhook():
+    """Twilio WhatsApp webhook — receives messages, runs them through the chat
+    pipeline, and returns a TwiML reply."""
+    form        = await request.form
+    from_raw    = form.get("From", "")                  # "whatsapp:+923001234567"
+    body        = (form.get("Body") or "").strip()
+    media_type  = form.get("MediaContentType0", "")
+    media_url   = form.get("MediaUrl0", "")
+
+    # Strip the "whatsapp:" prefix Twilio prepends
+    phone = from_raw.removeprefix("whatsapp:").strip()
+    if not phone:
+        return _twiml_reply("Could not identify your number. Please contact support.")
+
+    user = get_user_by_whatsapp(phone)
+    if not user:
+        return _twiml_reply(
+            "Hi! Your WhatsApp number is not registered with Project Ease. "
+            "Please ask your firm administrator to add it to your account."
+        )
+
+    # ── Determine query text ──────────────────────────────────────────────────
+    if media_url and "audio" in media_type:
+        transcript = await _transcribe_voice(media_url)
+        if transcript is None:
+            return _twiml_reply(
+                "Voice messages are not supported yet — please send your question as text."
+            )
+        query_text = transcript
+    elif body:
+        query_text = body
+    else:
+        return _twiml_reply("Please send a text or voice message with your question.")
+
+    # ── Maintain per-number conversation history (last 10 turns) ─────────────
+    history = _wa_sessions.setdefault(phone, [])
+    history.append({"role": "user", "content": query_text})
+    if len(history) > 10:
+        _wa_sessions[phone] = history[-10:]
+        history = _wa_sessions[phone]
+
+    # ── Build employee scope (same logic as _inject_employee_scope) ───────────
+    cat_ids    = get_permitted_categories(user["user_id"])
+    docs       = get_docs_for_categories(user["org_id"], cat_ids) if cat_ids else []
+    permitted  = [d["filename"] for d in docs]
+
+    # ── Run through the chat pipeline ─────────────────────────────────────────
+    approach: Approach = cast(Approach, current_app.config[CONFIG_CHAT_APPROACH])
+    try:
+        result = await approach.run(
+            messages=history.copy(),
+            context={
+                "overrides": {
+                    "retrieval_mode":  "hybrid",
+                    "semantic_ranker": True,
+                    "top":             3,
+                    "permitted_sourcefiles": permitted,
+                },
+                "auth_claims": {
+                    "organization_id": user["org_id"],
+                },
+            },
+        )
+        answer = (result.get("output_text") or "").strip()
+        if not answer:
+            answer = "I could not find a relevant answer in your firm's documents. Please try rephrasing your question."
+    except Exception as exc:
+        logging.exception("WhatsApp chat pipeline error: %s", exc)
+        answer = "Sorry, I ran into an error processing your request. Please try again in a moment."
+
+    # Add assistant reply to history
+    history.append({"role": "assistant", "content": answer})
+
+    # WhatsApp messages are capped at 1600 characters
+    if len(answer) > 1500:
+        answer = answer[:1497] + "…"
+
+    return _twiml_reply(answer)
 
 
 # ─── PROJECT EASE: Super Admin API ───────────────────────────────────────────

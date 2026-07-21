@@ -163,6 +163,12 @@ def _run_migrations(conn: sqlite3.Connection):
             except sqlite3.OperationalError:
                 pass  # column already exists
 
+    # WhatsApp number per user — added in Task #26
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN whatsapp_number TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
 
 def init_db():
     """Create tables if they don't exist, apply migrations, then seed dev data."""
@@ -252,11 +258,40 @@ def get_users_for_org(org_id: str) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT user_id, email, name, role, must_change_password,
+                      whatsapp_number,
                       is_active, created_at, created_by, modified_at, modified_by
                FROM users WHERE org_id=? AND is_active=1 ORDER BY created_at""",
             (org_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_user_by_id(user_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE user_id=? AND is_active=1", (user_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_user_by_whatsapp(number: str) -> Optional[dict]:
+    """Look up an active user by their WhatsApp number (E.164 format, e.g. +923001234567)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE whatsapp_number=? AND is_active=1",
+            (number.strip(),),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_user_whatsapp(user_id: str, number: Optional[str], actor: str = SYSTEM):
+    """Set or clear a user's WhatsApp number."""
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE users SET whatsapp_number=?, modified_at=datetime('now'), modified_by=?
+               WHERE user_id=?""",
+            (number or None, actor, user_id),
+        )
 
 
 def create_user(

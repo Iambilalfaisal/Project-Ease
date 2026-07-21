@@ -28,6 +28,7 @@ interface TeamMember {
     email: string;
     role: string;
     joined: string;
+    whatsapp_number?: string | null;
 }
 
 interface Usage {
@@ -492,6 +493,11 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
     const [saving,       setSaving]       = useState(false);
     const [saved,        setSaved]        = useState(false);
 
+    // WhatsApp number state
+    const [waNumber,   setWaNumber]   = useState(member.whatsapp_number ?? "");
+    const [waSaving,   setWaSaving]   = useState(false);
+    const [waMsg,      setWaMsg]      = useState<{ ok: boolean; text: string } | null>(null);
+
     useEffect(() => {
         Promise.all([
             fetch("/categories",                                  { headers: authHeaders() }).then(r => r.json()),
@@ -523,50 +529,109 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
         setSaved(true);
     };
 
+    const saveWhatsApp = async () => {
+        setWaSaving(true);
+        setWaMsg(null);
+        try {
+            const res = await fetch(`/team/${member.user_id}/whatsapp`, {
+                method: "PATCH",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ whatsapp_number: waNumber.trim() }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setWaMsg({ ok: true, text: "WhatsApp number saved." });
+            } else {
+                setWaMsg({ ok: false, text: data.error ?? "Failed to save." });
+            }
+        } catch {
+            setWaMsg({ ok: false, text: "Network error." });
+        } finally {
+            setWaSaving(false);
+        }
+    };
+
     return (
         <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
             <div className={styles.modal}>
-                <h3 className={styles.modalTitle}>Permissions — {member.name}</h3>
+                <h3 className={styles.modalTitle}>Settings — {member.name}</h3>
                 <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "1rem" }}>
-                    Select which document categories this employee can search and view. Unchecked categories are invisible to them.
+                    Manage document access and WhatsApp configuration for this team member.
                 </p>
 
-                {loading ? (
-                    <div style={{ padding: "1.5rem 0", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
-                ) : categories.length === 0 ? (
-                    <div style={{ padding: "1rem 0", color: "var(--text-3)", fontSize: "0.85rem" }}>
-                        No categories yet. Create categories in the Documents tab first.
+                {/* Document Category Permissions */}
+                <div style={{ marginBottom: "1.25rem" }}>
+                    <div className={styles.settingsCardTitle} style={{ marginBottom: "0.6rem" }}>
+                        Document Access
                     </div>
-                ) : (
-                    <div className={styles.permList}>
-                        {categories.map(cat => (
-                            <label key={cat.category_id} className={styles.permRow}>
-                                <input
-                                    type="checkbox"
-                                    className={styles.permCheck}
-                                    checked={granted.has(cat.category_id)}
-                                    onChange={() => toggle(cat.category_id)}
-                                />
-                                <span className={styles.permLabel}>{cat.name}</span>
-                                {granted.has(cat.category_id)
-                                    ? <span className={styles.badgeGreen} style={{ marginLeft: "auto" }}>Access granted</span>
-                                    : <span className={styles.badgeGray}  style={{ marginLeft: "auto" }}>No access</span>
-                                }
-                            </label>
-                        ))}
-                    </div>
-                )}
-
-                <div className={styles.permFooter}>
-                    <span className={styles.permSummary}>
-                        {granted.size} of {categories.length} categories accessible
-                    </span>
-                    <div className={styles.modalActions} style={{ marginTop: 0 }}>
-                        <button className={styles.btnGhost} onClick={onClose}>Close</button>
-                        <button className={styles.btnPrimary} onClick={save} disabled={saving || categories.length === 0}>
-                            {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+                    {loading ? (
+                        <div style={{ padding: "1rem 0", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
+                    ) : categories.length === 0 ? (
+                        <div style={{ color: "var(--text-3)", fontSize: "0.85rem" }}>
+                            No categories yet. Create categories in the Documents tab first.
+                        </div>
+                    ) : (
+                        <div className={styles.permList}>
+                            {categories.map(cat => (
+                                <label key={cat.category_id} className={styles.permRow}>
+                                    <input
+                                        type="checkbox"
+                                        className={styles.permCheck}
+                                        checked={granted.has(cat.category_id)}
+                                        onChange={() => toggle(cat.category_id)}
+                                    />
+                                    <span className={styles.permLabel}>{cat.name}</span>
+                                    {granted.has(cat.category_id)
+                                        ? <span className={styles.badgeGreen} style={{ marginLeft: "auto" }}>Access granted</span>
+                                        : <span className={styles.badgeGray}  style={{ marginLeft: "auto" }}>No access</span>
+                                    }
+                                </label>
+                            ))}
+                        </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem" }}>
+                        <span className={styles.permSummary}>{granted.size} of {categories.length} categories accessible</span>
+                        <button className={styles.btnPrimary} onClick={save} disabled={saving || categories.length === 0} style={{ padding: "0.4rem 1rem" }}>
+                            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Access"}
                         </button>
                     </div>
+                </div>
+
+                {/* WhatsApp Number */}
+                <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1.1rem" }}>
+                    <div className={styles.settingsCardTitle} style={{ marginBottom: "0.5rem" }}>
+                        WhatsApp Number
+                    </div>
+                    <p className={styles.muted} style={{ fontSize: "0.8rem", marginBottom: "0.75rem" }}>
+                        When set, this employee can query their documents directly from WhatsApp. Use E.164 format (e.g. +923001234567).
+                    </p>
+                    {waMsg && (
+                        <div className={waMsg.ok ? styles.successBanner : styles.errorBanner} style={{ marginBottom: "0.6rem", fontSize: "0.8rem" }}>
+                            {waMsg.text}
+                        </div>
+                    )}
+                    <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
+                        <input
+                            className={styles.formInput}
+                            type="tel"
+                            placeholder="+923001234567"
+                            value={waNumber}
+                            onChange={e => { setWaNumber(e.target.value); setWaMsg(null); }}
+                            style={{ flex: 1 }}
+                        />
+                        <button className={styles.btnPrimary} onClick={saveWhatsApp} disabled={waSaving} style={{ padding: "0.4rem 1rem", whiteSpace: "nowrap" }}>
+                            {waSaving ? "Saving…" : "Save"}
+                        </button>
+                        {waNumber && (
+                            <button className={styles.btnGhost} onClick={() => { setWaNumber(""); setWaMsg(null); }} style={{ padding: "0.4rem 0.75rem" }}>
+                                Clear
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <div className={styles.modalActions}>
+                    <button className={styles.btnGhost} onClick={onClose}>Close</button>
                 </div>
             </div>
         </div>
@@ -1119,11 +1184,12 @@ const OwnerPortal = () => {
                 if (teamRes.ok) {
                     const t = await teamRes.json();
                     const mapped: TeamMember[] = (t.members ?? []).map((m: any) => ({
-                        user_id: m.user_id,
-                        name:    m.name,
-                        email:   m.email,
-                        role:    m.role,
-                        joined:  m.created_at ?? "",
+                        user_id:          m.user_id,
+                        name:             m.name,
+                        email:            m.email,
+                        role:             m.role,
+                        joined:           m.created_at ?? "",
+                        whatsapp_number:  m.whatsapp_number ?? null,
                     }));
                     setTeam(mapped);
                 }
