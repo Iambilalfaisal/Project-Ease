@@ -340,6 +340,43 @@
     font-family: monospace;
 }
 
+/* Verification badge */
+.verificationBadge {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    margin-top: 0.45rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 99px;
+    border: 1px solid transparent;
+}
+
+.verdict_verified {
+    background: rgba(46, 158, 79, 0.08);
+    border-color: rgba(46, 158, 79, 0.28);
+    color: #2e9e4f;
+}
+
+.verdict_warning {
+    background: rgba(212, 175, 55, 0.08);
+    border-color: rgba(212, 175, 55, 0.28);
+    color: var(--gold);
+}
+
+.verdict_unverified {
+    background: rgba(224, 82, 96, 0.08);
+    border-color: rgba(224, 82, 96, 0.28);
+    color: #e05260;
+}
+
+.verificationIssues {
+    font-weight: 400;
+    opacity: 0.9;
+}
+
 .streamingDot {
     display: inline-block;
     width: 8px;

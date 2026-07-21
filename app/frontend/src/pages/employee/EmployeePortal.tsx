@@ -31,10 +31,16 @@ interface DocFile {
     status: "ready" | "processing" | "error";
 }
 
+interface Verification {
+    verdict: "verified" | "warning" | "unverified";
+    issues: string[];
+}
+
 interface ChatMessage {
     role: "user" | "assistant";
     content: string;
     citations?: string[];
+    verification?: Verification;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -120,8 +126,9 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
 
             if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
 
-            let fullText  = "";
+            let fullText     = "";
             let citations: string[] = [];
+            let verification: Verification | undefined;
 
             for await (const event of readNDJSONStream(res.body)) {
                 if (ctrl.signal.aborted) break;
@@ -131,12 +138,14 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                     setLoading(false);
                     fullText += event.delta;
                     setStreamText(fullText);
+                } else if (event.type === "response.verification" && event.verification) {
+                    verification = event.verification as Verification;
                 } else if (event.error) {
                     throw new Error(event.error);
                 }
             }
 
-            const assistantMsg: ChatMessage = { role: "assistant", content: fullText, citations };
+            const assistantMsg: ChatMessage = { role: "assistant", content: fullText, citations, verification };
             setMessages([...history, assistantMsg]);
             setStreamText("");
         } catch (e: any) {
@@ -200,6 +209,18 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                                         {msg.citations.map(c => (
                                             <span key={c} className={styles.citationTag}>{c}</span>
                                         ))}
+                                    </div>
+                                )}
+                                {msg.role === "assistant" && msg.verification && (
+                                    <div className={`${styles.verificationBadge} ${styles[`verdict_${msg.verification.verdict}`]}`}>
+                                        {msg.verification.verdict === "verified"   && "✓ Verified against sources"}
+                                        {msg.verification.verdict === "warning"    && "⚠ Partially verified"}
+                                        {msg.verification.verdict === "unverified" && "✗ Could not verify"}
+                                        {msg.verification.issues.length > 0 && (
+                                            <span className={styles.verificationIssues}>
+                                                {" — "}{msg.verification.issues[0]}
+                                            </span>
+                                        )}
                                     </div>
                                 )}
                             </div>

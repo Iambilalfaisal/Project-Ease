@@ -1,4 +1,5 @@
 import asyncio
+import json as _json
 import re
 import time
 from collections.abc import AsyncGenerator, Awaitable
@@ -102,6 +103,60 @@ class ChatReadRetrieveReadApproach(Approach):
         self.use_sharepoint_source = use_sharepoint_source
         self.retrieval_reasoning_effort = retrieval_reasoning_effort
 
+    # ── PROJECT EASE: Two-pass anti-hallucination verifier ────────────────────────
+    async def verify_response(self, response_text: str, source_texts: list[str]) -> dict:
+        """
+        Second LLM call that checks every factual claim in response_text against
+        the retrieved source chunks.  Returns:
+          {"verdict": "verified"|"warning"|"unverified", "issues": [...]}
+        """
+        if not response_text.strip() or not source_texts:
+            return {"verdict": "unverified", "issues": ["No source documents were retrieved."]}
+
+        # Truncate each chunk so we stay well within token limits
+        sources_block = "\n\n".join(
+            f"[Source {i + 1}]\n{chunk[:600]}" for i, chunk in enumerate(source_texts[:8])
+        )
+
+        system_msg = (
+            "You are a verification agent for a legal AI system. "
+            "Check whether every factual claim in the Generated Response is supported "
+            "by the Source Documents provided.\n\n"
+            "Return ONLY valid JSON — no other text:\n"
+            '{"verdict": "verified" | "warning" | "unverified", "issues": ["..."]}\n\n'
+            "Verdict meanings:\n"
+            '- "verified": all claims are grounded in the sources. issues=[]\n'
+            '- "warning": most claims are grounded, but 1-2 minor points are uncertain.\n'
+            '- "unverified": one or more significant claims appear unsupported by the sources.\n\n'
+            "Only check substantive factual claims — not greetings, meta-commentary, "
+            "or the citation labels themselves."
+        )
+        user_msg = (
+            f"Generated Response:\n{response_text}\n\n"
+            f"---\nSource Documents:\n{sources_block}"
+        )
+
+        try:
+            completion = await self.openai_client.chat.completions.create(
+                model=self.chatgpt_deployment or self.chatgpt_model,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user",   "content": user_msg},
+                ],
+                max_tokens=256,
+                temperature=0.0,
+                response_format={"type": "json_object"},
+            )
+            raw = (completion.choices[0].message.content or "{}").strip()
+            result = _json.loads(raw)
+            # Normalise the shape so the frontend always gets the same keys
+            return {
+                "verdict": result.get("verdict", "warning"),
+                "issues":  result.get("issues", []),
+            }
+        except Exception as exc:
+            return {"verdict": "warning", "issues": [f"Verification unavailable: {exc}"]}
+
     def extract_followup_questions(self, content: Optional[str]):
         if content is None:
             return content, []
@@ -134,6 +189,11 @@ class ChatReadRetrieveReadApproach(Approach):
             extra_info.followup_questions = followup_questions
         if self.include_token_usage and extra_info.thoughts and response.usage:
             extra_info.thoughts[-1].update_token_usage(response.usage)
+        # PROJECT EASE: two-pass anti-hallucination verification
+        if content and extra_info.data_points.text:
+            verification = await self.verify_response(content, extra_info.data_points.text)
+        else:
+            verification = {"verdict": "unverified", "issues": ["No source documents retrieved."]}
         chat_app_response = {
             "output_text": content,
             "context": {
@@ -142,6 +202,7 @@ class ChatReadRetrieveReadApproach(Approach):
                     key: value for key, value in asdict(extra_info.data_points).items() if value is not None
                 },
                 "followup_questions": extra_info.followup_questions,
+                "verification": verification,
             },
             "session_state": session_state,
         }
@@ -206,6 +267,13 @@ class ChatReadRetrieveReadApproach(Approach):
                     _full_answer = event.response.output_text or ""
                     if _full_answer:
                         asyncio.create_task(run_eval(**extra_info.eval_params, answer=_full_answer))
+                # PROJECT EASE: two-pass anti-hallucination verification
+                _verify_text = event.response.output_text or ""
+                if _verify_text and extra_info.data_points.text:
+                    _verification = await self.verify_response(_verify_text, extra_info.data_points.text)
+                else:
+                    _verification = {"verdict": "unverified", "issues": ["No source documents retrieved."]}
+                yield {"type": "response.verification", "verification": _verification}
 
         if followup_content:
             _, followup_questions = self.extract_followup_questions(followup_content)
