@@ -156,6 +156,17 @@ const OverviewPanel = ({ orgName, docs, team, usage }: {
 
 // ── Documents Panel ────────────────────────────────────────────────────────────
 
+type QueueStatus = "queued" | "uploading" | "done" | "error";
+
+interface QueueItem {
+    id:      string;
+    file:    File;
+    status:  QueueStatus;
+    error?:  string;
+}
+
+const MAX_FILE_MB = 50;
+
 const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
     docs: DocFile[];
     setDocs: React.Dispatch<React.SetStateAction<DocFile[]>>;
@@ -163,85 +174,123 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
     plan: string;
 }) => {
     const fileRef = useRef<HTMLInputElement>(null);
-    const [dragging,   setDragging]   = useState(false);
-    const [uploadError, setUploadError] = useState<string | null>(null);
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [filterCat,  setFilterCat]  = useState<string>("all");
+    const [dragging,      setDragging]      = useState(false);
+    const [uploadError,   setUploadError]   = useState<string | null>(null);
+    const [categories,    setCategories]    = useState<Category[]>([]);
+    const [filterCat,     setFilterCat]     = useState<string>("all");
     const [confirmDelete, setConfirmDelete] = useState<DocFile | null>(null);
-    const [deleting,   setDeleting]   = useState<string | null>(null);
+    const [deleting,      setDeleting]      = useState<string | null>(null);
 
     // Category modal state
-    const [showCatModal,  setShowCatModal]  = useState(false);
-    const [newCatName,    setNewCatName]    = useState("");
-    const [catError,      setCatError]      = useState<string | null>(null);
+    const [showCatModal, setShowCatModal] = useState(false);
+    const [newCatName,   setNewCatName]   = useState("");
+    const [catError,     setCatError]     = useState<string | null>(null);
 
-    // Upload modal state — pick category before upload
-    const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-    const [uploadCatId,  setUploadCatId]  = useState<string>("");
+    // Upload queue state
+    const [queue,       setQueue]       = useState<QueueItem[]>([]);
+    const [queueCatId,  setQueueCatId]  = useState<string>("");
+    const [isUploading, setIsUploading] = useState(false);
 
-    const limit = (PLAN_LIMITS[plan] ?? PLAN_LIMITS.free).docs;
+    const limit    = (PLAN_LIMITS[plan] ?? PLAN_LIMITS.free).docs;
     const usagePct = limit >= 9_999_999 ? 0 : Math.min(100, Math.round((usage.total_docs / limit) * 100));
+
+    const queuedCount  = queue.filter(q => q.status === "queued").length;
+    const doneCount    = queue.filter(q => q.status === "done").length;
+    const errorCount   = queue.filter(q => q.status === "error").length;
+    const remainingSlots = limit >= 9_999_999 ? Infinity : Math.max(0, limit - usage.total_docs);
+    const batchWillExceed = queuedCount > remainingSlots;
 
     useEffect(() => {
         fetch("/categories", { headers: authHeaders() })
             .then(r => r.json())
-            .then(d => setCategories(d.categories ?? []))
+            .then(d => {
+                setCategories(d.categories ?? []);
+                setQueueCatId(d.categories?.[0]?.category_id ?? "");
+            })
             .catch(() => {});
     }, []);
 
-    const openUpload = (files: File[]) => {
+    const addToQueue = (files: File[]) => {
         if (!files.length) return;
-        setPendingFiles(files);
-        setUploadCatId(categories[0]?.category_id ?? "");
+        const items: QueueItem[] = files.map(f => ({
+            id:     `q-${Date.now()}-${Math.random()}`,
+            file:   f,
+            status: "queued",
+        }));
+        setQueue(prev => [...prev, ...items]);
     };
 
-    const confirmUpload = async () => {
-        const files = pendingFiles;
-        setPendingFiles([]);
+    const removeFromQueue = (id: string) => {
+        if (isUploading) return;
+        setQueue(prev => prev.filter(q => q.id !== id));
+    };
 
-        for (const file of files) {
-            const kb = file.size / 1024;
-            const size = kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.round(kb)} KB`;
-            const tmpId = `tmp-${Date.now()}-${Math.random()}`;
-            const placeholder: DocFile = {
-                doc_id: tmpId, name: file.name, size,
-                size_bytes: file.size,
-                uploaded: new Date().toISOString().slice(0, 10),
-                status: "processing",
-                category_id: uploadCatId || null,
-                category_name: categories.find(c => c.category_id === uploadCatId)?.name ?? null,
-            };
-            setDocs(prev => [placeholder, ...prev]);
-            setUploadError(null);
+    const clearQueue = () => {
+        if (isUploading) return;
+        setQueue([]);
+    };
 
-            try {
-                const formData = new FormData();
-                formData.append("file", file);
-                if (uploadCatId) formData.append("category_id", uploadCatId);
+    const uploadOne = async (item: QueueItem, catId: string) => {
+        setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "uploading" } : q));
+        const kb   = item.file.size / 1024;
+        const size = kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.round(kb)} KB`;
+        const tmpId = `tmp-${item.id}`;
+        const placeholder: DocFile = {
+            doc_id: tmpId, name: item.file.name, size,
+            size_bytes: item.file.size,
+            uploaded:   new Date().toISOString().slice(0, 10),
+            status:     "processing",
+            category_id:   catId || null,
+            category_name: categories.find(c => c.category_id === catId)?.name ?? null,
+        };
+        setDocs(prev => [placeholder, ...prev]);
 
-                const res = await fetch("/upload", {
-                    method: "POST",
-                    headers: authHeaders(),
-                    body: formData,
-                });
-                const data = await res.json();
+        try {
+            const formData = new FormData();
+            formData.append("file", item.file);
+            if (catId) formData.append("category_id", catId);
+            const res  = await fetch("/upload", { method: "POST", headers: authHeaders(), body: formData });
+            const data = await res.json();
 
-                if (!res.ok) {
-                    setUploadError(data.error ?? "Upload failed.");
-                    setDocs(prev => prev.filter(d => d.doc_id !== tmpId));
-                } else {
-                    const doc = data.doc as { doc_id: string };
-                    setDocs(prev => prev.map(d =>
-                        d.doc_id === tmpId
-                            ? { ...d, doc_id: doc.doc_id, status: "ready" }
-                            : d
-                    ));
-                }
-            } catch {
-                setUploadError("Network error — could not reach the server.");
+            if (!res.ok) {
                 setDocs(prev => prev.filter(d => d.doc_id !== tmpId));
+                setQueue(prev => prev.map(q => q.id === item.id
+                    ? { ...q, status: "error", error: data.error ?? "Upload failed." }
+                    : q
+                ));
+            } else {
+                const doc = data.doc as { doc_id: string };
+                setDocs(prev => prev.map(d =>
+                    d.doc_id === tmpId ? { ...d, doc_id: doc.doc_id, status: "ready" } : d
+                ));
+                setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "done" } : q));
             }
+        } catch {
+            setDocs(prev => prev.filter(d => d.doc_id !== tmpId));
+            setQueue(prev => prev.map(q => q.id === item.id
+                ? { ...q, status: "error", error: "Network error — could not reach the server." }
+                : q
+            ));
         }
+    };
+
+    const startUpload = async () => {
+        const toUpload = queue.filter(q => q.status === "queued");
+        if (!toUpload.length || isUploading) return;
+        setIsUploading(true);
+        setUploadError(null);
+        for (const item of toUpload) {
+            await uploadOne(item, queueCatId);
+        }
+        setIsUploading(false);
+    };
+
+    const retryFile = async (item: QueueItem) => {
+        if (isUploading) return;
+        setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "queued", error: undefined } : q));
+        setIsUploading(true);
+        await uploadOne({ ...item, status: "queued" }, queueCatId);
+        setIsUploading(false);
     };
 
     const handleDelete = async (doc: DocFile) => {
@@ -306,7 +355,7 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
                     + Category
                 </button>
                 <button className={styles.btnPrimary} onClick={() => fileRef.current?.click()}>
-                    + Upload Document
+                    + Upload Files
                 </button>
                 <input
                     ref={fileRef}
@@ -314,7 +363,7 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
                     multiple
                     accept={ACCEPTED_TYPES}
                     style={{ display: "none" }}
-                    onChange={e => { openUpload(Array.from(e.target.files ?? [])); e.target.value = ""; }}
+                    onChange={e => { addToQueue(Array.from(e.target.files ?? [])); e.target.value = ""; }}
                 />
             </div>
 
@@ -342,13 +391,94 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
                 className={`${styles.dropZone} ${dragging ? styles.dropZoneActive : ""}`}
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
-                onDrop={e => { e.preventDefault(); setDragging(false); openUpload(Array.from(e.dataTransfer.files)); }}
+                onDrop={e => { e.preventDefault(); setDragging(false); addToQueue(Array.from(e.dataTransfer.files)); }}
                 onClick={() => fileRef.current?.click()}
             >
-                <div className={styles.dropIcon}>D</div>
-                <div className={styles.dropTitle}>Drag and drop files here</div>
-                <div className={styles.dropSub}>PDF, Word, PowerPoint, Excel, images, TXT and more</div>
+                <div className={styles.dropIcon}>↑</div>
+                <div className={styles.dropTitle}>Drag & drop files here, or click to browse</div>
+                <div className={styles.dropSub}>PDF · Word · PowerPoint · Excel · Images · TXT &nbsp;·&nbsp; Up to {MAX_FILE_MB} MB per file</div>
             </div>
+
+            {/* Upload Queue */}
+            {queue.length > 0 && (
+                <div className={styles.uploadQueue}>
+                    {/* Queue header */}
+                    <div className={styles.queueHeader}>
+                        <div className={styles.queueSummary}>
+                            <span>{queue.length} file{queue.length !== 1 ? "s" : ""} selected</span>
+                            {doneCount  > 0 && <span className={styles.queueDone}> · {doneCount} done</span>}
+                            {errorCount > 0 && <span className={styles.queueErr}> · {errorCount} failed</span>}
+                        </div>
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                            <select
+                                className={styles.formSelect}
+                                style={{ width: "auto", fontSize: "0.78rem", padding: "0.3rem 0.6rem" }}
+                                value={queueCatId}
+                                onChange={e => setQueueCatId(e.target.value)}
+                                disabled={isUploading}
+                            >
+                                <option value="">No category</option>
+                                {categories.map(c => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
+                            </select>
+                            {!isUploading && (
+                                <button className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem" }} onClick={clearQueue}>
+                                    Clear
+                                </button>
+                            )}
+                            {queuedCount > 0 && (
+                                <button
+                                    className={styles.btnPrimary}
+                                    style={{ fontSize: "0.8rem", padding: "0.35rem 0.9rem" }}
+                                    onClick={startUpload}
+                                    disabled={isUploading || batchWillExceed}
+                                >
+                                    {isUploading ? "Uploading…" : `Upload ${queuedCount} file${queuedCount !== 1 ? "s" : ""}`}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Limit warning */}
+                    {batchWillExceed && (
+                        <div className={styles.queueLimitWarn}>
+                            ⚠ Only {remainingSlots} slot{remainingSlots !== 1 ? "s" : ""} remaining on your plan.
+                            Remove {queuedCount - remainingSlots} file{queuedCount - remainingSlots !== 1 ? "s" : ""} or upgrade your plan.
+                        </div>
+                    )}
+
+                    {/* Per-file rows */}
+                    <div className={styles.queueList}>
+                        {queue.map(item => {
+                            const mb   = item.file.size / (1024 * 1024);
+                            const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(item.file.size / 1024)} KB`;
+                            const oversize = mb > MAX_FILE_MB;
+                            return (
+                                <div key={item.id} className={styles.queueRow}>
+                                    <div className={styles.queueFileName}>
+                                        {oversize && <span className={styles.queueSizeWarn} title={`File exceeds ${MAX_FILE_MB} MB`}>⚠</span>}
+                                        <span className={styles.queueName}>{item.file.name}</span>
+                                        <span className={styles.queueSize}>{size}</span>
+                                    </div>
+                                    <div className={styles.queueRowRight}>
+                                        {item.status === "queued"    && <span className={styles.queueStatusQueued}>Queued</span>}
+                                        {item.status === "uploading" && <span className={styles.queueStatusUploading}>Uploading…</span>}
+                                        {item.status === "done"      && <span className={styles.queueStatusDone}>✓ Done</span>}
+                                        {item.status === "error"     && (
+                                            <span className={styles.queueStatusError} title={item.error}>✗ Failed</span>
+                                        )}
+                                        {item.status === "error" && !isUploading && (
+                                            <button className={styles.queueRetry} onClick={() => retryFile(item)}>Retry</button>
+                                        )}
+                                        {(item.status === "queued" || item.status === "error") && !isUploading && (
+                                            <button className={styles.queueRemove} onClick={() => removeFromQueue(item.id)}>✕</button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Error banner */}
             {uploadError && (
@@ -410,33 +540,6 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
                             ))}
                         </tbody>
                     </table>
-                </div>
-            )}
-
-            {/* Upload category picker modal */}
-            {pendingFiles.length > 0 && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setPendingFiles([]); }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Assign Category</h3>
-                        <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.85rem" }}>
-                            Uploading {pendingFiles.length} file{pendingFiles.length > 1 ? "s" : ""}. Assign a category so employees can find them.
-                        </p>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Category</label>
-                            <select
-                                className={styles.formSelect}
-                                value={uploadCatId}
-                                onChange={e => setUploadCatId(e.target.value)}
-                            >
-                                <option value="">No category</option>
-                                {categories.map(c => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
-                            </select>
-                        </div>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setPendingFiles([])}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={confirmUpload}>Upload</button>
-                        </div>
-                    </div>
                 </div>
             )}
 
