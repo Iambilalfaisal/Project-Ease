@@ -79,7 +79,14 @@ export default defineConfig(() => {
                 "/list_uploaded": backendUrl,
                 "/chat_history": backendUrl,
                 "/admin": backendUrl,
-                "/auth": backendUrl
+                "/auth": backendUrl,
+                "/documents": backendUrl,
+                "/categories": backendUrl,
+                "/team": backendUrl,
+                "/admin/stats": backendUrl,
+                "/admin/orgs": backendUrl,
+                "/org": backendUrl,
+                "/me": backendUrl
             }
         }
     };

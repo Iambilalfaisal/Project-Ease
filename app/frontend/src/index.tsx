@@ -15,12 +15,28 @@ applyTheme(getTheme());
 import Chat from "./pages/chat/Chat";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import OwnerPortal from "./pages/owner/OwnerPortal";
+import EmployeePortal from "./pages/employee/EmployeePortal";
 import SettingsPage from "./pages/settings/SettingsPage";
 import Landing from "./pages/landing/Landing";
 import LayoutWrapper from "./layoutWrapper";
 import i18next from "./i18n/config";
 import { msalConfig, useLogin } from "./authConfig";
 
+// ── Route guards ──────────────────────────────────────────────────────────────
+
+function requireRole(role: string, element: React.ReactElement): React.ReactElement {
+    const raw  = sessionStorage.getItem("pe_user");
+    const user = raw ? JSON.parse(raw) : null;
+    if (!user || user.role !== role) {
+        window.location.hash = user ? "/" : "/";
+        return <></>;
+    }
+    return element;
+}
+
+const AdminGuard    = () => requireRole("platform_admin", <AdminDashboard />);
+const OwnerGuard    = () => requireRole("org_owner",      <OwnerPortal />);
+const EmployeeGuard = () => requireRole("employee",       <EmployeePortal />);
 
 const router = createHashRouter([
     {
@@ -30,11 +46,15 @@ const router = createHashRouter([
     },
     {
         path: "/admin",
-        element: <AdminDashboard />
+        element: <AdminGuard />
     },
     {
         path: "/owner",
-        element: <OwnerPortal />
+        element: <OwnerGuard />
+    },
+    {
+        path: "/employee",
+        element: <EmployeeGuard />
     },
     {
         path: "/settings",

@@ -493,9 +493,11 @@ const SignInForm = () => {
             if (!res.ok) { setError(data.error || "Invalid email or password."); return; }
             sessionStorage.setItem("pe_token", data.token);
             sessionStorage.setItem("pe_user", JSON.stringify(data.user));
-            // Route by role — admin goes to /admin dashboard, everyone else to /app
+            // Route by role
             const role: string = data.user?.role ?? "";
-            window.location.hash = role === "platform_admin" ? "/admin" : role === "org_owner" ? "/owner" : "/app";
+            window.location.hash = role === "platform_admin" ? "/admin"
+                                 : role === "org_owner"      ? "/owner"
+                                 : "/employee";
         } catch {
             setError("Could not reach the server. Is the backend running?");
         } finally {

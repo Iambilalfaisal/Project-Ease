@@ -226,6 +226,17 @@ async def format_as_ndjson(r: AsyncGenerator[dict, None]) -> AsyncGenerator[str,
         yield json.dumps(error_dict(error))
 
 
+def _inject_employee_scope(context: dict) -> None:
+    """PROJECT EASE: If the caller is an employee, restrict search to their permitted category docs."""
+    pe = _get_session()
+    if pe and pe.get("role") == "employee":
+        user_id = pe.get("user_id") or ""
+        org_id  = pe.get("org") or ""
+        cat_ids = get_permitted_categories(user_id)
+        docs    = get_docs_for_categories(org_id, cat_ids) if cat_ids else []
+        context.setdefault("overrides", {})["permitted_sourcefiles"] = [d["filename"] for d in docs]
+
+
 @bp.route("/chat", methods=["POST"])
 @authenticated
 async def chat(auth_claims: dict[str, Any]):
@@ -234,6 +245,7 @@ async def chat(auth_claims: dict[str, Any]):
     request_json = await request.get_json()
     context = request_json.get("context", {})
     context["auth_claims"] = auth_claims
+    _inject_employee_scope(context)  # PROJECT EASE: employee category scoping
     try:
         approach: Approach = cast(Approach, current_app.config[CONFIG_CHAT_APPROACH])
 
@@ -263,6 +275,7 @@ async def chat_stream(auth_claims: dict[str, Any]):
     request_json = await request.get_json()
     context = request_json.get("context", {})
     context["auth_claims"] = auth_claims
+    _inject_employee_scope(context)  # PROJECT EASE: employee category scoping
     try:
         approach: Approach = cast(Approach, current_app.config[CONFIG_CHAT_APPROACH])
 
@@ -294,39 +307,35 @@ def auth_setup():
     return jsonify(auth_helper.get_auth_setup_for_client())
 
 
-# ─── PROJECT EASE: Simple credential auth ────────────────────────────────────
-# DEV-ONLY: Three hardcoded test accounts, one per role.
-# Replace with a proper users DB + bcrypt when multi-tenant auth is built.
+# ─── PROJECT EASE: DB-backed auth ────────────────────────────────────────────
 import secrets as _secrets
+from db import (
+    SYSTEM,
+    init_db, get_user_by_email, check_password as _check_pw,
+    get_org, get_categories, create_category, delete_category,
+    get_documents, create_document, update_document_status, delete_document,
+    get_doc_counts, get_users_for_org, create_user, delete_user,
+    get_permitted_categories, set_permissions, get_docs_for_categories,
+    # admin
+    get_all_orgs, create_org, update_org, delete_org,
+    get_org_details, get_platform_stats,
+)
 
-# email → {password, role, name, org}
-_DEV_USERS: dict[str, dict] = {
-    "admin@projectease.com": {
-        "password": "admin123",
-        "role":     "platform_admin",
-        "name":     "Platform Admin",
-        "org":      None,                 # superuser — sees all orgs
-    },
-    "owner@lawfirm.com": {
-        "password": "owner123",
-        "role":     "org_owner",
-        "name":     "Firm Owner",
-        "org":      "lawfirm",
-    },
-    "employee@lawfirm.com": {
-        "password": "emp123",
-        "role":     "employee",
-        "name":     "Team Member",
-        "org":      "lawfirm",
-    },
-}
+# Initialise DB (creates tables + seeds dev data) at import time
+init_db()
 
-_sessions: dict[str, dict] = {}  # token → user dict  (in-memory, dev only)
+_sessions: dict[str, dict] = {}  # token → session dict  (in-memory; fine for MVP)
+
+
+def _get_session(req=None) -> dict | None:
+    r = req or request
+    token = r.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    return _sessions.get(token)
 
 
 @bp.route("/auth/login", methods=["POST"])
 async def auth_login():
-    """Check email + password and return a session token."""
+    """Check email + password against DB and return a session token."""
     data = await request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
@@ -334,19 +343,26 @@ async def auth_login():
     if not email or not password:
         return jsonify({"error": "Email and password are required"}), 400
 
-    user = _DEV_USERS.get(email)
-    if not user or user["password"] != password:
+    # Platform admin — hardcoded (no org)
+    if email == "admin@projectease.com" and password == "admin123":
+        token = _secrets.token_hex(32)
+        session_data = {"email": email, "name": "Platform Admin", "role": "platform_admin", "org": None}
+        _sessions[token] = session_data
+        return jsonify({"token": token, "user": session_data})
+
+    user = get_user_by_email(email)
+    if not user or not _check_pw(password, user["password_hash"]):
         return jsonify({"error": "Invalid email or password"}), 401
 
     token = _secrets.token_hex(32)
     session_data = {
-        "email": email,
-        "name":  user["name"],
-        "role":  user["role"],
-        "org":   user["org"],
+        "user_id": user["user_id"],
+        "email":   user["email"],
+        "name":    user["name"],
+        "role":    user["role"],
+        "org":     user["org_id"],
     }
     _sessions[token] = session_data
-
     return jsonify({"token": token, "user": session_data})
 
 
@@ -365,6 +381,557 @@ async def auth_logout():
     """Invalidate a session token."""
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     _sessions.pop(token, None)
+    return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Document Upload ───────────────────────────────────────────
+# Accepts any supported file type, tags with org_id, and indexes into AI Search.
+# Supported: PDF (text + scanned), DOCX, PPTX, XLSX, PNG, JPG, TXT, CSV, MD
+@bp.route("/upload", methods=["POST"])
+async def upload_document():
+    """Upload a document and index it into Azure AI Search for the caller's org."""
+    # Auth check
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    session = _sessions.get(token)
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    org_id: str | None = session.get("org")
+    user_id: str | None = session.get("user_id")
+
+    files = await request.files
+    form  = await request.form
+    if "file" not in files:
+        return jsonify({"error": "No file provided"}), 400
+
+    uploaded_file = files["file"]
+    filename: str = uploaded_file.filename or "upload"
+    category_id: str | None = form.get("category_id") or None
+
+    # Allowed extensions
+    ALLOWED_EXTENSIONS = {
+        ".pdf", ".docx", ".pptx", ".xlsx",
+        ".png", ".jpg", ".jpeg", ".tiff", ".bmp",
+        ".txt", ".csv", ".md", ".json", ".html",
+    }
+    import os as _os
+    ext = _os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": f"File type '{ext}' is not supported."}), 400
+
+    try:
+        import tempfile, asyncio as _asyncio
+        from dotenv import load_dotenv as _ld
+        _ld(dotenv_path=_os.path.join(_os.path.dirname(__file__), ".env"), override=True)
+
+        from azure.core.credentials import AzureKeyCredential as _AKC
+        from azure.core.credentials_async import AsyncTokenCredential
+        from azure.identity.aio import AzureDeveloperCliCredential as _AzCred
+        from prepdocslib.servicesetup import (
+            OpenAIHost, setup_search_info, setup_blob_manager,
+            setup_embeddings_service, setup_openai_client,
+            build_file_processors, setup_figure_processor,
+        )
+        from prepdocslib.listfilestrategy import LocalListFileStrategy
+        from prepdocslib.filestrategy import FileStrategy
+        from prepdocslib.strategy import DocumentAction
+
+        # ── credentials ──
+        azure_credential = _AzCred(process_timeout=60)
+        OPENAI_HOST = OpenAIHost(_os.environ["OPENAI_HOST"])
+
+        search_key = _os.getenv("AZURE_SEARCH_KEY")
+        search_cred = _AKC(search_key) if search_key else azure_credential
+
+        search_info = setup_search_info(
+            search_service=_os.environ["AZURE_SEARCH_SERVICE"],
+            index_name=_os.environ["AZURE_SEARCH_INDEX"],
+            azure_credential=azure_credential,
+            search_key=search_key,
+        )
+
+        blob_manager = setup_blob_manager(
+            azure_credential=azure_credential,
+            storage_account=_os.environ["AZURE_STORAGE_ACCOUNT"],
+            storage_container=_os.environ["AZURE_STORAGE_CONTAINER"],
+            storage_resource_group=_os.environ.get("AZURE_STORAGE_RESOURCE_GROUP"),
+            subscription_id=_os.environ.get("AZURE_SUBSCRIPTION_ID"),
+            storage_key=_os.getenv("AZURE_STORAGE_KEY"),
+        )
+
+        openai_client, azure_openai_endpoint = setup_openai_client(
+            openai_host=OPENAI_HOST,
+            azure_credential=azure_credential,
+            azure_openai_service=_os.getenv("AZURE_OPENAI_SERVICE"),
+            azure_openai_api_key=_os.getenv("AZURE_OPENAI_API_KEY_OVERRIDE"),
+        )
+
+        doc_int_service = _os.getenv("AZURE_DOCUMENTINTELLIGENCE_SERVICE")
+        doc_int_key = _os.getenv("AZURE_DOCUMENTINTELLIGENCE_KEY")
+
+        file_processors, figure_processor = build_file_processors(
+            azure_credential=azure_credential,
+            document_intelligence_service=doc_int_service,
+            document_intelligence_key=doc_int_key if doc_int_key and doc_int_key != "YOUR_DOC_INTELLIGENCE_KEY_HERE" else None,
+            use_local_pdf_parser=not doc_int_service,
+            use_local_html_parser=not doc_int_service,
+        ), None
+
+        # Unpack tuple from build_file_processors (returns dict, not tuple)
+        if isinstance(file_processors, tuple):
+            file_processors, figure_processor = file_processors
+
+        embeddings_service = setup_embeddings_service(
+            OPENAI_HOST,
+            openai_client,
+            emb_model_name=_os.environ["AZURE_OPENAI_EMB_MODEL_NAME"],
+            emb_model_dimensions=int(_os.getenv("AZURE_OPENAI_EMB_DIMENSIONS", "1536")),
+            azure_openai_deployment=_os.getenv("AZURE_OPENAI_EMB_DEPLOYMENT"),
+            azure_openai_endpoint=azure_openai_endpoint,
+        )
+
+        # ── save upload to a temp file ──
+        file_bytes = uploaded_file.read()
+        size_bytes = len(file_bytes)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+
+        # Create DB record immediately (status=processing)
+        doc_record = create_document(
+            org_id=org_id or "",
+            filename=filename,
+            actor=user_id or SYSTEM,
+            size_bytes=size_bytes,
+            uploaded_by=user_id,
+            category_id=category_id,
+        )
+
+        # ── Tag document with org_id via category field ──
+        list_strategy = LocalListFileStrategy(path_pattern=tmp_path)
+
+        strategy = FileStrategy(
+            search_info=search_info,
+            list_file_strategy=list_strategy,
+            blob_manager=blob_manager,
+            file_processors=file_processors,
+            document_action=DocumentAction.Add,
+            embeddings=embeddings_service,
+            image_embeddings=None,
+            search_field_name_embedding=_os.getenv("AZURE_SEARCH_FIELD_NAME_EMBEDDING", "embedding"),
+            use_acls=False,
+            category=org_id,       # ← org_id stored as category for tenant filtering
+            figure_processor=figure_processor,
+        )
+
+        # ── Delete the md5 cache so the file always gets processed ──
+        md5_path = tmp_path + ".md5"
+        if _os.path.exists(md5_path):
+            _os.remove(md5_path)
+
+        loop = _asyncio.get_event_loop()
+        await strategy.setup()
+        await strategy.run()
+
+        # cleanup
+        _os.remove(tmp_path)
+        if _os.path.exists(md5_path):
+            _os.remove(md5_path)
+
+        try:
+            await blob_manager.close_clients()
+            await openai_client.close()
+            await azure_credential.close()
+        except Exception:
+            pass
+
+        update_document_status(doc_record["doc_id"], "ready", actor=user_id or SYSTEM)
+        return jsonify({"success": True, "filename": filename, "org": org_id, "doc": doc_record})
+
+    except Exception as e:
+        current_app.logger.exception("Upload failed: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── PROJECT EASE: Documents API ─────────────────────────────────────────────
+
+@bp.route("/me", methods=["GET"])
+async def get_my_profile():
+    """Return current user's profile and their permitted categories."""
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id  = session.get("org") or ""
+    user_id = session.get("user_id") or ""
+    org     = get_org(org_id) or {}
+    cat_ids = set(get_permitted_categories(user_id))
+    all_cats = get_categories(org_id)
+    permitted = [c for c in all_cats if c["category_id"] in cat_ids]
+    return jsonify({
+        "user_id":              user_id,
+        "name":                 session.get("name", ""),
+        "email":                session.get("email", ""),
+        "role":                 session.get("role", ""),
+        "org_name":             org.get("name", ""),
+        "permitted_categories": permitted,
+    })
+
+
+@bp.route("/documents", methods=["GET"])
+async def list_documents():
+    """Return documents for the caller's org. Employees see only permitted-category docs."""
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session.get("org") or ""
+
+    if session.get("role") == "employee":
+        user_id = session.get("user_id") or ""
+        cat_ids = get_permitted_categories(user_id)
+        docs    = get_docs_for_categories(org_id, cat_ids) if cat_ids else []
+        total_bytes = sum((d.get("size_bytes") or 0) for d in docs)
+        return jsonify({"documents": docs, "usage": {"total_docs": len(docs), "total_bytes": total_bytes}})
+
+    docs   = get_documents(org_id)
+    counts = get_doc_counts(org_id)
+    return jsonify({"documents": docs, "usage": counts})
+
+
+@bp.route("/documents/<doc_id>", methods=["DELETE"])
+async def remove_document(doc_id: str):
+    """Delete a document from the index, blob storage, and DB."""
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session.get("org")
+
+    doc = delete_document(doc_id, org_id or "", actor=session.get("user_id") or SYSTEM)
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+
+    # Remove from Azure AI Search index
+    try:
+        import os as _os
+        from dotenv import load_dotenv as _ld
+        _ld(dotenv_path=_os.path.join(_os.path.dirname(__file__), ".env"), override=True)
+
+        from azure.core.credentials import AzureKeyCredential as _AKC
+        from azure.identity.aio import AzureDeveloperCliCredential as _AzCred
+        from prepdocslib.servicesetup import setup_search_info, setup_blob_manager
+        from prepdocslib.listfilestrategy import LocalListFileStrategy
+        from prepdocslib.filestrategy import FileStrategy
+        from prepdocslib.strategy import DocumentAction
+
+        azure_credential = _AzCred(process_timeout=60)
+        search_key = _os.getenv("AZURE_SEARCH_KEY")
+
+        search_info = setup_search_info(
+            search_service=_os.environ["AZURE_SEARCH_SERVICE"],
+            index_name=_os.environ["AZURE_SEARCH_INDEX"],
+            azure_credential=azure_credential,
+            search_key=search_key,
+        )
+        blob_manager = setup_blob_manager(
+            azure_credential=azure_credential,
+            storage_account=_os.environ["AZURE_STORAGE_ACCOUNT"],
+            storage_container=_os.environ["AZURE_STORAGE_CONTAINER"],
+            storage_resource_group=_os.environ.get("AZURE_STORAGE_RESOURCE_GROUP"),
+            subscription_id=_os.environ.get("AZURE_SUBSCRIPTION_ID"),
+            storage_key=_os.getenv("AZURE_STORAGE_KEY"),
+        )
+
+        # FileStrategy with Remove action uses the filename to delete chunks from the index
+        import tempfile, os as _os2
+        # Create a dummy temp file so LocalListFileStrategy can resolve the path
+        with tempfile.NamedTemporaryFile(delete=False, suffix=_os.path.splitext(doc["filename"])[1]) as tmp:
+            tmp_path = tmp.name
+
+        list_strategy = LocalListFileStrategy(path_pattern=tmp_path)
+        # Rename temp file to match original filename for correct index key lookup
+        target_path = _os2.path.join(_os2.path.dirname(tmp_path), doc["filename"])
+        _os2.rename(tmp_path, target_path)
+
+        strategy = FileStrategy(
+            search_info=search_info,
+            list_file_strategy=LocalListFileStrategy(path_pattern=target_path),
+            blob_manager=blob_manager,
+            file_processors={},
+            document_action=DocumentAction.Remove,
+            embeddings=None,
+            image_embeddings=None,
+            use_acls=False,
+            category=org_id,
+        )
+        await strategy.setup()
+        await strategy.run()
+        _os2.remove(target_path)
+
+        try:
+            await blob_manager.close_clients()
+            await azure_credential.close()
+        except Exception:
+            pass
+    except Exception as e:
+        current_app.logger.warning("Index removal failed (doc still deleted from DB): %s", e)
+
+    return jsonify({"success": True, "doc_id": doc_id})
+
+
+# ─── PROJECT EASE: Categories API ────────────────────────────────────────────
+
+@bp.route("/categories", methods=["GET"])
+async def list_categories():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"categories": get_categories(session.get("org") or "")})
+
+
+@bp.route("/categories", methods=["POST"])
+async def add_category():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Category name is required"}), 400
+    try:
+        cat = create_category(session.get("org") or "", name, actor=session.get("user_id") or SYSTEM)
+        return jsonify(cat), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@bp.route("/categories/<category_id>", methods=["DELETE"])
+async def remove_category(category_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_category(category_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Org self-service API ──────────────────────────────────────
+
+@bp.route("/org", methods=["GET"])
+async def get_own_org():
+    """Return the caller's own org record."""
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org = get_org(session.get("org") or "")
+    if not org:
+        return jsonify({"error": "Org not found"}), 404
+    counts = get_doc_counts(session.get("org") or "")
+    members = get_users_for_org(session.get("org") or "")
+    return jsonify({**org, **counts, "user_count": len(members)})
+
+
+@bp.route("/org", methods=["PUT"])
+async def update_own_org():
+    """Let an org owner update their org name / industry."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data  = await request.get_json(silent=True) or {}
+    actor = session.get("user_id") or SYSTEM
+    updated = update_org(
+        session.get("org") or "",
+        actor=actor,
+        name=data.get("name"),
+        industry=data.get("industry"),
+    )
+    return jsonify(updated)
+
+
+@bp.route("/auth/change-password", methods=["POST"])
+async def change_password():
+    """Verify current password then set a new one."""
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    current_pw  = data.get("current_password", "")
+    new_pw      = data.get("new_password", "")
+    if not current_pw or not new_pw:
+        return jsonify({"error": "Both current and new password are required"}), 400
+    if len(new_pw) < 8:
+        return jsonify({"error": "New password must be at least 8 characters"}), 400
+
+    user = get_user_by_email(session.get("email") or "")
+    if not user or not _check_pw(current_pw, user["password_hash"]):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    from db import hash_password as _hash_pw
+    actor = session.get("user_id") or SYSTEM
+    with __import__("db").get_conn() as conn:
+        conn.execute(
+            """UPDATE users SET password_hash=?, must_change_password=0,
+               modified_at=datetime('now'), modified_by=? WHERE user_id=?""",
+            (_hash_pw(new_pw), actor, user["user_id"]),
+        )
+    return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Team API ───────────────────────────────────────────────────
+
+@bp.route("/team", methods=["GET"])
+async def list_team():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    members = get_users_for_org(session.get("org") or "")
+    return jsonify({"members": members})
+
+
+@bp.route("/team", methods=["POST"])
+async def invite_member():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    name  = (data.get("name") or "").strip()
+    role  = data.get("role", "employee")
+    if not email or not name:
+        return jsonify({"error": "Name and email are required"}), 400
+    # Generate a temp password; real flow would email this
+    temp_pw = _secrets.token_urlsafe(8)
+    try:
+        user = create_user(
+            org_id=session.get("org") or "",
+            email=email, name=name, role=role,
+            actor=session.get("user_id") or SYSTEM,
+            password=temp_pw, must_change=True,
+        )
+        return jsonify({**user, "temp_password": temp_pw}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@bp.route("/team/<user_id>", methods=["DELETE"])
+async def remove_member(user_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    # Invalidate any active sessions for this user
+    for tok, s in list(_sessions.items()):
+        if s.get("user_id") == user_id:
+            _sessions.pop(tok, None)
+    delete_user(user_id, actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+@bp.route("/team/<user_id>/permissions", methods=["GET"])
+async def get_member_permissions(user_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"category_ids": get_permitted_categories(user_id)})
+
+
+@bp.route("/team/<user_id>/permissions", methods=["PUT"])
+async def set_member_permissions(user_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    category_ids = data.get("category_ids", [])
+    set_permissions(user_id, category_ids, actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Super Admin API ───────────────────────────────────────────
+
+def _require_platform_admin():
+    session = _get_session()
+    if not session or session.get("role") != "platform_admin":
+        return jsonify({"error": "Forbidden"}), 403
+    return None
+
+
+@bp.route("/admin/stats", methods=["GET"])
+async def admin_stats():
+    err = _require_platform_admin()
+    if err: return err
+    return jsonify(get_platform_stats())
+
+
+@bp.route("/admin/orgs", methods=["GET"])
+async def admin_list_orgs():
+    err = _require_platform_admin()
+    if err: return err
+    return jsonify({"orgs": get_all_orgs()})
+
+
+@bp.route("/admin/orgs", methods=["POST"])
+async def admin_create_org():
+    err = _require_platform_admin()
+    if err: return err
+    data = await request.get_json(silent=True) or {}
+    name     = (data.get("name") or "").strip()
+    plan     = data.get("plan", "free")
+    industry = data.get("industry", "Other")
+    owner_name  = (data.get("owner_name") or "").strip()
+    owner_email = (data.get("owner_email") or "").strip().lower()
+    if not name or not owner_name or not owner_email:
+        return jsonify({"error": "Org name, owner name, and owner email are required"}), 400
+    try:
+        admin_session = _get_session()
+        admin_id = (admin_session or {}).get("email") or SYSTEM
+        org = create_org(name=name, plan=plan, industry=industry, actor=admin_id)
+        temp_pw = _secrets.token_urlsafe(10)
+        owner = create_user(
+            org_id=org["org_id"], email=owner_email,
+            name=owner_name, role="org_owner",
+            actor=admin_id,
+            password=temp_pw, must_change=True,
+        )
+        return jsonify({"org": org, "owner": owner, "temp_password": temp_pw}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@bp.route("/admin/orgs/<org_id>", methods=["GET"])
+async def admin_get_org(org_id: str):
+    err = _require_platform_admin()
+    if err: return err
+    details = get_org_details(org_id)
+    if not details:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(details)
+
+
+@bp.route("/admin/orgs/<org_id>", methods=["PUT"])
+async def admin_update_org(org_id: str):
+    err = _require_platform_admin()
+    if err: return err
+    data = await request.get_json(silent=True) or {}
+    admin_session = _get_session()
+    admin_id = (admin_session or {}).get("email") or SYSTEM
+    updated = update_org(org_id, actor=admin_id, **data)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    # If org was suspended, invalidate all its sessions
+    if data.get("status") == "suspended":
+        for tok, s in list(_sessions.items()):
+            if s.get("org") == org_id:
+                _sessions.pop(tok, None)
+    return jsonify(updated)
+
+
+@bp.route("/admin/orgs/<org_id>", methods=["DELETE"])
+async def admin_delete_org(org_id: str):
+    err = _require_platform_admin()
+    if err: return err
+    # Invalidate all sessions for this org
+    for tok, s in list(_sessions.items()):
+        if s.get("org") == org_id:
+            _sessions.pop(tok, None)
+    admin_session = _get_session()
+    admin_id = (admin_session or {}).get("email") or SYSTEM
+    delete_org(org_id, actor=admin_id)
     return jsonify({"success": True})
 
 

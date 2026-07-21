@@ -307,7 +307,23 @@ class Approach(ABC):
             organization_id = overrides.get("organization_id")
 
         if organization_id:
-            filters.append("organization_id eq '{}'".format(organization_id.replace("'", "''")))
+            # Documents are indexed with org_id stored in the 'category' field.
+            filters.append("category eq '{}'".format(organization_id.replace("'", "''")))
+
+        # PROJECT EASE: employee category scoping — restrict to permitted document filenames.
+        # None  = key not set → no restriction (owner / admin sees all org docs)
+        # []    = key set but empty → employee has no permissions → match nothing
+        # [...]  = filter to only these filenames
+        permitted_sourcefiles = overrides.get("permitted_sourcefiles")
+        if permitted_sourcefiles is not None:
+            if permitted_sourcefiles:
+                escaped = [f.replace("'", "''") for f in permitted_sourcefiles]
+                joined  = ",".join(escaped)
+                filters.append(f"search.in(sourcefile, '{joined}', ',')")
+            else:
+                # Employee exists but has no permitted categories → return nothing
+                filters.append("sourcefile eq '__pe_no_access__'")
+
         return None if not filters else " and ".join(filters)
 
     async def search(
