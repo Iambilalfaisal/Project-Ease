@@ -479,6 +479,14 @@ const SignInForm = () => {
     const [error, setError]       = useState("");
     const [loading, setLoading]   = useState(false);
 
+    // Force-change-password state
+    const [forceChange, setForceChange] = useState(false);
+    const [tempToken,   setTempToken]   = useState("");
+    const [tempPw,      setTempPw]      = useState(""); // the password they just logged in with
+    const [pendingRole, setPendingRole] = useState("");
+    const [newPw,       setNewPw]       = useState("");
+    const [confirmPw,   setConfirmPw]   = useState("");
+
     const submit = async () => {
         setError("");
         if (!email || !password) { setError("Please enter your email and password."); return; }
@@ -491,9 +499,20 @@ const SignInForm = () => {
             });
             const data = await res.json();
             if (!res.ok) { setError(data.error || "Invalid email or password."); return; }
+
+            if (data.user?.must_change_password) {
+                // Store token and temp password; show force-change screen
+                sessionStorage.setItem("pe_token", data.token);
+                sessionStorage.setItem("pe_user", JSON.stringify(data.user));
+                setTempToken(data.token);
+                setTempPw(password);
+                setPendingRole(data.user?.role ?? "");
+                setForceChange(true);
+                return;
+            }
+
             sessionStorage.setItem("pe_token", data.token);
             sessionStorage.setItem("pe_user", JSON.stringify(data.user));
-            // Route by role
             const role: string = data.user?.role ?? "";
             window.location.hash = role === "platform_admin" ? "/admin"
                                  : role === "org_owner"      ? "/owner"
@@ -505,7 +524,78 @@ const SignInForm = () => {
         }
     };
 
-    const onKey = (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === "Enter") submit(); };
+    const submitNewPassword = async () => {
+        setError("");
+        if (!newPw) { setError("Please enter a new password."); return; }
+        if (newPw.length < 8) { setError("Password must be at least 8 characters."); return; }
+        if (newPw !== confirmPw) { setError("Passwords do not match."); return; }
+        setLoading(true);
+        try {
+            const res = await fetch("/auth/change-password", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${tempToken}`,
+                },
+                body: JSON.stringify({ current_password: tempPw, new_password: newPw }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setError(data.error || "Could not change password."); return; }
+            window.location.hash = pendingRole === "platform_admin" ? "/admin"
+                                 : pendingRole === "org_owner"      ? "/owner"
+                                 : "/employee";
+        } catch {
+            setError("Could not reach the server. Please try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const onKey    = (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === "Enter") submit(); };
+    const onKeyNew = (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === "Enter") submitNewPassword(); };
+
+    if (forceChange) {
+        return (
+            <>
+                <h2 className={styles.modalTitle}>Set Your Password</h2>
+                <p className={styles.modalSub}>
+                    Your account was set up with a temporary password. Please choose a new password before continuing.
+                </p>
+
+                {error && <p className={styles.formError}>{error}</p>}
+
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>New Password</label>
+                    <input
+                        className={styles.formInput}
+                        type="password"
+                        placeholder="At least 8 characters"
+                        autoComplete="new-password"
+                        value={newPw}
+                        onChange={e => setNewPw(e.target.value)}
+                        onKeyDown={onKeyNew}
+                    />
+                </div>
+
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Confirm New Password</label>
+                    <input
+                        className={styles.formInput}
+                        type="password"
+                        placeholder="Repeat your new password"
+                        autoComplete="new-password"
+                        value={confirmPw}
+                        onChange={e => setConfirmPw(e.target.value)}
+                        onKeyDown={onKeyNew}
+                    />
+                </div>
+
+                <button className={styles.formSubmit} onClick={submitNewPassword} disabled={loading}>
+                    {loading ? "Saving…" : "Set Password & Continue"}
+                </button>
+            </>
+        );
+    }
 
     return (
         <>

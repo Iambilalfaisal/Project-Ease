@@ -363,7 +363,13 @@ async def auth_login():
         "org":     user["org_id"],
     }
     _sessions[token] = session_data
-    return jsonify({"token": token, "user": session_data})
+    return jsonify({
+        "token": token,
+        "user": {
+            **session_data,
+            "must_change_password": bool(user.get("must_change_password", 0)),
+        },
+    })
 
 
 @bp.route("/auth/me", methods=["GET"])

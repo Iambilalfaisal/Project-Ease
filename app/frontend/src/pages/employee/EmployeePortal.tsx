@@ -311,51 +311,136 @@ const DocumentsPanel = ({ docs }: { docs: DocFile[] }) => {
 
 // ── Profile Panel ─────────────────────────────────────────────────────────────
 
-const ProfilePanel = ({ profile }: { profile: MyProfile }) => (
-    <div className={styles.panelContent}>
-        <div className={styles.profileGrid}>
-            <div className={styles.profileCard}>
-                <div className={styles.profileCardTitle}>Your Account</div>
-                <div className={styles.profileRow}>
-                    <span className={styles.profileLabel}>Full Name</span>
-                    <span className={styles.profileValue}>{profile.name}</span>
-                </div>
-                <div className={styles.profileRow}>
-                    <span className={styles.profileLabel}>Email</span>
-                    <span className={styles.profileValue}>{profile.email}</span>
-                </div>
-                <div className={styles.profileRow}>
-                    <span className={styles.profileLabel}>Role</span>
-                    <span className={styles.profileValue}>Employee</span>
-                </div>
-                <div className={styles.profileRow}>
-                    <span className={styles.profileLabel}>Organization</span>
-                    <span className={styles.profileValue}>{profile.org_name}</span>
-                </div>
-            </div>
+const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
+    const [currentPw,  setCurrentPw]  = useState("");
+    const [newPw,      setNewPw]      = useState("");
+    const [confirmPw,  setConfirmPw]  = useState("");
+    const [pwLoading,  setPwLoading]  = useState(false);
+    const [pwError,    setPwError]    = useState<string | null>(null);
+    const [pwSuccess,  setPwSuccess]  = useState(false);
 
-            <div className={styles.profileCard}>
-                <div className={styles.profileCardTitle}>Document Access</div>
-                {profile.permitted_categories.length === 0 ? (
-                    <p className={styles.noCats}>
-                        No categories assigned yet. Contact your manager to get access.
-                    </p>
-                ) : (
-                    <>
-                        <p style={{ fontSize: "0.82rem", color: "var(--text-3)", marginBottom: "0.85rem" }}>
-                            You can search documents in these categories:
+    const changePassword = async () => {
+        setPwError(null);
+        setPwSuccess(false);
+        if (!currentPw || !newPw || !confirmPw) { setPwError("Please fill in all fields."); return; }
+        if (newPw.length < 8) { setPwError("New password must be at least 8 characters."); return; }
+        if (newPw !== confirmPw) { setPwError("New passwords do not match."); return; }
+        setPwLoading(true);
+        try {
+            const res = await fetch("/auth/change-password", {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ current_password: currentPw, new_password: newPw }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setPwError(data.error ?? "Could not change password."); return; }
+            setPwSuccess(true);
+            setCurrentPw(""); setNewPw(""); setConfirmPw("");
+        } catch {
+            setPwError("Network error. Please try again.");
+        } finally {
+            setPwLoading(false);
+        }
+    };
+
+    return (
+        <div className={styles.panelContent}>
+            <div className={styles.profileGrid}>
+                <div className={styles.profileCard}>
+                    <div className={styles.profileCardTitle}>Your Account</div>
+                    <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>Full Name</span>
+                        <span className={styles.profileValue}>{profile.name}</span>
+                    </div>
+                    <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>Email</span>
+                        <span className={styles.profileValue}>{profile.email}</span>
+                    </div>
+                    <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>Role</span>
+                        <span className={styles.profileValue}>Employee</span>
+                    </div>
+                    <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>Organization</span>
+                        <span className={styles.profileValue}>{profile.org_name}</span>
+                    </div>
+                </div>
+
+                <div className={styles.profileCard}>
+                    <div className={styles.profileCardTitle}>Document Access</div>
+                    {profile.permitted_categories.length === 0 ? (
+                        <p className={styles.noCats}>
+                            No categories assigned yet. Contact your manager to get access.
                         </p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
-                            {profile.permitted_categories.map(c => (
-                                <span key={c.category_id} className={styles.catChip}>{c.name}</span>
-                            ))}
-                        </div>
-                    </>
-                )}
+                    ) : (
+                        <>
+                            <p style={{ fontSize: "0.82rem", color: "var(--text-3)", marginBottom: "0.85rem" }}>
+                                You can search documents in these categories:
+                            </p>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                                {profile.permitted_categories.map(c => (
+                                    <span key={c.category_id} className={styles.catChip}>{c.name}</span>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                <div className={styles.profileCard}>
+                    <div className={styles.profileCardTitle}>Change Password</div>
+
+                    {pwSuccess && (
+                        <div className={styles.pwSuccess}>Password updated successfully.</div>
+                    )}
+                    {pwError && (
+                        <div className={styles.pwError}>{pwError}</div>
+                    )}
+
+                    <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>Current Password</span>
+                        <input
+                            className={styles.pwInput}
+                            type="password"
+                            placeholder="••••••••"
+                            value={currentPw}
+                            onChange={e => setCurrentPw(e.target.value)}
+                            autoComplete="current-password"
+                        />
+                    </div>
+                    <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>New Password</span>
+                        <input
+                            className={styles.pwInput}
+                            type="password"
+                            placeholder="At least 8 characters"
+                            value={newPw}
+                            onChange={e => setNewPw(e.target.value)}
+                            autoComplete="new-password"
+                        />
+                    </div>
+                    <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>Confirm New Password</span>
+                        <input
+                            className={styles.pwInput}
+                            type="password"
+                            placeholder="Repeat new password"
+                            value={confirmPw}
+                            onChange={e => setConfirmPw(e.target.value)}
+                            autoComplete="new-password"
+                        />
+                    </div>
+                    <button
+                        className={styles.pwBtn}
+                        onClick={changePassword}
+                        disabled={pwLoading}
+                    >
+                        {pwLoading ? "Saving…" : "Update Password"}
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
 

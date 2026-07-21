@@ -524,6 +524,58 @@
     font-style: italic;
 }
 
+/* Password change form in Profile panel */
+.pwInput {
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-1);
+    font-size: 0.875rem;
+    font-family: var(--sans);
+    outline: none;
+    margin-top: 0.3rem;
+    transition: border-color 0.15s;
+}
+
+.pwInput:focus { border-color: var(--gold); }
+
+.pwBtn {
+    margin-top: 1rem;
+    padding: 0.55rem 1.25rem;
+    background: var(--gold);
+    border: none;
+    border-radius: var(--radius);
+    color: #000;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.pwBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.pwSuccess {
+    padding: 0.55rem 0.85rem;
+    background: rgba(46, 158, 79, 0.1);
+    border: 1px solid rgba(46, 158, 79, 0.3);
+    border-radius: var(--radius);
+    color: #2e9e4f;
+    font-size: 0.82rem;
+    margin-bottom: 0.85rem;
+}
+
+.pwError {
+    padding: 0.55rem 0.85rem;
+    background: rgba(224, 82, 96, 0.1);
+    border: 1px solid rgba(224, 82, 96, 0.3);
+    border-radius: var(--radius);
+    color: #e05260;
+    font-size: 0.82rem;
+    margin-bottom: 0.85rem;
+}
+
 /* ── Loading spinner ─────────────────────────────────────────────── */
 .loadingWrap {
     display: flex;

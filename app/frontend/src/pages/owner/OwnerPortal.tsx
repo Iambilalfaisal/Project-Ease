@@ -896,6 +896,9 @@ const SettingsPanel = ({
     const [pwSaving,  setPwSaving]  = useState(false);
     const [pwMsg,     setPwMsg]     = useState<{ ok: boolean; text: string } | null>(null);
 
+    // Delete org modal
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+
     const saveOrg = async () => {
         if (!name.trim()) { setOrgMsg({ ok: false, text: "Firm name cannot be empty." }); return; }
         setOrgSaving(true); setOrgMsg(null);
@@ -1018,9 +1021,46 @@ const SettingsPanel = ({
                     <p className={styles.dangerText}>
                         Deleting your organization will permanently remove all documents and team access. This cannot be undone.
                     </p>
-                    <button className={styles.btnDanger}>Delete Organization</button>
+                    <button className={styles.btnDanger} onClick={() => setShowDeleteModal(true)}>
+                        Delete Organization
+                    </button>
                 </div>
             </div>
+
+            {/* Delete org info modal */}
+            {showDeleteModal && (
+                <div
+                    className={styles.overlay}
+                    onClick={e => { if (e.target === e.currentTarget) setShowDeleteModal(false); }}
+                >
+                    <div className={styles.modal}>
+                        <h3 className={styles.modalTitle}>Organization Deletion</h3>
+                        <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.875rem", lineHeight: 1.6 }}>
+                            For security and compliance, organization deletion must be requested through our support team. We'll verify your identity and ensure all data is properly handled before removing your account.
+                        </p>
+                        <p style={{ fontSize: "0.875rem", marginBottom: "1.5rem", color: "var(--text-2)" }}>
+                            Contact us at{" "}
+                            <a
+                                href="mailto:support@projectease.ai"
+                                style={{ color: "var(--gold)", textDecoration: "none" }}
+                            >
+                                support@projectease.ai
+                            </a>{" "}
+                            with the subject line <strong style={{ color: "var(--text-1)" }}>Delete Organization Request</strong> from your registered email address.
+                        </p>
+                        <div className={styles.modalActions}>
+                            <button className={styles.btnGhost} onClick={() => setShowDeleteModal(false)}>Close</button>
+                            <a
+                                href="mailto:support@projectease.ai?subject=Delete%20Organization%20Request"
+                                className={styles.btnDanger}
+                                style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+                            >
+                                Email Support
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
