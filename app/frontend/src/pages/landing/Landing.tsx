@@ -1,7 +1,32 @@
 import { useState, useEffect, KeyboardEvent } from "react";
 import styles from "./Landing.module.css";
 
-type Modal = "signin" | "demo" | null;
+type Modal = "signin" | "signup" | "demo" | null;
+
+const PK_CITIES = [
+    "Lahore", "Karachi", "Islamabad", "Rawalpindi", "Faisalabad",
+    "Multan", "Peshawar", "Quetta", "Sialkot", "Gujranwala",
+    "Hyderabad", "Abbottabad", "Bahawalpur", "Sukkur", "Dera Ghazi Khan",
+];
+
+const PRACTICE_AREAS = [
+    "Corporate & Commercial",
+    "Criminal Defence",
+    "Family & Personal Law",
+    "Civil Litigation",
+    "Property & Real Estate",
+    "Tax & Revenue",
+    "Constitutional & Public Law",
+    "Banking & Finance",
+    "Labour & Employment",
+    "Intellectual Property",
+];
+
+const SIGNUP_PLANS = [
+    { id: "free",       label: "Basic",        price: "Rs 5,000 / month",   users: "Up to 5 users" },
+    { id: "pro",        label: "Professional", price: "Rs 15,000 / month",  users: "Up to 25 users" },
+    { id: "enterprise", label: "Enterprise",   price: "Rs 40,000 / month",  users: "Unlimited users" },
+];
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -460,9 +485,9 @@ const Landing = () => {
                     <div className={styles.modal}>
                         <button className={styles.modalClose} onClick={close}>✕</button>
 
-                        {modal === "signin"
-                            ? <SignInForm />
-                            : <DemoModal sent={demoSent} onSend={() => setDemoSent(true)} onSwitch={() => open("signin")} />
+                        {modal === "signin"  ? <SignInForm onSignUp={() => open("signup")} /> :
+                         modal === "signup"  ? <SignUpForm onSignIn={() => open("signin")} /> :
+                         <DemoModal sent={demoSent} onSend={() => setDemoSent(true)} onSwitch={() => open("signin")} />
                         }
                     </div>
                 </div>
@@ -473,7 +498,7 @@ const Landing = () => {
 
 // ─── Sign In Modal ────────────────────────────────────────────────────────────
 
-const SignInForm = () => {
+const SignInForm = ({ onSignUp }: { onSignUp?: () => void }) => {
     const [email, setEmail]       = useState("");
     const [password, setPassword] = useState("");
     const [error, setError]       = useState("");
@@ -633,6 +658,184 @@ const SignInForm = () => {
             <button className={styles.formSubmit} onClick={submit} disabled={loading}>
                 {loading ? "Signing in…" : "Sign In"}
             </button>
+
+            {onSignUp && (
+                <p className={styles.formSwitch}>
+                    New firm?&nbsp;
+                    <button className={styles.formSwitchBtn} onClick={onSignUp}>
+                        Register your firm
+                    </button>
+                </p>
+            )}
+        </>
+    );
+};
+
+// ─── Sign Up Form ─────────────────────────────────────────────────────────────
+
+const SignUpForm = ({ onSignIn }: { onSignIn: () => void }) => {
+    const [step, setStep]           = useState<1 | 2>(1);
+    const [firmName, setFirmName]   = useState("");
+    const [ownerName, setOwnerName] = useState("");
+    const [email, setEmail]         = useState("");
+    const [password, setPassword]   = useState("");
+    const [confirmPw, setConfirmPw] = useState("");
+    const [city, setCity]           = useState("");
+    const [phone, setPhone]         = useState("");
+    const [plan, setPlan]           = useState("pro");
+    const [loading, setLoading]     = useState(false);
+    const [error, setError]         = useState("");
+    const [done, setDone]           = useState(false);
+
+    const nextStep = () => {
+        setError("");
+        if (!firmName.trim())  { setError("Please enter your firm name."); return; }
+        if (!ownerName.trim()) { setError("Please enter your name."); return; }
+        if (!email.trim())     { setError("Please enter your email."); return; }
+        if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+        if (password !== confirmPw) { setError("Passwords do not match."); return; }
+        setStep(2);
+    };
+
+    const submit = async () => {
+        setError(""); setLoading(true);
+        try {
+            const res = await fetch("/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    firm_name:   firmName.trim(),
+                    owner_name:  ownerName.trim(),
+                    owner_email: email.trim().toLowerCase(),
+                    password,
+                    city,
+                    phone,
+                    plan,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setError(data.error || "Registration failed. Please try again."); return; }
+            setDone(true);
+        } catch {
+            setError("Could not reach the server. Please try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (done) {
+        return (
+            <div className={styles.successMsg}>
+                <div className={styles.successIcon}>✓</div>
+                <h3 className={styles.successTitle}>Registration Submitted</h3>
+                <p className={styles.successSub}>
+                    Thank you! We've received your registration for <strong>{firmName}</strong>.
+                    Our team will verify your payment and activate your account within 24 hours.
+                    Check your email for a confirmation.
+                </p>
+                <button className={styles.formSubmit} onClick={onSignIn} style={{ marginTop: "1rem" }}>
+                    Back to Sign In
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <>
+            <h2 className={styles.modalTitle}>Register Your Firm</h2>
+            <p className={styles.modalSub}>
+                {step === 1 ? "Step 1 of 2 — Your account details" : "Step 2 of 2 — Firm details & plan"}
+            </p>
+
+            {error && <p className={styles.formError}>{error}</p>}
+
+            {step === 1 ? (
+                <>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Firm Name <span className={styles.required}>*</span></label>
+                        <input className={styles.formInput} type="text" placeholder="Khan & Associates"
+                            value={firmName} onChange={e => setFirmName(e.target.value)} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Your Full Name <span className={styles.required}>*</span></label>
+                        <input className={styles.formInput} type="text" placeholder="Hassan Nasir"
+                            value={ownerName} onChange={e => setOwnerName(e.target.value)} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Work Email <span className={styles.required}>*</span></label>
+                        <input className={styles.formInput} type="email" placeholder="partner@lawfirm.com"
+                            value={email} onChange={e => setEmail(e.target.value)} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Password <span className={styles.required}>*</span></label>
+                        <input className={styles.formInput} type="password" placeholder="At least 8 characters"
+                            autoComplete="new-password"
+                            value={password} onChange={e => setPassword(e.target.value)} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Confirm Password <span className={styles.required}>*</span></label>
+                        <input className={styles.formInput} type="password" placeholder="Repeat your password"
+                            autoComplete="new-password"
+                            value={confirmPw} onChange={e => setConfirmPw(e.target.value)} />
+                    </div>
+                    <button className={styles.formSubmit} onClick={nextStep}>
+                        Next &nbsp;→
+                    </button>
+                </>
+            ) : (
+                <>
+                    <div className={styles.formRow}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>City</label>
+                            <select className={styles.formSelect} value={city} onChange={e => setCity(e.target.value)}>
+                                <option value="">Select city</option>
+                                {PK_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Phone (optional)</label>
+                            <input className={styles.formInput} type="tel" placeholder="+92 300 0000000"
+                                value={phone} onChange={e => setPhone(e.target.value)} />
+                        </div>
+                    </div>
+
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Select Plan</label>
+                        <div className={styles.planCards}>
+                            {SIGNUP_PLANS.map(p => (
+                                <div
+                                    key={p.id}
+                                    className={`${styles.planCard} ${plan === p.id ? styles.planCardActive : ""}`}
+                                    onClick={() => setPlan(p.id)}
+                                >
+                                    <div className={styles.planCardName}>{p.label}</div>
+                                    <div className={styles.planCardPrice}>{p.price}</div>
+                                    <div className={styles.planCardUsers}>{p.users}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <p className={styles.planNote}>
+                        You will receive payment instructions by email after registration.
+                        Your account activates once payment is verified.
+                    </p>
+
+                    <div style={{ display: "flex", gap: "0.75rem" }}>
+                        <button className={styles.btnGhost} onClick={() => setStep(1)} style={{ flex: "0 0 auto", padding: "0.75rem 1.25rem" }}>
+                            ← Back
+                        </button>
+                        <button className={styles.formSubmit} onClick={submit} disabled={loading} style={{ flex: 1 }}>
+                            {loading ? "Submitting…" : "Submit Registration"}
+                        </button>
+                    </div>
+                </>
+            )}
+
+            <p className={styles.formSwitch}>
+                Already have an account?&nbsp;
+                <button className={styles.formSwitchBtn} onClick={onSignIn}>Sign in</button>
+            </p>
         </>
     );
 };

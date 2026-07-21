@@ -87,7 +87,8 @@ export default defineConfig(() => {
                 "/admin/orgs": backendUrl,
                 "/org": backendUrl,
                 "/me": backendUrl,
-                "/webhook": backendUrl
+                "/webhook": backendUrl,
+                "/register": backendUrl
             }
         }
     };

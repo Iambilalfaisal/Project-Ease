@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "orgs" | "evals" | "settings";
+type Panel = "overview" | "orgs" | "registrations" | "evals" | "settings";
 
 interface Org {
     org_id:      string;
@@ -48,6 +48,17 @@ interface PlatformStats {
     total_docs:  number;
     total_bytes: number;
     plans:       Record<string, number>;
+}
+
+interface Registration {
+    org_id:      string;
+    name:        string;
+    plan:        string;
+    city:        string | null;
+    phone:       string | null;
+    created_at:  string;
+    owner_name:  string | null;
+    owner_email: string | null;
 }
 
 interface EvalResult {
@@ -647,20 +658,130 @@ const SettingsPanel = () => {
     );
 };
 
+// ── Registrations Panel ───────────────────────────────────────────────────────
+
+const RegistrationsPanel = () => {
+    const [regs,     setRegs]     = useState<Registration[]>([]);
+    const [loading,  setLoading]  = useState(true);
+    const [approving, setApproving] = useState<string | null>(null);
+    const [msg,      setMsg]      = useState<{ ok: boolean; text: string } | null>(null);
+
+    useEffect(() => {
+        fetch("/admin/registrations", { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setRegs(d.registrations ?? []); setLoading(false); })
+            .catch(() => setLoading(false));
+    }, []);
+
+    const approve = async (orgId: string, firmName: string) => {
+        setApproving(orgId); setMsg(null);
+        try {
+            const r = await fetch(`/admin/orgs/${orgId}/approve`, {
+                method: "PATCH",
+                headers: authHeaders(),
+            });
+            if (r.ok) {
+                setRegs(prev => prev.filter(x => x.org_id !== orgId));
+                setMsg({ ok: true, text: `✓ ${firmName} approved and activated. Confirmation email sent.` });
+            } else {
+                const d = await r.json().catch(() => ({}));
+                setMsg({ ok: false, text: (d as any).error ?? "Approval failed." });
+            }
+        } catch {
+            setMsg({ ok: false, text: "Network error." });
+        }
+        setApproving(null);
+        setTimeout(() => setMsg(null), 5000);
+    };
+
+    if (loading) return <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>;
+
+    return (
+        <div>
+            {msg && (
+                <div style={{
+                    background: msg.ok ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+                    border: `1px solid ${msg.ok ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)"}`,
+                    color: msg.ok ? "var(--success)" : "#F87171",
+                    borderRadius: 8, padding: "0.75rem 1rem", marginBottom: "1.5rem", fontSize: "0.87rem",
+                }}>
+                    {msg.text}
+                </div>
+            )}
+
+            {regs.length === 0 ? (
+                <div style={{ padding: "4rem", textAlign: "center", color: "var(--text-3)" }}>
+                    <div style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>🎉</div>
+                    No pending registrations. All firms are either active or not yet registered.
+                </div>
+            ) : (
+                <>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-3)", marginBottom: "1.5rem" }}>
+                        {regs.length} firm{regs.length !== 1 ? "s" : ""} awaiting payment verification and activation.
+                    </p>
+                    <div className={styles.tableWrap}>
+                        <table className={styles.table}>
+                            <thead>
+                                <tr>
+                                    <th>Firm</th>
+                                    <th>Owner</th>
+                                    <th>Email</th>
+                                    <th>Plan</th>
+                                    <th>City</th>
+                                    <th>Registered</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {regs.map(r => (
+                                    <tr key={r.org_id}>
+                                        <td style={{ fontWeight: 600, color: "var(--text-1)" }}>{r.name}</td>
+                                        <td>{r.owner_name ?? "—"}</td>
+                                        <td>
+                                            <a href={`mailto:${r.owner_email}`} style={{ color: "var(--gold)", textDecoration: "none" }}>
+                                                {r.owner_email ?? "—"}
+                                            </a>
+                                        </td>
+                                        <td><PlanBadge plan={r.plan} /></td>
+                                        <td className={styles.muted}>{r.city ?? "—"}</td>
+                                        <td className={styles.muted}>{fmtDate(r.created_at)}</td>
+                                        <td>
+                                            <button
+                                                className={styles.btnPrimary}
+                                                style={{ padding: "0.4rem 0.9rem", fontSize: "0.78rem" }}
+                                                disabled={approving === r.org_id}
+                                                onClick={() => approve(r.org_id, r.name)}
+                                            >
+                                                {approving === r.org_id ? "Approving…" : "Approve"}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { id: Panel; icon: string; label: string }[] = [
-    { id: "overview",  icon: "📊", label: "Dashboard"      },
-    { id: "orgs",      icon: "🏢", label: "Organizations"  },
-    { id: "evals",     icon: "✅", label: "Eval Quality"   },
-    { id: "settings",  icon: "⚙️", label: "Settings"       },
+    { id: "overview",       icon: "📊", label: "Dashboard"      },
+    { id: "orgs",           icon: "🏢", label: "Organizations"  },
+    { id: "registrations",  icon: "📝", label: "Registrations"  },
+    { id: "evals",          icon: "✅", label: "Eval Quality"   },
+    { id: "settings",       icon: "⚙️", label: "Settings"       },
 ];
 
 const PANEL_TITLES: Record<Panel, string> = {
-    overview: "Platform Dashboard",
-    orgs:     "Organizations",
-    evals:    "Eval Quality",
-    settings: "Platform Settings",
+    overview:      "Platform Dashboard",
+    orgs:          "Organizations",
+    registrations: "Pending Registrations",
+    evals:         "Eval Quality",
+    settings:      "Platform Settings",
 };
 
 const PANEL_SUBS: Record<Panel, string> = {
@@ -744,10 +865,11 @@ const AdminDashboard = () => {
                         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
                     ) : (
                         <>
-                            {panel === "overview" && <OverviewPanel stats={stats} orgs={orgs} />}
-                            {panel === "orgs"     && <OrgsPanel orgs={orgs} setOrgs={setOrgs} />}
-                            {panel === "evals"    && <EvalsPanel />}
-                            {panel === "settings" && <SettingsPanel />}
+                            {panel === "overview"       && <OverviewPanel stats={stats} orgs={orgs} />}
+                            {panel === "orgs"           && <OrgsPanel orgs={orgs} setOrgs={setOrgs} />}
+                            {panel === "registrations"  && <RegistrationsPanel />}
+                            {panel === "evals"          && <EvalsPanel />}
+                            {panel === "settings"       && <SettingsPanel />}
                         </>
                     )}
                 </div>

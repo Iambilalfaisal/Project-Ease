@@ -9,6 +9,7 @@ Audit columns on every table:
   modified_by — user_id of last modifier, or 'system'
 """
 
+import re
 import sqlite3
 import secrets
 import hashlib
@@ -168,6 +169,23 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE users ADD COLUMN whatsapp_number TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
+
+    # Self-service registration columns — added in Task #41
+    _reg_cols = [
+        ("slug",           "TEXT"),
+        ("phone",          "TEXT"),
+        ("city",           "TEXT"),
+        ("practice_areas", "TEXT"),  # comma-separated
+        ("bar_council_no", "TEXT"),
+        ("website",        "TEXT"),
+        ("team_size",      "TEXT"),
+        ("trial_ends_at",  "TEXT"),
+    ]
+    for col_name, col_type in _reg_cols:
+        try:
+            conn.execute(f"ALTER TABLE organizations ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 def init_db():
@@ -580,6 +598,125 @@ def get_org_details(org_id: str) -> Optional[dict]:
     org["users"]     = [dict(u) for u in users]
     org["documents"] = [dict(d) for d in docs]
     return org
+
+
+# ── Self-service Registration ─────────────────────────────────────────────────
+
+def _slugify(name: str) -> str:
+    """Convert firm name to URL-safe slug. 'Khan & Associates' → 'khan-associates'"""
+    slug = name.lower().strip()
+    slug = re.sub(r"[&+]", "and", slug)
+    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+    slug = re.sub(r"[\s-]+", "-", slug)
+    slug = slug.strip("-")
+    if not slug:
+        slug = "firm-" + secrets.token_hex(3)
+    return slug
+
+
+def _unique_slug(conn: sqlite3.Connection, base_slug: str) -> str:
+    """Append -2, -3, etc. until the slug is unique as an org_id."""
+    slug = base_slug
+    n = 2
+    while conn.execute("SELECT 1 FROM organizations WHERE org_id=?", (slug,)).fetchone():
+        slug = f"{base_slug}-{n}"
+        n += 1
+    return slug
+
+
+def register_org(
+    firm_name: str,
+    owner_name: str,
+    owner_email: str,
+    password: str,
+    city: str = "",
+    phone: str = "",
+    plan: str = "pro",
+) -> dict:
+    """Public self-service registration. Creates org (pending_payment) + owner user."""
+    now    = _now()
+    limits = PLAN_DEFAULTS.get(plan, PLAN_DEFAULTS["pro"])
+    with get_conn() as conn:
+        base_slug = _slugify(firm_name)
+        org_id    = _unique_slug(conn, base_slug)
+        conn.execute(
+            """INSERT INTO organizations
+               (org_id, name, plan, status, max_docs, max_users, industry,
+                slug, phone, city,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?, ?, ?, 'pending_payment', ?, ?, 'Law Practice',
+                       ?, ?, ?,
+                       ?, 'system', ?, 'system')""",
+            (org_id, firm_name, plan,
+             limits["max_docs"], limits["max_users"],
+             org_id, phone.strip(), city.strip(),
+             now, now),
+        )
+        user_id = secrets.token_hex(10)
+        conn.execute(
+            """INSERT INTO users
+               (user_id, org_id, email, name, role, password_hash,
+                must_change_password, created_at, created_by, modified_at, modified_by)
+               VALUES (?, ?, ?, ?, 'org_owner', ?, 0, ?, 'system', ?, 'system')""",
+            (user_id, org_id, owner_email.lower().strip(), owner_name,
+             hash_password(password), now, now),
+        )
+    return {
+        "org_id":      org_id,
+        "name":        firm_name,
+        "plan":        plan,
+        "status":      "pending_payment",
+        "owner_email": owner_email,
+    }
+
+
+def get_pending_registrations() -> list[dict]:
+    """Return all orgs awaiting payment/manual verification."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT o.*,
+                      u.name  AS owner_name,
+                      u.email AS owner_email,
+                      u.user_id AS owner_id
+               FROM organizations o
+               LEFT JOIN users u
+                   ON u.org_id = o.org_id
+                   AND u.role = 'org_owner'
+                   AND u.is_active = 1
+               WHERE o.is_active = 1 AND o.status = 'pending_payment'
+               ORDER BY o.created_at DESC"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def approve_registration(org_id: str, actor: str = SYSTEM) -> Optional[dict]:
+    """Flip org status from pending_payment → active."""
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE organizations
+               SET status='active', modified_at=?, modified_by=?
+               WHERE org_id=? AND status='pending_payment'""",
+            (now, actor, org_id),
+        )
+    return get_org(org_id)
+
+
+def update_org_profile(org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
+    """Update optional profile fields on the org row."""
+    allowed = {"phone", "city", "practice_areas", "bar_council_no", "website", "team_size"}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return get_org(org_id)
+    updates["modified_at"] = _now()
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE organizations SET {set_clause} WHERE org_id=?",
+            (*updates.values(), org_id),
+        )
+    return get_org(org_id)
 
 
 def get_platform_stats() -> dict:

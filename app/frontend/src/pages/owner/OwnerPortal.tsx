@@ -936,6 +936,21 @@ const SubscriptionPanel = ({
 
 const INDUSTRIES = ["Law Practice", "CA / Accounting", "Logistics", "Financial Services", "Healthcare", "Real Estate", "Other"];
 
+const PK_CITIES = [
+    "Lahore", "Karachi", "Islamabad", "Rawalpindi", "Faisalabad",
+    "Multan", "Peshawar", "Quetta", "Sialkot", "Gujranwala",
+    "Hyderabad", "Abbottabad", "Bahawalpur", "Sukkur", "Dera Ghazi Khan",
+];
+
+const PRACTICE_AREAS = [
+    "Corporate & Commercial", "Criminal Defence", "Family & Personal Law",
+    "Civil Litigation", "Property & Real Estate", "Tax & Revenue",
+    "Constitutional & Public Law", "Banking & Finance", "Labour & Employment",
+    "Intellectual Property",
+];
+
+const TEAM_SIZES = ["1–5", "6–15", "16–30", "31–60", "60+"];
+
 const SettingsPanel = ({
     orgName,
     orgIndustry,
@@ -953,6 +968,67 @@ const SettingsPanel = ({
     const [industry,  setIndustry]  = useState(orgIndustry);
     const [orgSaving, setOrgSaving] = useState(false);
     const [orgMsg,    setOrgMsg]    = useState<{ ok: boolean; text: string } | null>(null);
+
+    // Optional profile fields (completion section)
+    const [phone,        setPhone]        = useState("");
+    const [city,         setCity]         = useState("");
+    const [practiceAreas, setPracticeAreas] = useState<string[]>([]);
+    const [barCouncilNo, setBarCouncilNo] = useState("");
+    const [website,      setWebsite]      = useState("");
+    const [teamSize,     setTeamSize]     = useState("");
+    const [profSaving,   setProfSaving]   = useState(false);
+    const [profMsg,      setProfMsg]      = useState<{ ok: boolean; text: string } | null>(null);
+
+    // Load existing optional profile on mount
+    useEffect(() => {
+        fetch("/org", { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => {
+                if (d.phone)          setPhone(d.phone);
+                if (d.city)           setCity(d.city);
+                if (d.bar_council_no) setBarCouncilNo(d.bar_council_no);
+                if (d.website)        setWebsite(d.website);
+                if (d.team_size)      setTeamSize(d.team_size);
+                if (d.practice_areas) setPracticeAreas(d.practice_areas.split(",").map((s: string) => s.trim()).filter(Boolean));
+            })
+            .catch(() => {});
+    }, []);
+
+    const togglePracticeArea = (area: string) => {
+        setPracticeAreas(prev =>
+            prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]
+        );
+    };
+
+    const saveProfile = async () => {
+        setProfSaving(true); setProfMsg(null);
+        try {
+            const r = await fetch("/org/profile", {
+                method: "PUT",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    phone,
+                    city,
+                    practice_areas: practiceAreas.join(","),
+                    bar_council_no: barCouncilNo,
+                    website,
+                    team_size:      teamSize,
+                }),
+            });
+            if (r.ok) {
+                setProfMsg({ ok: true, text: "Firm profile saved." });
+            } else {
+                const d = await r.json().catch(() => ({}));
+                setProfMsg({ ok: false, text: (d as any).error ?? "Failed to save." });
+            }
+        } catch { setProfMsg({ ok: false, text: "Network error." }); }
+        setProfSaving(false);
+        setTimeout(() => setProfMsg(null), 3500);
+    };
+
+    // Profile completion % (4 required at signup = 40%, 6 optional = 10% each)
+    const optionalFilled = [phone, city, practiceAreas.length > 0, barCouncilNo, website, teamSize].filter(Boolean).length;
+    const completionPct  = Math.round(40 + optionalFilled * 10);
 
     // Password state
     const [currentPw, setCurrentPw] = useState("");
@@ -1031,6 +1107,80 @@ const SettingsPanel = ({
                     </div>
                     <button className={styles.btnPrimary} onClick={saveOrg} disabled={orgSaving}>
                         {orgSaving ? "Saving…" : "Save Changes"}
+                    </button>
+                </div>
+
+                {/* ── Profile Completion ── */}
+                <div className={styles.settingsCard}>
+                    <div className={styles.settingsCardTitle}>Firm Profile Completion</div>
+                    <div className={styles.completionBarWrap}>
+                        <div className={styles.completionBarFill} style={{ width: `${completionPct}%` }} />
+                    </div>
+                    <div className={styles.completionLabel}>
+                        {completionPct}% complete — {optionalFilled}/6 optional fields filled
+                    </div>
+
+                    {profMsg && (
+                        <div className={`${styles.errorBanner}${profMsg.ok ? " " + styles.successBanner : ""}`}>
+                            {profMsg.text}
+                            <button className={styles.errorDismiss} onClick={() => setProfMsg(null)}>✕</button>
+                        </div>
+                    )}
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginTop: "1rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Phone</label>
+                            <input className={styles.formInput} type="tel" placeholder="+92 300 0000000"
+                                value={phone} onChange={e => setPhone(e.target.value)} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>City</label>
+                            <select className={styles.formSelect} value={city} onChange={e => setCity(e.target.value)}>
+                                <option value="">Select city</option>
+                                {PK_CITIES.map(c => <option key={c}>{c}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Bar Council No.</label>
+                            <input className={styles.formInput} type="text" placeholder="e.g. LHC-2019-1234"
+                                value={barCouncilNo} onChange={e => setBarCouncilNo(e.target.value)} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Team Size</label>
+                            <select className={styles.formSelect} value={teamSize} onChange={e => setTeamSize(e.target.value)}>
+                                <option value="">Select size</option>
+                                {TEAM_SIZES.map(s => <option key={s}>{s}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Website (optional)</label>
+                        <input className={styles.formInput} type="url" placeholder="https://yourfirm.com"
+                            value={website} onChange={e => setWebsite(e.target.value)} />
+                    </div>
+
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Practice Areas</label>
+                        <div className={styles.practiceAreaGrid}>
+                            {PRACTICE_AREAS.map(area => (
+                                <label key={area} className={styles.practiceAreaChip}>
+                                    <input
+                                        type="checkbox"
+                                        checked={practiceAreas.includes(area)}
+                                        onChange={() => togglePracticeArea(area)}
+                                        style={{ display: "none" }}
+                                    />
+                                    <span className={practiceAreas.includes(area) ? styles.chipActive : styles.chipInactive}>
+                                        {area}
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    <button className={styles.btnPrimary} onClick={saveProfile} disabled={profSaving}>
+                        {profSaving ? "Saving…" : "Save Firm Profile"}
                     </button>
                 </div>
 

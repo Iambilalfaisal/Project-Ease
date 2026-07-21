@@ -320,6 +320,8 @@ from db import (
     # admin
     get_all_orgs, create_org, update_org, delete_org,
     get_org_details, get_platform_stats,
+    # registration — Task #41
+    register_org, get_pending_registrations, approve_registration, update_org_profile,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -750,6 +752,116 @@ async def update_own_org():
         industry=data.get("industry"),
     )
     return jsonify(updated)
+
+
+# ─── PROJECT EASE: Self-service Registration ─────────────────────────────────
+
+@bp.route("/register", methods=["POST"])
+async def public_register():
+    """Public endpoint — no auth. Creates org (pending_payment) + owner user."""
+    import asyncio as _asyncio
+    from email_helper import send_registration_pending as _send_pending
+
+    data        = await request.get_json(silent=True) or {}
+    firm_name   = (data.get("firm_name")   or "").strip()
+    owner_name  = (data.get("owner_name")  or "").strip()
+    owner_email = (data.get("owner_email") or "").strip().lower()
+    password    = data.get("password", "")
+    city        = (data.get("city")  or "").strip()
+    phone       = (data.get("phone") or "").strip()
+    plan        = data.get("plan", "pro")
+
+    if not firm_name or not owner_name or not owner_email or not password:
+        return jsonify({"error": "Firm name, your name, email, and password are required."}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+    if get_user_by_email(owner_email):
+        return jsonify({"error": "An account with this email already exists."}), 409
+
+    try:
+        org = register_org(
+            firm_name=firm_name,
+            owner_name=owner_name,
+            owner_email=owner_email,
+            password=password,
+            city=city,
+            phone=phone,
+            plan=plan,
+        )
+    except Exception as exc:
+        current_app.logger.exception("Registration error: %s", exc)
+        return jsonify({"error": "Registration failed. Please try again."}), 500
+
+    # Fire-and-forget confirmation email
+    try:
+        await _asyncio.to_thread(_send_pending, owner_email, firm_name)
+    except Exception:
+        pass  # email failure must not block signup
+
+    return jsonify({"success": True, "org_id": org["org_id"]}), 201
+
+
+@bp.route("/admin/registrations", methods=["GET"])
+async def admin_get_registrations():
+    """List all orgs with pending_payment status."""
+    err = _require_platform_admin()
+    if err:
+        return err
+    return jsonify({"registrations": get_pending_registrations()})
+
+
+@bp.route("/admin/orgs/<org_id>/approve", methods=["PATCH"])
+async def admin_approve_org(org_id: str):
+    """Approve a pending registration → active + send email."""
+    import asyncio as _asyncio
+    from email_helper import send_registration_approved as _send_approved
+
+    err = _require_platform_admin()
+    if err:
+        return err
+    admin_session = _get_session()
+    actor = (admin_session or {}).get("email") or SYSTEM
+
+    org = approve_registration(org_id, actor=actor)
+    if not org:
+        return jsonify({"error": "Organization not found or already active."}), 404
+
+    # Send approval email to org owner
+    details = get_org_details(org_id)
+    if details and details.get("users"):
+        owner = next(
+            (u for u in details["users"] if u.get("role") == "org_owner"), None
+        )
+        if owner:
+            try:
+                await _asyncio.to_thread(
+                    _send_approved, owner["email"], org["name"]
+                )
+            except Exception:
+                pass
+
+    return jsonify({"success": True, "org": org})
+
+
+@bp.route("/org/profile", methods=["PUT"])
+async def update_org_profile_route():
+    """Owner-only: update optional profile fields (phone, city, practice_areas, etc.)."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data  = await request.get_json(silent=True) or {}
+    actor = session.get("user_id") or SYSTEM
+    updated = update_org_profile(
+        session.get("org") or "",
+        actor=actor,
+        phone=data.get("phone"),
+        city=data.get("city"),
+        practice_areas=data.get("practice_areas"),
+        bar_council_no=data.get("bar_council_no"),
+        website=data.get("website"),
+        team_size=data.get("team_size"),
+    )
+    return jsonify(updated or {})
 
 
 @bp.route("/auth/change-password", methods=["POST"])
