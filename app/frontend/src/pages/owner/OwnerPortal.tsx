@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "documents" | "team" | "subscription" | "settings";
+type Panel = "overview" | "documents" | "clients" | "matters" | "team" | "subscription" | "settings";
 
 interface Category {
     category_id: string;
@@ -36,6 +36,55 @@ interface Usage {
     total_bytes: number;
 }
 
+interface Client {
+    client_id:   string;
+    name:        string;
+    client_type: "Individual" | "Corporate";
+    email?:      string;
+    phone?:      string;
+    address?:    string;
+    cnic_ntn?:   string;
+    notes?:      string;
+    created_at:  string;
+    matter_count?: number;
+}
+
+interface MatterTeam {
+    team_id: string;
+    name:    string;
+    members: { user_id: string; name: string }[];
+}
+
+interface MatterDoc {
+    doc_id:        string;
+    filename:      string;
+    size_bytes:    number;
+    status:        string;
+    category_id:   string | null;
+    category_name: string | null;
+    uploaded_at:   string;
+    matter_id?:    string | null;
+}
+
+interface Matter {
+    matter_id:       string;
+    client_id:       string;
+    client_name:     string;
+    title:           string;
+    matter_type:     string;
+    status:          "Active" | "Pending" | "Closed" | "Settled" | "Withdrawn";
+    court_name?:     string;
+    case_number?:    string;
+    filing_date?:    string;
+    opposing_party?: string;
+    team_id?:        string;
+    team_name?:      string;
+    notes?:          string;
+    created_at:      string;
+    doc_count?:      number;
+    documents?:      MatterDoc[];
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function authHeaders(): Record<string, string> {
@@ -61,16 +110,20 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const NAV: { id: Panel; icon: string; label: string }[] = [
-    { id: "overview",      icon: "H", label: "Overview"      },
-    { id: "documents",     icon: "D", label: "Documents"     },
-    { id: "team",          icon: "T", label: "Team"          },
-    { id: "subscription",  icon: "P", label: "Subscription"  },
-    { id: "settings",      icon: "S", label: "Settings"      },
+    { id: "overview",     icon: "H", label: "Overview"     },
+    { id: "documents",    icon: "D", label: "Documents"    },
+    { id: "clients",      icon: "C", label: "Clients"      },
+    { id: "matters",      icon: "M", label: "Matters"      },
+    { id: "team",         icon: "T", label: "Team"         },
+    { id: "subscription", icon: "P", label: "Subscription" },
+    { id: "settings",     icon: "S", label: "Settings"     },
 ];
 
 const PANEL_TITLES: Record<Panel, string> = {
     overview:     "Workspace Overview",
     documents:    "Document Library",
+    clients:      "Client Management",
+    matters:      "Matter Management",
     team:         "Team Members",
     subscription: "Plan & Subscription",
     settings:     "Organization Settings",
@@ -79,10 +132,55 @@ const PANEL_TITLES: Record<Panel, string> = {
 const PANEL_SUBS: Record<Panel, string> = {
     overview:     "Your firm's activity at a glance",
     documents:    "Upload and manage your firm's documents",
+    clients:      "Manage your firm's clients and their details",
+    matters:      "Track cases, matters, and linked documents",
     team:         "Manage who has access to your workspace",
     subscription: "Your current plan, usage, and billing",
     settings:     "Firm profile and account preferences",
 };
+
+// ── Matter / Court constants ──────────────────────────────────────────────────
+
+const MATTER_TYPES = [
+    "Criminal Defence", "Civil Litigation", "Family & Personal Law",
+    "Property & Real Estate", "Corporate & Commercial", "Tax & Revenue",
+    "Constitutional & Public Law", "Banking & Finance",
+    "Labour & Employment", "Intellectual Property",
+];
+
+const MATTER_STATUSES = ["Active", "Pending", "Closed", "Settled", "Withdrawn"] as const;
+
+const DEFAULT_COURTS = [
+    "Supreme Court of Pakistan", "Federal Shariat Court",
+    "Lahore High Court", "Sindh High Court", "Islamabad High Court",
+    "Peshawar High Court", "Balochistan High Court",
+    "Gilgit-Baltistan Chief Court", "Azad Kashmir High Court",
+    "District & Sessions Court", "Civil Judge Court", "Magistrate Court",
+    "Banking Court", "Labour Court", "National Accountability Court",
+    "Customs Appellate Tribunal", "Income Tax Appellate Tribunal",
+    "Anti-Corruption Establishment Court", "Service Tribunal", "Family Court",
+];
+
+const STATUS_BADGE: Record<string, string> = {
+    Active:    "badgeGreen",
+    Pending:   "badgeAmber",
+    Closed:    "badgeGray",
+    Settled:   "badgeBlue",
+    Withdrawn: "badgeRed",
+};
+
+function groupDocsByCategory(docs: MatterDoc[]): [string, MatterDoc[]][] {
+    const groups: Record<string, MatterDoc[]> = {};
+    docs.forEach(d => {
+        const key = d.category_name ?? "— Uncategorized";
+        (groups[key] = groups[key] || []).push(d);
+    });
+    return Object.entries(groups).sort(([a], [b]) => {
+        if (a === "— Uncategorized") return 1;
+        if (b === "— Uncategorized") return -1;
+        return a.localeCompare(b);
+    });
+}
 
 const ACCEPTED_TYPES = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.md,.png,.jpg,.jpeg,.tiff,.bmp";
 
@@ -90,6 +188,670 @@ const PLAN_LIMITS: Record<string, { docs: number; users: number }> = {
     free:       { docs: 20,        users: 5         },
     pro:        { docs: 500,       users: 25        },
     enterprise: { docs: 9_999_999, users: 9_999_999 },
+};
+
+// ── Clients Panel ─────────────────────────────────────────────────────────────
+
+const BLANK_CLIENT = {
+    name: "", client_type: "Individual" as "Individual" | "Corporate",
+    email: "", phone: "", address: "", cnic_ntn: "", notes: "",
+};
+
+const ClientsPanel = () => {
+    const [clients,  setClients]  = useState<Client[]>([]);
+    const [loading,  setLoading]  = useState(true);
+    const [detail,   setDetail]   = useState<(Client & { matters: Matter[] }) | null>(null);
+    const [showModal, setShowModal] = useState(false);
+    const [editMode,  setEditMode] = useState(false);
+    const [form,     setForm]     = useState({ ...BLANK_CLIENT });
+    const [saving,   setSaving]   = useState(false);
+    const [formErr,  setFormErr]  = useState<string | null>(null);
+    const [removing, setRemoving] = useState<string | null>(null);
+
+    const loadClients = () => {
+        fetch("/clients", { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setClients(d.clients ?? []); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+    useEffect(() => { loadClients(); }, []);
+
+    const openDetail = (c: Client) => {
+        fetch(`/clients/${c.client_id}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setDetail(d))
+            .catch(() => {});
+    };
+
+    const openAdd = () => {
+        setForm({ ...BLANK_CLIENT }); setEditMode(false); setFormErr(null); setShowModal(true);
+    };
+
+    const openEdit = (c: Client) => {
+        setForm({
+            name: c.name, client_type: c.client_type,
+            email: c.email ?? "", phone: c.phone ?? "",
+            address: c.address ?? "", cnic_ntn: c.cnic_ntn ?? "", notes: c.notes ?? "",
+        });
+        setEditMode(true); setFormErr(null); setShowModal(true);
+    };
+
+    const saveClient = async () => {
+        if (!form.name.trim()) { setFormErr("Client name is required."); return; }
+        setSaving(true); setFormErr(null);
+        try {
+            const url    = editMode && detail ? `/clients/${detail.client_id}` : "/clients";
+            const method = editMode ? "PATCH" : "POST";
+            const res    = await fetch(url, {
+                method,
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify(form),
+            });
+            const data = await res.json();
+            if (!res.ok) { setFormErr(data.error ?? "Failed."); setSaving(false); return; }
+            setShowModal(false);
+            loadClients();
+            if (editMode && detail) {
+                setDetail({ ...detail, ...data });
+            }
+        } catch { setFormErr("Network error."); }
+        setSaving(false);
+    };
+
+    const removeClient = async (c: Client) => {
+        if (!confirm(`Remove client "${c.name}" and all their matters?`)) return;
+        setRemoving(c.client_id);
+        await fetch(`/clients/${c.client_id}`, { method: "DELETE", headers: authHeaders() });
+        setClients(prev => prev.filter(x => x.client_id !== c.client_id));
+        if (detail?.client_id === c.client_id) setDetail(null);
+        setRemoving(null);
+    };
+
+    const ClientModal = () => (
+        <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
+            <div className={styles.modal} style={{ maxWidth: 480 }}>
+                <h3 className={styles.modalTitle}>{editMode ? "Edit Client" : "Add Client"}</h3>
+                {formErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {formErr}</div>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                        <label className={styles.formLabel}>Name *</label>
+                        <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Client or firm name" autoFocus />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Type</label>
+                        <select className={styles.formSelect} value={form.client_type} onChange={e => setForm({ ...form, client_type: e.target.value as any })}>
+                            <option>Individual</option>
+                            <option>Corporate</option>
+                        </select>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Phone</label>
+                        <input className={styles.formInput} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+92 300 0000000" />
+                    </div>
+                    <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                        <label className={styles.formLabel}>Email</label>
+                        <input className={styles.formInput} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="client@example.com" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>CNIC / NTN</label>
+                        <input className={styles.formInput} value={form.cnic_ntn} onChange={e => setForm({ ...form, cnic_ntn: e.target.value })} placeholder="42201-0000000-0" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Address</label>
+                        <input className={styles.formInput} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="City, Province" />
+                    </div>
+                    <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <input className={styles.formInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional internal notes" />
+                    </div>
+                </div>
+                <div className={styles.modalActions}>
+                    <button className={styles.btnGhost} onClick={() => setShowModal(false)}>Cancel</button>
+                    <button className={styles.btnPrimary} onClick={saveClient} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                </div>
+            </div>
+        </div>
+    );
+
+    // ─ Detail view ─
+    if (detail) {
+        return (
+            <div className={styles.panelContent}>
+                <button className={styles.backBtn} onClick={() => setDetail(null)}>← Back to Clients</button>
+                <div className={styles.detailHeader}>
+                    <div>
+                        <h2 className={styles.detailTitle}>{detail.name}</h2>
+                        <span className={detail.client_type === "Corporate" ? styles.badgeGold : styles.badgeGray} style={{ marginTop: "0.35rem", display: "inline-block" }}>
+                            {detail.client_type}
+                        </span>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openEdit(detail)}>Edit</button>
+                        <button className={styles.actionBtnDanger} style={{ fontSize: "0.8rem" }} onClick={() => removeClient(detail)}>Delete</button>
+                    </div>
+                </div>
+
+                <div className={styles.detailInfoGrid}>
+                    {detail.email    && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Email</span><span>{detail.email}</span></div>}
+                    {detail.phone    && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Phone</span><span>{detail.phone}</span></div>}
+                    {detail.cnic_ntn && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>CNIC / NTN</span><span>{detail.cnic_ntn}</span></div>}
+                    {detail.address  && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Address</span><span>{detail.address}</span></div>}
+                    {detail.notes    && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
+                </div>
+
+                <div className={styles.sectionTitle} style={{ marginTop: "1.75rem" }}>
+                    Matters ({detail.matters.length})
+                </div>
+                {detail.matters.length === 0 ? (
+                    <div className={styles.emptyHint}>No matters yet for this client.</div>
+                ) : (
+                    <div className={styles.tableWrap}>
+                        <table className={styles.table}>
+                            <thead><tr>
+                                <th>Title</th><th>Type</th><th>Status</th><th>Court</th><th>Case #</th><th>Filed</th>
+                            </tr></thead>
+                            <tbody>
+                                {detail.matters.map(m => (
+                                    <tr key={m.matter_id}>
+                                        <td><strong>{m.title}</strong></td>
+                                        <td className={styles.muted}>{m.matter_type}</td>
+                                        <td><span className={(styles as any)[STATUS_BADGE[m.status] ?? "badgeGray"]}>{m.status}</span></td>
+                                        <td className={styles.muted}>{m.court_name ?? "—"}</td>
+                                        <td className={styles.muted}>{m.case_number ?? "—"}</td>
+                                        <td className={styles.muted}>{m.filing_date ?? "—"}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                {showModal && <ClientModal />}
+            </div>
+        );
+    }
+
+    // ─ List view ─
+    return (
+        <div className={styles.panelContent}>
+            <div className={styles.panelToolbar}>
+                <span className={styles.resultCount}>{clients.length} client{clients.length !== 1 ? "s" : ""}</span>
+                <button className={styles.btnPrimary} onClick={openAdd}>+ Add Client</button>
+            </div>
+            {loading ? (
+                <div className={styles.emptyHint}>Loading…</div>
+            ) : clients.length === 0 ? (
+                <div className={styles.emptyHint}>No clients yet. Add your first client to start tracking matters.</div>
+            ) : (
+                <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead><tr>
+                            <th>Name</th><th>Type</th><th>Email</th><th>Phone</th><th>Matters</th><th>Actions</th>
+                        </tr></thead>
+                        <tbody>
+                            {clients.map(c => (
+                                <tr key={c.client_id}>
+                                    <td>
+                                        <button className={styles.linkBtn} onClick={() => openDetail(c)}>{c.name}</button>
+                                    </td>
+                                    <td><span className={c.client_type === "Corporate" ? styles.badgeGold : styles.badgeGray}>{c.client_type}</span></td>
+                                    <td className={styles.muted}>{c.email ?? "—"}</td>
+                                    <td className={styles.muted}>{c.phone ?? "—"}</td>
+                                    <td className={styles.muted}>{c.matter_count ?? 0}</td>
+                                    <td style={{ display: "flex", gap: "0.4rem" }}>
+                                        <button className={styles.actionBtn} onClick={() => openDetail(c)}>View</button>
+                                        <button className={styles.actionBtn} onClick={() => openEdit(c)}>Edit</button>
+                                        <button className={styles.actionBtnDanger} disabled={removing === c.client_id} onClick={() => removeClient(c)}>
+                                            {removing === c.client_id ? "…" : "Delete"}
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            {showModal && <ClientModal />}
+        </div>
+    );
+};
+
+// ── Matters Panel ─────────────────────────────────────────────────────────────
+
+const BLANK_MATTER = {
+    client_id: "", title: "", matter_type: MATTER_TYPES[0], status: "Active" as const,
+    court_name: "", case_number: "", filing_date: "", opposing_party: "", team_id: "", notes: "",
+};
+
+const MattersPanel = () => {
+    const [matters,     setMatters]     = useState<Matter[]>([]);
+    const [clients,     setClients]     = useState<Client[]>([]);
+    const [matterTeams, setMatterTeams] = useState<MatterTeam[]>([]);
+    const [customCourts, setCustomCourts] = useState<{ court_id: string; name: string }[]>([]);
+    const [loading,     setLoading]     = useState(true);
+    const [detail,      setDetail]      = useState<Matter | null>(null);
+    const [editDetail,  setEditDetail]  = useState(false);
+    const [showModal,   setShowModal]   = useState(false);
+    const [form,        setForm]        = useState({ ...BLANK_MATTER });
+    const [saving,      setSaving]      = useState(false);
+    const [formErr,     setFormErr]     = useState<string | null>(null);
+    const [filterStatus, setFilterStatus] = useState("all");
+    const [filterType,   setFilterType]   = useState("all");
+    const [removing,    setRemoving]    = useState<string | null>(null);
+    // Link doc modal
+    const [showLinkModal, setShowLinkModal] = useState(false);
+    const [allDocs,       setAllDocs]       = useState<DocFile[]>([]);
+    const [linkingDoc,    setLinkingDoc]    = useState<string | null>(null);
+    // New court input
+    const [newCourtName, setNewCourtName] = useState("");
+    const [addingCourt,  setAddingCourt]  = useState(false);
+
+    const allCourts = [...DEFAULT_COURTS, ...customCourts.map(c => c.name)];
+
+    const loadAll = () => {
+        Promise.all([
+            fetch("/matters",      { headers: authHeaders() }).then(r => r.json()),
+            fetch("/clients",      { headers: authHeaders() }).then(r => r.json()),
+            fetch("/matter-teams", { headers: authHeaders() }).then(r => r.json()),
+            fetch("/courts",       { headers: authHeaders() }).then(r => r.json()),
+        ]).then(([md, cd, td, co]) => {
+            setMatters(md.matters ?? []);
+            setClients(cd.clients ?? []);
+            setMatterTeams(td.teams ?? []);
+            setCustomCourts(co.custom ?? []);
+            setLoading(false);
+        }).catch(() => setLoading(false));
+    };
+    useEffect(() => { loadAll(); }, []);
+
+    const openDetail = (m: Matter) => {
+        fetch(`/matters/${m.matter_id}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setDetail(d); setEditDetail(false); });
+    };
+
+    const saveMatter = async () => {
+        if (!form.client_id || !form.title.trim() || !form.matter_type) {
+            setFormErr("Client, title, and matter type are required."); return;
+        }
+        setSaving(true); setFormErr(null);
+        const body: any = { ...form };
+        if (!body.team_id) body.team_id = null;
+        try {
+            const res = await fetch("/matters", {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (!res.ok) { setFormErr(data.error ?? "Failed."); setSaving(false); return; }
+            setShowModal(false);
+            loadAll();
+        } catch { setFormErr("Network error."); }
+        setSaving(false);
+    };
+
+    const saveDetailEdit = async () => {
+        if (!detail) return;
+        setSaving(true); setFormErr(null);
+        const body: any = { ...form };
+        if (!body.team_id) body.team_id = null;
+        try {
+            const res = await fetch(`/matters/${detail.matter_id}`, {
+                method: "PATCH",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (!res.ok) { setFormErr(data.error ?? "Failed."); setSaving(false); return; }
+            setDetail(data);
+            setMatters(prev => prev.map(m => m.matter_id === data.matter_id ? { ...m, ...data } : m));
+            setEditDetail(false);
+        } catch { setFormErr("Network error."); }
+        setSaving(false);
+    };
+
+    const removeMatter = async (m: Matter) => {
+        if (!confirm(`Delete matter "${m.title}"?`)) return;
+        setRemoving(m.matter_id);
+        await fetch(`/matters/${m.matter_id}`, { method: "DELETE", headers: authHeaders() });
+        setMatters(prev => prev.filter(x => x.matter_id !== m.matter_id));
+        if (detail?.matter_id === m.matter_id) setDetail(null);
+        setRemoving(null);
+    };
+
+    const unlinkDoc = async (docId: string) => {
+        if (!detail) return;
+        await fetch(`/matters/${detail.matter_id}/documents/${docId}`, { method: "DELETE", headers: authHeaders() });
+        setDetail(prev => prev ? { ...prev, documents: (prev.documents ?? []).filter(d => d.doc_id !== docId) } : prev);
+    };
+
+    const openLinkModal = () => {
+        fetch("/documents", { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => {
+                const docs: DocFile[] = (d.documents ?? []).map((doc: any) => ({
+                    doc_id: doc.doc_id, name: doc.filename,
+                    size: fmtBytes(doc.size_bytes ?? 0), size_bytes: doc.size_bytes ?? 0,
+                    uploaded: fmtDate(doc.uploaded_at ?? ""), status: doc.status,
+                    category_id: doc.category_id ?? null, category_name: doc.category_name ?? null,
+                    matter_id: doc.matter_id ?? null,
+                }));
+                // Show only docs not linked to another matter
+                setAllDocs(docs.filter((d: any) => !d.matter_id || d.matter_id === detail?.matter_id));
+                setShowLinkModal(true);
+            });
+    };
+
+    const linkDoc = async (docId: string) => {
+        if (!detail) return;
+        setLinkingDoc(docId);
+        const res = await fetch(`/matters/${detail.matter_id}/documents/${docId}`, { method: "POST", headers: authHeaders() });
+        if (res.ok) {
+            // Refresh matter detail
+            fetch(`/matters/${detail.matter_id}`, { headers: authHeaders() })
+                .then(r => r.json()).then(d => setDetail(d));
+            setAllDocs(prev => prev.filter(d => d.doc_id !== docId));
+        }
+        setLinkingDoc(null);
+    };
+
+    const addCourt = async () => {
+        const name = newCourtName.trim();
+        if (!name) return;
+        setAddingCourt(true);
+        try {
+            const res = await fetch("/courts", {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setCustomCourts(prev => [...prev, data]);
+                setNewCourtName("");
+            }
+        } catch { /* silent */ }
+        setAddingCourt(false);
+    };
+
+    const filtered = matters.filter(m =>
+        (filterStatus === "all" || m.status === filterStatus) &&
+        (filterType   === "all" || m.matter_type === filterType)
+    );
+
+    const MatterForm = ({ onSave, onCancel }: { onSave: () => void; onCancel: () => void }) => (
+        <>
+            {formErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {formErr}</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Title *</label>
+                    <input className={styles.formInput} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g. Khan vs State — Criminal Appeal 2024" autoFocus />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Client *</label>
+                    <select className={styles.formSelect} value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })}>
+                        <option value="">Select client…</option>
+                        {clients.map(c => <option key={c.client_id} value={c.client_id}>{c.name}</option>)}
+                    </select>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Matter Type *</label>
+                    <select className={styles.formSelect} value={form.matter_type} onChange={e => setForm({ ...form, matter_type: e.target.value })}>
+                        {MATTER_TYPES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Status</label>
+                    <select className={styles.formSelect} value={form.status} onChange={e => setForm({ ...form, status: e.target.value as any })}>
+                        {MATTER_STATUSES.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Assigned Team</label>
+                    <select className={styles.formSelect} value={form.team_id} onChange={e => setForm({ ...form, team_id: e.target.value })}>
+                        <option value="">No team</option>
+                        {matterTeams.map(t => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
+                    </select>
+                </div>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Court</label>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <select className={styles.formSelect} value={form.court_name} onChange={e => setForm({ ...form, court_name: e.target.value })}>
+                            <option value="">Select court…</option>
+                            {allCourts.map(c => <option key={c}>{c}</option>)}
+                        </select>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.4rem" }}>
+                        <input className={styles.formInput} placeholder="Add custom court…" value={newCourtName}
+                            onChange={e => setNewCourtName(e.target.value)}
+                            onKeyDown={e => e.key === "Enter" && addCourt()}
+                            style={{ fontSize: "0.8rem", padding: "0.35rem 0.7rem" }} />
+                        <button className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.35rem 0.75rem", whiteSpace: "nowrap" }}
+                            onClick={addCourt} disabled={addingCourt || !newCourtName.trim()}>
+                            {addingCourt ? "…" : "+ Add"}
+                        </button>
+                    </div>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Case Number</label>
+                    <input className={styles.formInput} value={form.case_number} onChange={e => setForm({ ...form, case_number: e.target.value })} placeholder="e.g. 2024/LHC/4512" />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Filing Date</label>
+                    <input className={styles.formInput} type="date" value={form.filing_date} onChange={e => setForm({ ...form, filing_date: e.target.value })} />
+                </div>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Opposing Party</label>
+                    <input className={styles.formInput} value={form.opposing_party} onChange={e => setForm({ ...form, opposing_party: e.target.value })} placeholder="Name of opposing counsel or party" />
+                </div>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Notes</label>
+                    <input className={styles.formInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Internal notes…" />
+                </div>
+            </div>
+            <div className={styles.modalActions}>
+                <button className={styles.btnGhost} onClick={onCancel}>Cancel</button>
+                <button className={styles.btnPrimary} onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save Matter"}</button>
+            </div>
+        </>
+    );
+
+    // ─ Matter detail view ─
+    if (detail) {
+        const grouped = groupDocsByCategory(detail.documents ?? []);
+        return (
+            <div className={styles.panelContent}>
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.25rem" }}>
+                    <button className={styles.backBtn} onClick={() => setDetail(null)}>← Back to Matters</button>
+                    {!editDetail && (
+                        <div style={{ display: "flex", gap: "0.5rem", marginLeft: "auto" }}>
+                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => {
+                                setForm({
+                                    client_id: detail.client_id, title: detail.title,
+                                    matter_type: detail.matter_type, status: detail.status,
+                                    court_name: detail.court_name ?? "", case_number: detail.case_number ?? "",
+                                    filing_date: detail.filing_date ?? "", opposing_party: detail.opposing_party ?? "",
+                                    team_id: detail.team_id ?? "", notes: detail.notes ?? "",
+                                });
+                                setFormErr(null); setEditDetail(true);
+                            }}>Edit</button>
+                            <button className={styles.actionBtnDanger} style={{ fontSize: "0.8rem" }} onClick={() => removeMatter(detail)}>Delete</button>
+                        </div>
+                    )}
+                </div>
+
+                {editDetail ? (
+                    <div className={styles.settingsCard} style={{ marginBottom: "1.5rem" }}>
+                        <div className={styles.settingsCardTitle}>Edit Matter</div>
+                        <MatterForm onSave={saveDetailEdit} onCancel={() => setEditDetail(false)} />
+                    </div>
+                ) : (
+                    <div className={styles.matterDetailHeader}>
+                        <div>
+                            <h2 className={styles.detailTitle}>{detail.title}</h2>
+                            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                                <span className={(styles as any)[STATUS_BADGE[detail.status] ?? "badgeGray"]}>{detail.status}</span>
+                                <span className={styles.badgeGray}>{detail.matter_type}</span>
+                                {detail.team_name && <span className={styles.badgeGold}>👥 {detail.team_name}</span>}
+                            </div>
+                        </div>
+                        <div className={styles.detailInfoGrid} style={{ marginTop: "1rem" }}>
+                            <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Client</span><span>{detail.client_name}</span></div>
+                            {detail.court_name    && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Court</span><span>{detail.court_name}</span></div>}
+                            {detail.case_number   && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Case #</span><span>{detail.case_number}</span></div>}
+                            {detail.filing_date   && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Filed</span><span>{detail.filing_date}</span></div>}
+                            {detail.opposing_party && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Opposing Party</span><span>{detail.opposing_party}</span></div>}
+                            {detail.notes         && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
+                        </div>
+                    </div>
+                )}
+
+                {/* Document hierarchy */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "1.5rem 0 0.75rem" }}>
+                    <div className={styles.sectionTitle} style={{ margin: 0 }}>
+                        Linked Documents ({(detail.documents ?? []).length})
+                    </div>
+                    <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={openLinkModal}>
+                        + Link Documents
+                    </button>
+                </div>
+
+                {grouped.length === 0 ? (
+                    <div className={styles.emptyHint}>No documents linked yet. Click "Link Documents" to attach files from your library.</div>
+                ) : (
+                    <div className={styles.docHierarchy}>
+                        {grouped.map(([catName, docs]) => (
+                            <div key={catName} className={styles.docHierarchyGroup}>
+                                <div className={styles.docHierarchyGroupHeader}>
+                                    <span className={styles.docHierarchyCat}>📁 {catName}</span>
+                                    <span className={styles.docHierarchyCount}>{docs.length}</span>
+                                </div>
+                                {docs.map(doc => (
+                                    <div key={doc.doc_id} className={styles.docHierarchyRow}>
+                                        <span className={styles.fileIcon} style={{ fontSize: "0.55rem" }}>F</span>
+                                        <span className={styles.docHierarchyName}>{doc.filename}</span>
+                                        <span className={styles.docHierarchySize}>{fmtBytes(doc.size_bytes)}</span>
+                                        <span className={doc.status === "ready" ? styles.badgeGreen : styles.badgeAmber} style={{ fontSize: "0.65rem", padding: "0.1rem 0.45rem" }}>
+                                            {doc.status === "ready" ? "Ready" : "Processing"}
+                                        </span>
+                                        <button className={styles.queueRemove} title="Unlink from matter" onClick={() => unlinkDoc(doc.doc_id)}>✕</button>
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Link document modal */}
+                {showLinkModal && (
+                    <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowLinkModal(false); }}>
+                        <div className={styles.modal} style={{ maxWidth: 520 }}>
+                            <h3 className={styles.modalTitle}>Link Documents</h3>
+                            <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "1rem" }}>
+                                Select documents from your library to link to this matter.
+                            </p>
+                            {allDocs.length === 0 ? (
+                                <div className={styles.emptyHint}>All available documents are already linked to matters, or your library is empty.</div>
+                            ) : (
+                                <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                                    {allDocs.map(doc => (
+                                        <div key={doc.doc_id} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.55rem 0", borderBottom: "1px solid var(--border)" }}>
+                                            <span className={styles.fileIcon} style={{ fontSize: "0.55rem", flexShrink: 0 }}>F</span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: "0.85rem", color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
+                                                <div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{doc.category_name ?? "No category"} · {doc.size}</div>
+                                            </div>
+                                            <button className={styles.btnPrimary} style={{ fontSize: "0.75rem", padding: "0.3rem 0.8rem" }}
+                                                disabled={linkingDoc === doc.doc_id}
+                                                onClick={() => linkDoc(doc.doc_id)}>
+                                                {linkingDoc === doc.doc_id ? "…" : "Link"}
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className={styles.modalActions}>
+                                <button className={styles.btnGhost} onClick={() => setShowLinkModal(false)}>Close</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // ─ Matter list view ─
+    return (
+        <div className={styles.panelContent}>
+            <div className={styles.panelToolbar}>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <span className={styles.resultCount}>{filtered.length} matter{filtered.length !== 1 ? "s" : ""}</span>
+                    <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                        value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                        <option value="all">All statuses</option>
+                        {MATTER_STATUSES.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                    <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                        value={filterType} onChange={e => setFilterType(e.target.value)}>
+                        <option value="all">All types</option>
+                        {MATTER_TYPES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                </div>
+                {clients.length === 0 ? (
+                    <span className={styles.muted} style={{ fontSize: "0.8rem" }}>Add a client first</span>
+                ) : (
+                    <button className={styles.btnPrimary} onClick={() => { setForm({ ...BLANK_MATTER }); setFormErr(null); setShowModal(true); }}>
+                        + New Matter
+                    </button>
+                )}
+            </div>
+
+            {loading ? (
+                <div className={styles.emptyHint}>Loading…</div>
+            ) : filtered.length === 0 ? (
+                <div className={styles.emptyHint}>
+                    {matters.length === 0 ? "No matters yet. Create a client first, then open a matter." : "No matters match the selected filters."}
+                </div>
+            ) : (
+                <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead><tr>
+                            <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
+                        </tr></thead>
+                        <tbody>
+                            {filtered.map(m => (
+                                <tr key={m.matter_id}>
+                                    <td><button className={styles.linkBtn} onClick={() => openDetail(m)}>{m.title}</button></td>
+                                    <td className={styles.muted}>{m.client_name}</td>
+                                    <td className={styles.muted}>{m.matter_type}</td>
+                                    <td><span className={(styles as any)[STATUS_BADGE[m.status] ?? "badgeGray"]}>{m.status}</span></td>
+                                    <td className={styles.muted}>{m.court_name ?? "—"}</td>
+                                    <td className={styles.muted}>{m.case_number ?? "—"}</td>
+                                    <td className={styles.muted}>{m.team_name ?? "—"}</td>
+                                    <td className={styles.muted}>{m.doc_count ?? 0}</td>
+                                    <td style={{ display: "flex", gap: "0.4rem" }}>
+                                        <button className={styles.actionBtn} onClick={() => openDetail(m)}>View</button>
+                                        <button className={styles.actionBtnDanger} disabled={removing === m.matter_id} onClick={() => removeMatter(m)}>
+                                            {removing === m.matter_id ? "…" : "Delete"}
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {showModal && (
+                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
+                    <div className={styles.modal} style={{ maxWidth: 560 }}>
+                        <h3 className={styles.modalTitle}>New Matter</h3>
+                        <MatterForm onSave={saveMatter} onCancel={() => setShowModal(false)} />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 };
 
 // ── Overview Panel ────────────────────────────────────────────────────────────
@@ -1143,6 +1905,79 @@ const SettingsPanel = ({
     // Delete org modal
     const [showDeleteModal, setShowDeleteModal] = useState(false);
 
+    // Practice Teams state
+    const [matterTeams,   setMatterTeams]   = useState<MatterTeam[]>([]);
+    const [orgMembers,    setOrgMembers]    = useState<TeamMember[]>([]);
+    const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+    const [showTeamModal, setShowTeamModal] = useState(false);
+    const [newTeamName,   setNewTeamName]   = useState("");
+    const [teamSaving,    setTeamSaving]    = useState(false);
+    const [teamErr,       setTeamErr]       = useState<string | null>(null);
+    const [addMemberSelects, setAddMemberSelects] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        Promise.all([
+            fetch("/matter-teams", { headers: authHeaders() }).then(r => r.json()),
+            fetch("/team",         { headers: authHeaders() }).then(r => r.json()),
+        ]).then(([td, tm]) => {
+            setMatterTeams(td.teams ?? []);
+            setOrgMembers((tm.members ?? []).map((m: any) => ({
+                user_id: m.user_id, name: m.name, email: m.email,
+                role: m.role, joined: m.created_at ?? "",
+            })));
+        }).catch(() => {});
+    }, []);
+
+    const toggleExpand = (id: string) =>
+        setExpandedTeams(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+    const createTeam = async () => {
+        if (!newTeamName.trim()) { setTeamErr("Team name is required."); return; }
+        setTeamSaving(true); setTeamErr(null);
+        try {
+            const res = await fetch("/matter-teams", {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ name: newTeamName.trim() }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setTeamErr(data.error ?? "Failed."); setTeamSaving(false); return; }
+            setMatterTeams(prev => [...prev, { ...data, members: [] }]);
+            setNewTeamName(""); setShowTeamModal(false);
+        } catch { setTeamErr("Network error."); }
+        setTeamSaving(false);
+    };
+
+    const deleteTeam = async (teamId: string) => {
+        if (!confirm("Delete this team? It will be unassigned from all matters.")) return;
+        await fetch(`/matter-teams/${teamId}`, { method: "DELETE", headers: authHeaders() });
+        setMatterTeams(prev => prev.filter(t => t.team_id !== teamId));
+    };
+
+    const addMember = async (teamId: string) => {
+        const userId = addMemberSelects[teamId];
+        if (!userId) return;
+        const res = await fetch(`/matter-teams/${teamId}/members/${userId}`, { method: "POST", headers: authHeaders() });
+        if (res.ok) {
+            const member = orgMembers.find(m => m.user_id === userId);
+            if (member) {
+                setMatterTeams(prev => prev.map(t =>
+                    t.team_id === teamId
+                        ? { ...t, members: [...t.members, { user_id: member.user_id, name: member.name }] }
+                        : t
+                ));
+            }
+            setAddMemberSelects(prev => ({ ...prev, [teamId]: "" }));
+        }
+    };
+
+    const removeMember = async (teamId: string, userId: string) => {
+        await fetch(`/matter-teams/${teamId}/members/${userId}`, { method: "DELETE", headers: authHeaders() });
+        setMatterTeams(prev => prev.map(t =>
+            t.team_id === teamId ? { ...t, members: t.members.filter(m => m.user_id !== userId) } : t
+        ));
+    };
+
     const saveOrg = async () => {
         if (!name.trim()) { setOrgMsg({ ok: false, text: "Firm name cannot be empty." }); return; }
         setOrgSaving(true); setOrgMsg(null);
@@ -1334,6 +2169,75 @@ const SettingsPanel = ({
                     </div>
                 </div>
 
+                {/* ── Practice Teams ── */}
+                <div className={styles.settingsCard} style={{ gridColumn: "1 / -1" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+                        <div className={styles.settingsCardTitle} style={{ marginBottom: 0 }}>Practice Teams</div>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => { setNewTeamName(""); setTeamErr(null); setShowTeamModal(true); }}>
+                            + Create Team
+                        </button>
+                    </div>
+
+                    {matterTeams.length === 0 ? (
+                        <div className={styles.emptyHint}>No practice teams yet. Create teams to assign staff groups to matters.</div>
+                    ) : (
+                        <div className={styles.teamsList}>
+                            {matterTeams.map(team => {
+                                const isOpen = expandedTeams.has(team.team_id);
+                                const nonMembers = orgMembers.filter(m => !team.members.some(tm => tm.user_id === m.user_id));
+                                return (
+                                    <div key={team.team_id} className={styles.teamsItem}>
+                                        <div className={styles.teamsItemHeader}>
+                                            <button className={styles.teamsExpandBtn} onClick={() => toggleExpand(team.team_id)}>
+                                                <span className={styles.teamsExpandArrow}>{isOpen ? "▾" : "▸"}</span>
+                                                <span className={styles.teamsItemName}>{team.name}</span>
+                                                <span className={styles.muted} style={{ fontSize: "0.78rem" }}>
+                                                    {team.members.length} member{team.members.length !== 1 ? "s" : ""}
+                                                </span>
+                                            </button>
+                                            <button className={styles.actionBtnDanger} style={{ fontSize: "0.75rem" }} onClick={() => deleteTeam(team.team_id)}>
+                                                Delete
+                                            </button>
+                                        </div>
+                                        {isOpen && (
+                                            <div className={styles.teamsMemberList}>
+                                                {team.members.length === 0 ? (
+                                                    <div className={styles.muted} style={{ fontSize: "0.8rem", padding: "0.4rem 0" }}>No members yet.</div>
+                                                ) : (
+                                                    team.members.map(m => (
+                                                        <div key={m.user_id} className={styles.teamsMemberRow}>
+                                                            <span className={styles.teamsMemberName}>{m.name}</span>
+                                                            <button className={styles.queueRemove} title="Remove from team" onClick={() => removeMember(team.team_id, m.user_id)}>✕</button>
+                                                        </div>
+                                                    ))
+                                                )}
+                                                {nonMembers.length > 0 && (
+                                                    <div className={styles.teamsAddMemberRow}>
+                                                        <select
+                                                            className={styles.formSelect}
+                                                            style={{ flex: 1, fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                                                            value={addMemberSelects[team.team_id] ?? ""}
+                                                            onChange={e => setAddMemberSelects(prev => ({ ...prev, [team.team_id]: e.target.value }))}
+                                                        >
+                                                            <option value="">Add member…</option>
+                                                            {nonMembers.map(m => <option key={m.user_id} value={m.user_id}>{m.name} ({m.email})</option>)}
+                                                        </select>
+                                                        <button className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.3rem 0.75rem" }}
+                                                            disabled={!addMemberSelects[team.team_id]}
+                                                            onClick={() => addMember(team.team_id)}>
+                                                            Add
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
                 <div className={styles.settingsCard}>
                     <div className={styles.settingsCardTitle}>Danger Zone</div>
                     <p className={styles.dangerText}>
@@ -1344,6 +2248,29 @@ const SettingsPanel = ({
                     </button>
                 </div>
             </div>
+
+            {/* Create team modal */}
+            {showTeamModal && (
+                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowTeamModal(false); }}>
+                    <div className={styles.modal} style={{ maxWidth: 400 }}>
+                        <h3 className={styles.modalTitle}>Create Practice Team</h3>
+                        {teamErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {teamErr}</div>}
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Team Name</label>
+                            <input className={styles.formInput} value={newTeamName} autoFocus
+                                onChange={e => setNewTeamName(e.target.value)}
+                                onKeyDown={e => e.key === "Enter" && createTeam()}
+                                placeholder="e.g. Litigation Team, Corporate Group" />
+                        </div>
+                        <div className={styles.modalActions}>
+                            <button className={styles.btnGhost} onClick={() => setShowTeamModal(false)}>Cancel</button>
+                            <button className={styles.btnPrimary} onClick={createTeam} disabled={teamSaving}>
+                                {teamSaving ? "Creating…" : "Create Team"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Delete org info modal */}
             {showDeleteModal && (
@@ -1542,6 +2469,8 @@ const OwnerPortal = () => {
                         <>
                             {panel === "overview"      && <OverviewPanel orgName={orgName} docs={docs} team={team} usage={usage} />}
                             {panel === "documents"     && <DocumentsPanel docs={docs} setDocs={setDocs} usage={usage} plan={plan} />}
+                            {panel === "clients"       && <ClientsPanel />}
+                            {panel === "matters"       && <MattersPanel />}
                             {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} />}
                             {panel === "subscription"  && (
                                 <SubscriptionPanel

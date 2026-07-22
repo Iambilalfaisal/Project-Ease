@@ -322,6 +322,13 @@ from db import (
     get_org_details, get_platform_stats,
     # registration — Task #41
     register_org, get_pending_registrations, approve_registration, update_org_profile,
+    # Matter/Client Management — Task #31
+    get_clients, create_client, update_client, delete_client, get_client_with_matters,
+    get_matter_teams, create_matter_team, update_matter_team, delete_matter_team,
+    add_matter_team_member, remove_matter_team_member,
+    get_custom_courts, add_custom_court, delete_custom_court,
+    get_matters, create_matter, update_matter, delete_matter,
+    get_matter_with_docs, link_document_to_matter, unlink_document_from_matter,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -1353,6 +1360,296 @@ async def list_uploaded(auth_claims: dict[str, Any]):
     adls_manager: AdlsBlobManager = current_app.config[CONFIG_USER_BLOB_MANAGER]
     files = await adls_manager.list_blobs(user_oid)
     return jsonify(files), 200
+
+
+# ─── PROJECT EASE: Clients API ───────────────────────────────────────────────
+
+@bp.route("/clients", methods=["GET"])
+async def list_clients():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"clients": get_clients(session.get("org") or "")})
+
+
+@bp.route("/clients", methods=["POST"])
+async def add_client():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Client name is required"}), 400
+    client = create_client(
+        org_id=session.get("org") or "",
+        name=name,
+        client_type=data.get("client_type", "Individual"),
+        email=data.get("email") or None,
+        phone=data.get("phone") or None,
+        address=data.get("address") or None,
+        cnic_ntn=data.get("cnic_ntn") or None,
+        notes=data.get("notes") or None,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(client), 201
+
+
+@bp.route("/clients/<client_id>", methods=["GET"])
+async def get_client_detail(client_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    client = get_client_with_matters(client_id, session.get("org") or "")
+    if not client:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(client)
+
+
+@bp.route("/clients/<client_id>", methods=["PATCH"])
+async def edit_client(client_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    updated = update_client(
+        client_id, session.get("org") or "",
+        actor=session.get("user_id") or SYSTEM,
+        **data,
+    )
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
+
+
+@bp.route("/clients/<client_id>", methods=["DELETE"])
+async def remove_client(client_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_client(client_id, session.get("org") or "",
+                  actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Matter Teams API ──────────────────────────────────────────
+
+@bp.route("/matter-teams", methods=["GET"])
+async def list_matter_teams():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"teams": get_matter_teams(session.get("org") or "")})
+
+
+@bp.route("/matter-teams", methods=["POST"])
+async def add_matter_team():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Team name is required"}), 400
+    team = create_matter_team(session.get("org") or "", name,
+                              actor=session.get("user_id") or SYSTEM)
+    return jsonify(team), 201
+
+
+@bp.route("/matter-teams/<team_id>", methods=["PATCH"])
+async def edit_matter_team(team_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Team name is required"}), 400
+    updated = update_matter_team(team_id, session.get("org") or "", name,
+                                 actor=session.get("user_id") or SYSTEM)
+    return jsonify(updated or {})
+
+
+@bp.route("/matter-teams/<team_id>", methods=["DELETE"])
+async def remove_matter_team(team_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_team(team_id, session.get("org") or "",
+                       actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+@bp.route("/matter-teams/<team_id>/members/<member_user_id>", methods=["POST"])
+async def add_member_to_matter_team(team_id: str, member_user_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    add_matter_team_member(team_id, member_user_id,
+                           actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+@bp.route("/matter-teams/<team_id>/members/<member_user_id>", methods=["DELETE"])
+async def remove_member_from_matter_team(team_id: str, member_user_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    remove_matter_team_member(team_id, member_user_id,
+                              actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Courts API ─────────────────────────────────────────────────
+
+_DEFAULT_COURTS = [
+    "Supreme Court of Pakistan", "Federal Shariat Court",
+    "Lahore High Court", "Sindh High Court", "Islamabad High Court",
+    "Peshawar High Court", "Balochistan High Court",
+    "Gilgit-Baltistan Chief Court", "Azad Kashmir High Court",
+    "District & Sessions Court", "Civil Judge Court", "Magistrate Court",
+    "Banking Court", "Labour Court", "National Accountability Court",
+    "Customs Appellate Tribunal", "Income Tax Appellate Tribunal",
+    "Anti-Corruption Establishment Court", "Service Tribunal", "Family Court",
+]
+
+
+@bp.route("/courts", methods=["GET"])
+async def list_courts():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    custom = get_custom_courts(session.get("org") or "")
+    return jsonify({"default": _DEFAULT_COURTS, "custom": custom})
+
+
+@bp.route("/courts", methods=["POST"])
+async def add_court():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Court name is required"}), 400
+    try:
+        court = add_custom_court(session.get("org") or "", name,
+                                 actor=session.get("user_id") or SYSTEM)
+        return jsonify(court), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@bp.route("/courts/<court_id>", methods=["DELETE"])
+async def remove_court(court_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_custom_court(court_id, session.get("org") or "",
+                        actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Matters API ────────────────────────────────────────────────
+
+@bp.route("/matters", methods=["GET"])
+async def list_matters():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    client_id = request.args.get("client_id") or None
+    return jsonify({"matters": get_matters(session.get("org") or "", client_id=client_id)})
+
+
+@bp.route("/matters", methods=["POST"])
+async def add_matter():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data        = await request.get_json(silent=True) or {}
+    client_id   = (data.get("client_id")   or "").strip()
+    title       = (data.get("title")        or "").strip()
+    matter_type = (data.get("matter_type")  or "").strip()
+    if not client_id or not title or not matter_type:
+        return jsonify({"error": "Client, title, and matter type are required"}), 400
+    matter = create_matter(
+        org_id=session.get("org") or "",
+        client_id=client_id,
+        title=title,
+        matter_type=matter_type,
+        status=data.get("status", "Active"),
+        court_name=data.get("court_name") or None,
+        case_number=data.get("case_number") or None,
+        filing_date=data.get("filing_date") or None,
+        opposing_party=data.get("opposing_party") or None,
+        team_id=data.get("team_id") or None,
+        notes=data.get("notes") or None,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(matter), 201
+
+
+@bp.route("/matters/<matter_id>", methods=["GET"])
+async def get_matter_detail(matter_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    matter = get_matter_with_docs(matter_id, session.get("org") or "")
+    if not matter:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(matter)
+
+
+@bp.route("/matters/<matter_id>", methods=["PATCH"])
+async def edit_matter(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    # Normalize empty strings to None for nullable fields
+    for k in ("court_name", "case_number", "filing_date", "opposing_party", "team_id", "notes"):
+        if k in data and data[k] == "":
+            data[k] = None
+    updated = update_matter(
+        matter_id, session.get("org") or "",
+        actor=session.get("user_id") or SYSTEM,
+        **data,
+    )
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>", methods=["DELETE"])
+async def remove_matter(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter(matter_id, session.get("org") or "",
+                  actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+@bp.route("/matters/<matter_id>/documents/<doc_id>", methods=["POST"])
+async def link_doc_to_matter(matter_id: str, doc_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    ok = link_document_to_matter(doc_id, matter_id, session.get("org") or "",
+                                 actor=session.get("user_id") or SYSTEM)
+    if not ok:
+        return jsonify({"error": "Document not found"}), 404
+    return jsonify({"success": True})
+
+
+@bp.route("/matters/<matter_id>/documents/<doc_id>", methods=["DELETE"])
+async def unlink_doc_from_matter(matter_id: str, doc_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    unlink_document_from_matter(doc_id, session.get("org") or "",
+                                actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
 
 
 @bp.before_app_serving
