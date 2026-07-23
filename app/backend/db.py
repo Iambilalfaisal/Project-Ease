@@ -198,6 +198,89 @@ CREATE TABLE IF NOT EXISTS upgrade_requests (
     resolved_by     TEXT
 );
 
+CREATE TABLE IF NOT EXISTS fees (
+    fee_id       TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL REFERENCES organizations(org_id),
+    matter_id    TEXT REFERENCES matters(matter_id),
+    description  TEXT NOT NULL,
+    fee_type     TEXT NOT NULL DEFAULT 'Consultation',
+    amount       INTEGER NOT NULL DEFAULT 0,   -- PKR, whole rupees
+    fee_date     TEXT NOT NULL,                -- YYYY-MM-DD
+    is_paid      INTEGER NOT NULL DEFAULT 0,
+    paid_at      TEXT,
+    invoice_id   TEXT,                         -- set when billed to an invoice
+    notes        TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by   TEXT NOT NULL DEFAULT 'system',
+    modified_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by  TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS idx_fees_matter ON fees(matter_id, fee_date);
+
+CREATE TABLE IF NOT EXISTS invoices (
+    invoice_id     TEXT PRIMARY KEY,
+    org_id         TEXT NOT NULL REFERENCES organizations(org_id),
+    matter_id      TEXT REFERENCES matters(matter_id),
+    client_id      TEXT REFERENCES clients(client_id),
+    invoice_number TEXT NOT NULL,              -- e.g. INV-2024-001
+    title          TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'draft',  -- draft / sent / paid / cancelled
+    issued_date    TEXT NOT NULL,              -- YYYY-MM-DD
+    due_date       TEXT,                       -- YYYY-MM-DD, optional
+    total_amount   INTEGER NOT NULL DEFAULT 0, -- PKR
+    notes          TEXT,
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by     TEXT NOT NULL DEFAULT 'system',
+    modified_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by    TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoices_org ON invoices(org_id, issued_date DESC);
+
+CREATE TABLE IF NOT EXISTS hearings (
+    hearing_id      TEXT PRIMARY KEY,
+    org_id          TEXT NOT NULL REFERENCES organizations(org_id),
+    matter_id       TEXT REFERENCES matters(matter_id),
+    title           TEXT NOT NULL,
+    hearing_date    TEXT NOT NULL,   -- YYYY-MM-DD
+    hearing_time    TEXT,            -- HH:MM (24h), nullable
+    court_name      TEXT,
+    judge_name      TEXT,
+    notes           TEXT,
+    wa_reminder     INTEGER NOT NULL DEFAULT 0,  -- 1 = send WhatsApp reminder
+    reminder_sent   INTEGER NOT NULL DEFAULT 0,  -- 1 = reminder already sent
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    modified_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by     TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS idx_hearings_org_date ON hearings(org_id, hearing_date);
+
+CREATE TABLE IF NOT EXISTS deadlines (
+    deadline_id     TEXT PRIMARY KEY,
+    org_id          TEXT NOT NULL REFERENCES organizations(org_id),
+    matter_id       TEXT REFERENCES matters(matter_id),
+    title           TEXT NOT NULL,
+    due_date        TEXT NOT NULL,   -- YYYY-MM-DD
+    deadline_type   TEXT NOT NULL DEFAULT 'Filing',  -- Filing, Response, Appeal, Other
+    notes           TEXT,
+    is_completed    INTEGER NOT NULL DEFAULT 0,
+    wa_reminder     INTEGER NOT NULL DEFAULT 0,
+    reminder_sent   INTEGER NOT NULL DEFAULT 0,
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    modified_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by     TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS idx_deadlines_org_date ON deadlines(org_id, due_date);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     log_id        TEXT PRIMARY KEY,
     org_id        TEXT,
@@ -1486,6 +1569,407 @@ def count_audit_logs(
         return conn.execute(
             f"SELECT COUNT(*) FROM audit_logs {where}", params
         ).fetchone()[0]
+
+
+# ── Fees ──────────────────────────────────────────────────────────────────────
+
+def get_fees(org_id: str, matter_id: Optional[str] = None) -> list[dict]:
+    clauses = ["f.org_id=?", "f.is_active=1"]
+    params: list = [org_id]
+    if matter_id:
+        clauses.append("f.matter_id=?"); params.append(matter_id)
+    where = "WHERE " + " AND ".join(clauses)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT f.*, m.title AS matter_title
+                FROM fees f
+                LEFT JOIN matters m ON m.matter_id = f.matter_id AND m.is_active=1
+                {where} ORDER BY f.fee_date DESC""",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_fee(
+    org_id: str, description: str, fee_date: str, amount: int,
+    matter_id: Optional[str] = None,
+    fee_type: str = "Consultation",
+    notes: Optional[str] = None,
+    actor: str = SYSTEM,
+) -> dict:
+    now = _now()
+    fid = "fee_" + secrets.token_hex(8)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO fees
+               (fee_id,org_id,matter_id,description,fee_type,amount,fee_date,
+                notes,created_at,created_by,modified_at,modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (fid, org_id, matter_id or None, description, fee_type, amount, fee_date,
+             notes or None, now, actor, now, actor),
+        )
+    return get_fee(fid)  # type: ignore[return-value]
+
+
+def get_fee(fee_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT f.*, m.title AS matter_title
+               FROM fees f LEFT JOIN matters m ON m.matter_id=f.matter_id
+               WHERE f.fee_id=? AND f.is_active=1""",
+            (fee_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_fee(fee_id: str, org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
+    allowed = {"description", "fee_type", "amount", "fee_date", "notes", "is_paid",
+               "paid_at", "invoice_id", "matter_id"}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return get_fee(fee_id)
+    sets["modified_at"] = _now()
+    sets["modified_by"] = actor
+    cols = ", ".join(f"{k}=?" for k in sets)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE fees SET {cols} WHERE fee_id=? AND org_id=?",
+            (*sets.values(), fee_id, org_id),
+        )
+    return get_fee(fee_id)
+
+
+def delete_fee(fee_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE fees SET is_active=0, modified_at=?, modified_by=? WHERE fee_id=? AND org_id=?",
+            (now, actor, fee_id, org_id),
+        )
+
+
+# ── Invoices ──────────────────────────────────────────────────────────────────
+
+def _next_invoice_number(org_id: str, conn: sqlite3.Connection) -> str:
+    """Generate next sequential invoice number for this org: INV-YYYY-NNN."""
+    import datetime as _dt
+    year = _dt.datetime.utcnow().year
+    row = conn.execute(
+        "SELECT COUNT(*) FROM invoices WHERE org_id=? AND invoice_number LIKE ?",
+        (org_id, f"INV-{year}-%"),
+    ).fetchone()
+    seq = (row[0] if row else 0) + 1
+    return f"INV-{year}-{str(seq).zfill(3)}"
+
+
+def create_invoice(
+    org_id: str, matter_id: str, title: str, issued_date: str,
+    client_id: Optional[str] = None,
+    due_date: Optional[str] = None,
+    notes: Optional[str] = None,
+    actor: str = SYSTEM,
+) -> dict:
+    """Create an invoice and link all unbilled fees for the matter to it."""
+    now  = _now()
+    inv_id = "inv_" + secrets.token_hex(8)
+    with get_conn() as conn:
+        inv_num = _next_invoice_number(org_id, conn)
+        # Sum unbilled fees for the matter
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) FROM fees WHERE matter_id=? AND org_id=? AND is_active=1 AND invoice_id IS NULL",
+            (matter_id, org_id),
+        ).fetchone()
+        total = row[0] if row else 0
+        conn.execute(
+            """INSERT INTO invoices
+               (invoice_id,org_id,matter_id,client_id,invoice_number,title,
+                issued_date,due_date,total_amount,notes,
+                created_at,created_by,modified_at,modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (inv_id, org_id, matter_id, client_id or None, inv_num, title,
+             issued_date, due_date or None, total, notes or None,
+             now, actor, now, actor),
+        )
+        # Link all unbilled fees for this matter
+        conn.execute(
+            "UPDATE fees SET invoice_id=?, modified_at=?, modified_by=? WHERE matter_id=? AND org_id=? AND is_active=1 AND invoice_id IS NULL",
+            (inv_id, now, actor, matter_id, org_id),
+        )
+    return get_invoice_with_fees(inv_id)  # type: ignore[return-value]
+
+
+def get_invoices(org_id: str, matter_id: Optional[str] = None) -> list[dict]:
+    clauses = ["i.org_id=?", "i.is_active=1"]
+    params: list = [org_id]
+    if matter_id:
+        clauses.append("i.matter_id=?"); params.append(matter_id)
+    where = "WHERE " + " AND ".join(clauses)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT i.*,
+                       m.title AS matter_title, m.case_number,
+                       c.name  AS client_name
+                FROM invoices i
+                LEFT JOIN matters m ON m.matter_id = i.matter_id
+                LEFT JOIN clients c ON c.client_id = i.client_id
+                {where} ORDER BY i.issued_date DESC""",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_invoice_with_fees(invoice_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT i.*,
+                      m.title AS matter_title, m.case_number, m.court_name AS matter_court,
+                      c.name  AS client_name,  c.email AS client_email, c.phone AS client_phone
+               FROM invoices i
+               LEFT JOIN matters m ON m.matter_id = i.matter_id
+               LEFT JOIN clients c ON c.client_id = i.client_id
+               WHERE i.invoice_id=? AND i.is_active=1""",
+            (invoice_id,),
+        ).fetchone()
+        if not row:
+            return None
+        inv = dict(row)
+        fee_rows = conn.execute(
+            "SELECT * FROM fees WHERE invoice_id=? AND is_active=1 ORDER BY fee_date",
+            (invoice_id,),
+        ).fetchall()
+        inv["fees"] = [dict(f) for f in fee_rows]
+    return inv
+
+
+def update_invoice(invoice_id: str, org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
+    allowed = {"title", "status", "due_date", "notes", "total_amount"}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return get_invoice_with_fees(invoice_id)
+    sets["modified_at"] = _now()
+    sets["modified_by"] = actor
+    cols = ", ".join(f"{k}=?" for k in sets)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE invoices SET {cols} WHERE invoice_id=? AND org_id=?",
+            (*sets.values(), invoice_id, org_id),
+        )
+    # If marking paid, mark all linked fees as paid too
+    if fields.get("status") == "paid":
+        now = _now()
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE fees SET is_paid=1, paid_at=?, modified_at=?, modified_by=? WHERE invoice_id=? AND org_id=?",
+                (now, now, actor, invoice_id, org_id),
+            )
+    return get_invoice_with_fees(invoice_id)
+
+
+# ── Hearings ──────────────────────────────────────────────────────────────────
+
+def get_hearings(org_id: str, from_date: Optional[str] = None, to_date: Optional[str] = None) -> list[dict]:
+    clauses = ["h.org_id=?", "h.is_active=1"]
+    params: list = [org_id]
+    if from_date:
+        clauses.append("h.hearing_date >= ?"); params.append(from_date)
+    if to_date:
+        clauses.append("h.hearing_date <= ?"); params.append(to_date)
+    where = "WHERE " + " AND ".join(clauses)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT h.*, m.title AS matter_title, m.case_number
+                FROM hearings h
+                LEFT JOIN matters m ON m.matter_id = h.matter_id AND m.is_active=1
+                {where} ORDER BY h.hearing_date, h.hearing_time""",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_hearing(
+    org_id: str, title: str, hearing_date: str,
+    matter_id: Optional[str] = None, hearing_time: Optional[str] = None,
+    court_name: Optional[str] = None, judge_name: Optional[str] = None,
+    notes: Optional[str] = None, wa_reminder: bool = False,
+    actor: str = SYSTEM,
+) -> dict:
+    now = _now()
+    hid = "hrg_" + secrets.token_hex(8)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO hearings
+               (hearing_id,org_id,matter_id,title,hearing_date,hearing_time,
+                court_name,judge_name,notes,wa_reminder,
+                created_at,created_by,modified_at,modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (hid, org_id, matter_id or None, title, hearing_date, hearing_time,
+             court_name or None, judge_name or None, notes or None,
+             1 if wa_reminder else 0, now, actor, now, actor),
+        )
+    return get_hearing(hid)  # type: ignore[return-value]
+
+
+def get_hearing(hearing_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT h.*, m.title AS matter_title, m.case_number
+               FROM hearings h
+               LEFT JOIN matters m ON m.matter_id = h.matter_id
+               WHERE h.hearing_id=? AND h.is_active=1""",
+            (hearing_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_hearing(hearing_id: str, org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
+    allowed = {"title", "hearing_date", "hearing_time", "matter_id",
+               "court_name", "judge_name", "notes", "wa_reminder"}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return get_hearing(hearing_id)
+    sets["modified_at"] = _now()
+    sets["modified_by"] = actor
+    cols = ", ".join(f"{k}=?" for k in sets)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE hearings SET {cols} WHERE hearing_id=? AND org_id=?",
+            (*sets.values(), hearing_id, org_id),
+        )
+    return get_hearing(hearing_id)
+
+
+def delete_hearing(hearing_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE hearings SET is_active=0, modified_at=?, modified_by=? WHERE hearing_id=? AND org_id=?",
+            (now, actor, hearing_id, org_id),
+        )
+
+
+def get_hearings_needing_reminder() -> list[dict]:
+    """Return hearings with wa_reminder=1 and reminder_sent=0, due within next 25 hours."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT h.*, o.org_id,
+                      u.whatsapp_number AS owner_wa, u.name AS owner_name
+               FROM hearings h
+               JOIN organizations o ON o.org_id = h.org_id AND o.is_active=1
+               JOIN users u ON u.org_id = h.org_id AND u.role='org_owner' AND u.is_active=1
+               WHERE h.is_active=1 AND h.wa_reminder=1 AND h.reminder_sent=0
+                 AND h.hearing_date = date('now', '+1 day')""",
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_hearing_reminder_sent(hearing_id: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE hearings SET reminder_sent=1 WHERE hearing_id=?", (hearing_id,))
+
+
+# ── Deadlines ─────────────────────────────────────────────────────────────────
+
+def get_deadlines(org_id: str, from_date: Optional[str] = None, to_date: Optional[str] = None) -> list[dict]:
+    clauses = ["d.org_id=?", "d.is_active=1"]
+    params: list = [org_id]
+    if from_date:
+        clauses.append("d.due_date >= ?"); params.append(from_date)
+    if to_date:
+        clauses.append("d.due_date <= ?"); params.append(to_date)
+    where = "WHERE " + " AND ".join(clauses)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT d.*, m.title AS matter_title, m.case_number
+                FROM deadlines d
+                LEFT JOIN matters m ON m.matter_id = d.matter_id AND m.is_active=1
+                {where} ORDER BY d.due_date""",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_deadline(
+    org_id: str, title: str, due_date: str,
+    matter_id: Optional[str] = None,
+    deadline_type: str = "Filing",
+    notes: Optional[str] = None,
+    wa_reminder: bool = False,
+    actor: str = SYSTEM,
+) -> dict:
+    now = _now()
+    did = "dl_" + secrets.token_hex(8)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO deadlines
+               (deadline_id,org_id,matter_id,title,due_date,deadline_type,
+                notes,wa_reminder,created_at,created_by,modified_at,modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (did, org_id, matter_id or None, title, due_date, deadline_type,
+             notes or None, 1 if wa_reminder else 0, now, actor, now, actor),
+        )
+    return get_deadline(did)  # type: ignore[return-value]
+
+
+def get_deadline(deadline_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT d.*, m.title AS matter_title, m.case_number
+               FROM deadlines d
+               LEFT JOIN matters m ON m.matter_id = d.matter_id
+               WHERE d.deadline_id=? AND d.is_active=1""",
+            (deadline_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_deadline(deadline_id: str, org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
+    allowed = {"title", "due_date", "deadline_type", "matter_id",
+               "notes", "wa_reminder", "is_completed"}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return get_deadline(deadline_id)
+    sets["modified_at"] = _now()
+    sets["modified_by"] = actor
+    # If marking complete, reset reminder state
+    if sets.get("is_completed"):
+        sets["reminder_sent"] = 1
+    cols = ", ".join(f"{k}=?" for k in sets)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE deadlines SET {cols} WHERE deadline_id=? AND org_id=?",
+            (*sets.values(), deadline_id, org_id),
+        )
+    return get_deadline(deadline_id)
+
+
+def delete_deadline(deadline_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE deadlines SET is_active=0, modified_at=?, modified_by=? WHERE deadline_id=? AND org_id=?",
+            (now, actor, deadline_id, org_id),
+        )
+
+
+def get_deadlines_needing_reminder() -> list[dict]:
+    """Return deadlines with wa_reminder=1, reminder_sent=0, due within next 25 hours."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT d.*, o.org_id,
+                      u.whatsapp_number AS owner_wa, u.name AS owner_name
+               FROM deadlines d
+               JOIN organizations o ON o.org_id = d.org_id AND o.is_active=1
+               JOIN users u ON u.org_id = d.org_id AND u.role='org_owner' AND u.is_active=1
+               WHERE d.is_active=1 AND d.wa_reminder=1 AND d.reminder_sent=0
+                 AND d.is_completed=0
+                 AND d.due_date = date('now', '+1 day')""",
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_deadline_reminder_sent(deadline_id: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE deadlines SET reminder_sent=1 WHERE deadline_id=?", (deadline_id,))
 
 
 def get_platform_stats() -> dict:

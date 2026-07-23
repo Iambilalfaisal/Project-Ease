@@ -340,6 +340,14 @@ from db import (
     log_event, get_audit_logs, count_audit_logs,
     # Upgrade flow — Task #45
     PLAN_CONFIG, create_upgrade_request, get_upgrade_requests, resolve_upgrade_request,
+    # Court Calendar — Task #32
+    get_hearings, create_hearing, get_hearing, update_hearing, delete_hearing,
+    get_deadlines, create_deadline, get_deadline, update_deadline, delete_deadline,
+    get_hearings_needing_reminder, mark_hearing_reminder_sent,
+    get_deadlines_needing_reminder, mark_deadline_reminder_sent,
+    # Fee tracking & Invoices — Task #44
+    get_fees, create_fee, get_fee, update_fee, delete_fee,
+    get_invoices, create_invoice, get_invoice_with_fees, update_invoice,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -1930,6 +1938,369 @@ async def list_audit_logs():
     return jsonify({"logs": logs, "total": total, "limit": limit, "offset": offset})
 
 
+# ─── PROJECT EASE: Fees & Invoices API ───────────────────────────────────────
+
+
+@bp.route("/fees", methods=["GET"])
+async def list_fees():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id    = session.get("org") or ""
+    matter_id = request.args.get("matter_id") or None
+    return jsonify(get_fees(org_id, matter_id=matter_id))
+
+
+@bp.route("/fees", methods=["POST"])
+async def add_fee():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    data        = await request.get_json(silent=True) or {}
+    description = (data.get("description") or "").strip()
+    fee_date    = (data.get("fee_date") or "").strip()
+    amount      = int(data.get("amount") or 0)
+    if not description or not fee_date:
+        return jsonify({"error": "description and fee_date are required"}), 400
+    if amount < 0:
+        return jsonify({"error": "amount must be non-negative"}), 400
+    org_id = session.get("org") or ""
+    actor  = session.get("user_id") or SYSTEM
+    f = create_fee(
+        org_id=org_id, description=description, fee_date=fee_date, amount=amount,
+        matter_id = data.get("matter_id") or None,
+        fee_type  = data.get("fee_type")  or "Consultation",
+        notes     = data.get("notes")     or None,
+        actor=actor,
+    )
+    _audit(session, "fee_create",
+           resource_type="fee", resource_name=description,
+           details={"amount": amount, "matter_id": data.get("matter_id")})
+    return jsonify(f), 201
+
+
+@bp.route("/fees/<fee_id>", methods=["PATCH"])
+async def edit_fee(fee_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    f = get_fee(fee_id)
+    if not f or f.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    data  = await request.get_json(silent=True) or {}
+    actor = session.get("user_id") or SYSTEM
+    # Coerce amount to int if present
+    if "amount" in data:
+        data["amount"] = int(data["amount"] or 0)
+    # Auto-set paid_at when marking paid
+    if data.get("is_paid") and not f.get("paid_at"):
+        import datetime as _dt
+        data["paid_at"] = _dt.datetime.utcnow().strftime("%Y-%m-%d")
+    updated = update_fee(fee_id, session.get("org") or "", actor=actor, **data)
+    return jsonify(updated)
+
+
+@bp.route("/fees/<fee_id>", methods=["DELETE"])
+async def remove_fee(fee_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    f = get_fee(fee_id)
+    if not f or f.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    actor = session.get("user_id") or SYSTEM
+    delete_fee(fee_id, session.get("org") or "", actor=actor)
+    return jsonify({"ok": True})
+
+
+@bp.route("/invoices", methods=["GET"])
+async def list_invoices():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id    = session.get("org") or ""
+    matter_id = request.args.get("matter_id") or None
+    return jsonify(get_invoices(org_id, matter_id=matter_id))
+
+
+@bp.route("/invoices", methods=["POST"])
+async def add_invoice():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    data      = await request.get_json(silent=True) or {}
+    matter_id = (data.get("matter_id") or "").strip()
+    title     = (data.get("title") or "").strip()
+    if not matter_id or not title:
+        return jsonify({"error": "matter_id and title are required"}), 400
+    import datetime as _dt
+    org_id      = session.get("org") or ""
+    actor       = session.get("user_id") or SYSTEM
+    issued_date = data.get("issued_date") or _dt.datetime.utcnow().strftime("%Y-%m-%d")
+    inv = create_invoice(
+        org_id=org_id, matter_id=matter_id, title=title, issued_date=issued_date,
+        client_id = data.get("client_id") or None,
+        due_date  = data.get("due_date")  or None,
+        notes     = data.get("notes")     or None,
+        actor=actor,
+    )
+    _audit(session, "invoice_create",
+           resource_type="invoice", resource_name=title,
+           details={"matter_id": matter_id, "total": inv.get("total_amount")})
+    return jsonify(inv), 201
+
+
+@bp.route("/invoices/<invoice_id>", methods=["GET"])
+async def get_invoice(invoice_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    inv = get_invoice_with_fees(invoice_id)
+    if not inv or inv.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(inv)
+
+
+@bp.route("/invoices/<invoice_id>", methods=["PATCH"])
+async def edit_invoice(invoice_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    inv = get_invoice_with_fees(invoice_id)
+    if not inv or inv.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    data  = await request.get_json(silent=True) or {}
+    actor = session.get("user_id") or SYSTEM
+    updated = update_invoice(invoice_id, session.get("org") or "", actor=actor, **data)
+    return jsonify(updated)
+
+
+# ─── PROJECT EASE: Court Calendar API ───────────────────────────────────────
+
+
+@bp.route("/hearings", methods=["GET"])
+async def list_hearings():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id    = session.get("org") or ""
+    from_date = request.args.get("from_date") or None
+    to_date   = request.args.get("to_date")   or None
+    return jsonify(get_hearings(org_id, from_date=from_date, to_date=to_date))
+
+
+@bp.route("/hearings", methods=["POST"])
+async def add_hearing():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    title        = (data.get("title") or "").strip()
+    hearing_date = (data.get("hearing_date") or "").strip()
+    if not title or not hearing_date:
+        return jsonify({"error": "title and hearing_date are required"}), 400
+    org_id = session.get("org") or ""
+    actor  = session.get("user_id") or SYSTEM
+    h = create_hearing(
+        org_id=org_id, title=title, hearing_date=hearing_date,
+        matter_id   = data.get("matter_id")    or None,
+        hearing_time= data.get("hearing_time") or None,
+        court_name  = data.get("court_name")   or None,
+        judge_name  = data.get("judge_name")   or None,
+        notes       = data.get("notes")        or None,
+        wa_reminder = bool(data.get("wa_reminder", False)),
+        actor=actor,
+    )
+    _audit(session, "hearing_create",
+           resource_type="hearing", resource_name=title,
+           details={"date": hearing_date, "matter_id": data.get("matter_id")})
+    return jsonify(h), 201
+
+
+@bp.route("/hearings/<hearing_id>", methods=["GET"])
+async def get_hearing_detail(hearing_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    h = get_hearing(hearing_id)
+    if not h or h.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(h)
+
+
+@bp.route("/hearings/<hearing_id>", methods=["PATCH"])
+async def edit_hearing(hearing_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    h = get_hearing(hearing_id)
+    if not h or h.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    data  = await request.get_json(silent=True) or {}
+    actor = session.get("user_id") or SYSTEM
+    updated = update_hearing(hearing_id, session.get("org") or "", actor=actor, **data)
+    return jsonify(updated)
+
+
+@bp.route("/hearings/<hearing_id>", methods=["DELETE"])
+async def remove_hearing(hearing_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    h = get_hearing(hearing_id)
+    if not h or h.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    actor = session.get("user_id") or SYSTEM
+    delete_hearing(hearing_id, session.get("org") or "", actor=actor)
+    _audit(session, "hearing_delete", resource_type="hearing", resource_name=h.get("title", ""))
+    return jsonify({"ok": True})
+
+
+@bp.route("/deadlines", methods=["GET"])
+async def list_deadlines():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id    = session.get("org") or ""
+    from_date = request.args.get("from_date") or None
+    to_date   = request.args.get("to_date")   or None
+    return jsonify(get_deadlines(org_id, from_date=from_date, to_date=to_date))
+
+
+@bp.route("/deadlines", methods=["POST"])
+async def add_deadline():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    title    = (data.get("title") or "").strip()
+    due_date = (data.get("due_date") or "").strip()
+    if not title or not due_date:
+        return jsonify({"error": "title and due_date are required"}), 400
+    org_id = session.get("org") or ""
+    actor  = session.get("user_id") or SYSTEM
+    d = create_deadline(
+        org_id=org_id, title=title, due_date=due_date,
+        matter_id     = data.get("matter_id")      or None,
+        deadline_type = data.get("deadline_type")  or "Filing",
+        notes         = data.get("notes")          or None,
+        wa_reminder   = bool(data.get("wa_reminder", False)),
+        actor=actor,
+    )
+    _audit(session, "deadline_create",
+           resource_type="deadline", resource_name=title,
+           details={"due_date": due_date, "matter_id": data.get("matter_id")})
+    return jsonify(d), 201
+
+
+@bp.route("/deadlines/<deadline_id>", methods=["PATCH"])
+async def edit_deadline(deadline_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    d = get_deadline(deadline_id)
+    if not d or d.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    data  = await request.get_json(silent=True) or {}
+    actor = session.get("user_id") or SYSTEM
+    updated = update_deadline(deadline_id, session.get("org") or "", actor=actor, **data)
+    return jsonify(updated)
+
+
+@bp.route("/deadlines/<deadline_id>", methods=["DELETE"])
+async def remove_deadline(deadline_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    d = get_deadline(deadline_id)
+    if not d or d.get("org_id") != session.get("org"):
+        return jsonify({"error": "Not found"}), 404
+    actor = session.get("user_id") or SYSTEM
+    delete_deadline(deadline_id, session.get("org") or "", actor=actor)
+    _audit(session, "deadline_delete", resource_type="deadline", resource_name=d.get("title", ""))
+    return jsonify({"ok": True})
+
+
+# ─── WhatsApp reminder scheduler (runs hourly in background) ─────────────────
+
+_scheduler_started = False
+
+
+def _start_reminder_scheduler(app_ref):
+    """Start APScheduler to send WhatsApp reminders once per hour."""
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore
+        scheduler = BackgroundScheduler(daemon=True)
+        scheduler.add_job(_send_due_reminders, "interval", hours=1, id="wa_reminders")
+        scheduler.start()
+        _scheduler_started = True
+        logging.getLogger(__name__).info("WhatsApp reminder scheduler started.")
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "apscheduler not installed — WhatsApp reminders disabled. "
+            "Run: pip install apscheduler"
+        )
+
+
+def _send_due_reminders():
+    """Fire-and-forget: send WhatsApp reminders for hearings/deadlines due tomorrow."""
+    import asyncio as _aio
+    try:
+        loop = _aio.new_event_loop()
+        loop.run_until_complete(_send_due_reminders_async())
+    except Exception as exc:
+        logging.getLogger(__name__).error("Reminder scheduler error: %s", exc)
+
+
+async def _send_due_reminders_async():
+    from whatsapp_helper import send_whatsapp_text  # type: ignore[import]
+
+    # Hearings
+    for h in get_hearings_needing_reminder():
+        wa = h.get("owner_wa")
+        if not wa:
+            continue
+        time_str = f" at {h['hearing_time']}" if h.get("hearing_time") else ""
+        msg = (
+            f"🏛️ *Project Ease Reminder*\n\n"
+            f"*Hearing tomorrow{time_str}*\n"
+            f"📌 {h['title']}\n"
+            f"🗓️ {h['hearing_date']}\n"
+            + (f"🏛️ {h['court_name']}\n" if h.get("court_name") else "")
+            + (f"⚖️ {h['matter_title']}\n" if h.get("matter_title") else "")
+            + "\n_Sent by Project Ease_"
+        )
+        try:
+            import asyncio as _aio
+            await _aio.to_thread(send_whatsapp_text, wa, msg)
+            mark_hearing_reminder_sent(h["hearing_id"])
+        except Exception as exc:
+            logging.getLogger(__name__).error("Hearing reminder send error: %s", exc)
+
+    # Deadlines
+    for d in get_deadlines_needing_reminder():
+        wa = d.get("owner_wa")
+        if not wa:
+            continue
+        msg = (
+            f"⚠️ *Project Ease Reminder*\n\n"
+            f"*Deadline tomorrow*\n"
+            f"📌 {d['title']}\n"
+            f"🗓️ {d['due_date']} · {d.get('deadline_type', 'Filing')}\n"
+            + (f"⚖️ {d['matter_title']}\n" if d.get("matter_title") else "")
+            + "\n_Sent by Project Ease_"
+        )
+        try:
+            import asyncio as _aio
+            await _aio.to_thread(send_whatsapp_text, wa, msg)
+            mark_deadline_reminder_sent(d["deadline_id"])
+        except Exception as exc:
+            logging.getLogger(__name__).error("Deadline reminder send error: %s", exc)
+
+
 @bp.before_app_serving
 async def setup_clients():
     # Load .env — works whether entry point is main.py or quart --app app:create_app
@@ -2342,5 +2713,8 @@ def create_app():
         if len(allowed_origins) > 0:
             app.logger.info("CORS enabled for %s", allowed_origins)
             cors(app, allow_origin=allowed_origins, allow_methods=["GET", "POST"])
+
+    # Start WhatsApp reminder scheduler (Task #32)
+    _start_reminder_scheduler(app)
 
     return app

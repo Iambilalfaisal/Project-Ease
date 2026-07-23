@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "documents" | "clients" | "matters" | "team" | "subscription" | "settings" | "audit";
+type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "invoices" | "team" | "subscription" | "settings" | "audit";
 
 interface Category {
     category_id: string;
@@ -85,6 +85,39 @@ interface Matter {
     documents?:      MatterDoc[];
 }
 
+interface Fee {
+    fee_id:       string;
+    matter_id:    string | null;
+    description:  string;
+    fee_type:     string;
+    amount:       number;
+    fee_date:     string;
+    is_paid:      number;
+    paid_at:      string | null;
+    invoice_id:   string | null;
+    notes:        string | null;
+    matter_title: string | null;
+}
+
+interface Invoice {
+    invoice_id:     string;
+    matter_id:      string | null;
+    client_id:      string | null;
+    invoice_number: string;
+    title:          string;
+    status:         "draft" | "sent" | "paid" | "cancelled";
+    issued_date:    string;
+    due_date:       string | null;
+    total_amount:   number;
+    notes:          string | null;
+    matter_title:   string | null;
+    case_number:    string | null;
+    client_name:    string | null;
+    client_email:   string | null;
+    client_phone:   string | null;
+    fees?:          Fee[];
+}
+
 interface AuditLog {
     log_id:        string;
     org_id:        string | null;
@@ -129,6 +162,8 @@ const NAV: { id: Panel; icon: string; label: string }[] = [
     { id: "documents",    icon: "D", label: "Documents"    },
     { id: "clients",      icon: "C", label: "Clients"      },
     { id: "matters",      icon: "M", label: "Matters"      },
+    { id: "calendar",     icon: "K", label: "Calendar"     },
+    { id: "invoices",     icon: "I", label: "Invoices"     },
     { id: "team",         icon: "T", label: "Team"         },
     { id: "audit",        icon: "A", label: "Audit Log"    },
     { id: "subscription", icon: "P", label: "Subscription" },
@@ -140,6 +175,8 @@ const PANEL_TITLES: Record<Panel, string> = {
     documents:    "Document Library",
     clients:      "Client Management",
     matters:      "Matter Management",
+    calendar:     "Court Calendar",
+    invoices:     "Invoices",
     team:         "Team Members",
     audit:        "Audit Log",
     subscription: "Plan & Subscription",
@@ -151,6 +188,8 @@ const PANEL_SUBS: Record<Panel, string> = {
     documents:    "Upload and manage your firm's documents",
     clients:      "Manage your firm's clients and their details",
     matters:      "Track cases, matters, and linked documents",
+    calendar:     "Hearings, deadlines, and WhatsApp reminders",
+    invoices:     "Fee entries and client invoices across all matters",
     team:         "Manage who has access to your workspace",
     audit:        "Track logins, searches, and document activity",
     subscription: "Your current plan, usage, and billing",
@@ -167,6 +206,20 @@ const MATTER_TYPES = [
 ];
 
 const MATTER_STATUSES = ["Active", "Pending", "Closed", "Settled", "Withdrawn"] as const;
+
+const FEE_TYPES = ["Consultation", "Court Appearance", "Filing Fee", "Legal Research", "Document Drafting", "Miscellaneous"] as const;
+
+const INVOICE_STATUS_BADGE: Record<string, string> = {
+    draft:     "badgeGray",
+    sent:      "badgeBlue",
+    paid:      "badgeGreen",
+    cancelled: "badgeAmber",
+};
+
+function fmtPKR(n: number): string {
+    if (n === 0) return "Free";
+    return "PKR " + n.toLocaleString("en-PK");
+}
 
 const DEFAULT_COURTS = [
     "Supreme Court of Pakistan", "Federal Shariat Court",
@@ -468,6 +521,16 @@ const MattersPanel = () => {
     // New court input
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
+    // Detail tabs & fees
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees">("documents");
+    const [fees,       setFees]       = useState<Fee[]>([]);
+    const [feesLoading, setFeesLoading] = useState(false);
+    const [showFeeModal, setShowFeeModal] = useState(false);
+    const [editFee,      setEditFee]      = useState<Fee | null>(null);
+    const [feeForm,      setFeeForm]      = useState({ description: "", fee_type: "Consultation", amount: "", fee_date: "", notes: "" });
+    const [feeSaving,    setFeeSaving]    = useState(false);
+    const [feeErr,       setFeeErr]       = useState("");
+    const [genInvLoading, setGenInvLoading] = useState(false);
 
     const allCourts = [...DEFAULT_COURTS, ...customCourts.map(c => c.name)];
 
@@ -488,9 +551,83 @@ const MattersPanel = () => {
     useEffect(() => { loadAll(); }, []);
 
     const openDetail = (m: Matter) => {
+        setDetailTab("documents");
+        setFees([]);
         fetch(`/matters/${m.matter_id}`, { headers: authHeaders() })
             .then(r => r.json())
             .then(d => { setDetail(d); setEditDetail(false); });
+    };
+
+    const loadFees = (matterId: string) => {
+        setFeesLoading(true);
+        fetch(`/fees?matter_id=${matterId}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setFees(Array.isArray(d) ? d : []); setFeesLoading(false); })
+            .catch(() => setFeesLoading(false));
+    };
+
+    const openFeeModal = (fee?: Fee) => {
+        if (fee) {
+            setEditFee(fee);
+            setFeeForm({ description: fee.description, fee_type: fee.fee_type, amount: String(fee.amount), fee_date: fee.fee_date, notes: fee.notes ?? "" });
+        } else {
+            setEditFee(null);
+            const today = new Date().toISOString().slice(0, 10);
+            setFeeForm({ description: "", fee_type: "Consultation", amount: "", fee_date: today, notes: "" });
+        }
+        setFeeErr(""); setShowFeeModal(true);
+    };
+
+    const saveFee = async () => {
+        if (!feeForm.description.trim() || !feeForm.fee_date || !feeForm.amount) {
+            setFeeErr("Description, date, and amount are required."); return;
+        }
+        const amount = parseInt(feeForm.amount);
+        if (isNaN(amount) || amount < 0) { setFeeErr("Amount must be a positive number."); return; }
+        setFeeSaving(true); setFeeErr("");
+        const body = { description: feeForm.description.trim(), fee_type: feeForm.fee_type, amount, fee_date: feeForm.fee_date, notes: feeForm.notes || undefined, matter_id: detail?.matter_id };
+        try {
+            const r = editFee
+                ? await fetch(`/fees/${editFee.fee_id}`, { method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) })
+                : await fetch("/fees", { method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const d = await r.json().catch(() => ({})); setFeeErr(d.error ?? "Save failed."); }
+            else { setShowFeeModal(false); if (detail) loadFees(detail.matter_id); }
+        } catch { setFeeErr("Network error."); }
+        finally { setFeeSaving(false); }
+    };
+
+    const deleteFee = async (fee: Fee) => {
+        if (!confirm(`Delete fee "${fee.description}"?`)) return;
+        await fetch(`/fees/${fee.fee_id}`, { method: "DELETE", headers: authHeaders() });
+        if (detail) loadFees(detail.matter_id);
+    };
+
+    const toggleFeePaid = async (fee: Fee) => {
+        await fetch(`/fees/${fee.fee_id}`, {
+            method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ is_paid: fee.is_paid ? 0 : 1 }),
+        });
+        if (detail) loadFees(detail.matter_id);
+    };
+
+    const generateInvoice = async () => {
+        if (!detail) return;
+        const unbilled = fees.filter(f => !f.invoice_id && !f.is_paid);
+        if (unbilled.length === 0) { alert("No unbilled fees to invoice."); return; }
+        setGenInvLoading(true);
+        const today = new Date().toISOString().slice(0, 10);
+        try {
+            const r = await fetch("/invoices", {
+                method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    matter_id: detail.matter_id, title: `Invoice — ${detail.title}`,
+                    issued_date: today, client_id: detail.client_id,
+                }),
+            });
+            if (r.ok) { loadFees(detail.matter_id); alert("Invoice created! View it in the Invoices panel."); }
+            else { const d = await r.json().catch(() => ({})); alert(d.error ?? "Failed to create invoice."); }
+        } catch { alert("Network error."); }
+        finally { setGenInvLoading(false); }
     };
 
     const saveMatter = async () => {
@@ -730,39 +867,165 @@ const MattersPanel = () => {
                     </div>
                 )}
 
-                {/* Document hierarchy */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "1.5rem 0 0.75rem" }}>
-                    <div className={styles.sectionTitle} style={{ margin: 0 }}>
-                        Linked Documents ({(detail.documents ?? []).length})
-                    </div>
-                    <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={openLinkModal}>
-                        + Link Documents
+                {/* Detail tabs */}
+                <div className={styles.detailTabBar}>
+                    <button className={`${styles.detailTabBtn}${detailTab === "documents" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => setDetailTab("documents")}>
+                        Documents ({(detail.documents ?? []).length})
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "fees" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("fees"); if (detail) loadFees(detail.matter_id); }}>
+                        Fees &amp; Invoices
                     </button>
                 </div>
 
-                {grouped.length === 0 ? (
-                    <div className={styles.emptyHint}>No documents linked yet. Click "Link Documents" to attach files from your library.</div>
-                ) : (
-                    <div className={styles.docHierarchy}>
-                        {grouped.map(([catName, docs]) => (
-                            <div key={catName} className={styles.docHierarchyGroup}>
-                                <div className={styles.docHierarchyGroupHeader}>
-                                    <span className={styles.docHierarchyCat}>📁 {catName}</span>
-                                    <span className={styles.docHierarchyCount}>{docs.length}</span>
-                                </div>
-                                {docs.map(doc => (
-                                    <div key={doc.doc_id} className={styles.docHierarchyRow}>
-                                        <span className={styles.fileIcon} style={{ fontSize: "0.55rem" }}>F</span>
-                                        <span className={styles.docHierarchyName}>{doc.filename}</span>
-                                        <span className={styles.docHierarchySize}>{fmtBytes(doc.size_bytes)}</span>
-                                        <span className={doc.status === "ready" ? styles.badgeGreen : styles.badgeAmber} style={{ fontSize: "0.65rem", padding: "0.1rem 0.45rem" }}>
-                                            {doc.status === "ready" ? "Ready" : "Processing"}
-                                        </span>
-                                        <button className={styles.queueRemove} title="Unlink from matter" onClick={() => unlinkDoc(doc.doc_id)}>✕</button>
+                {/* ── Documents tab ── */}
+                {detailTab === "documents" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{(detail.documents ?? []).length} document{(detail.documents ?? []).length !== 1 ? "s" : ""} linked</span>
+                        <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={openLinkModal}>
+                            + Link Documents
+                        </button>
+                    </div>
+                    {grouped.length === 0 ? (
+                        <div className={styles.emptyHint}>No documents linked yet. Click "Link Documents" to attach files from your library.</div>
+                    ) : (
+                        <div className={styles.docHierarchy}>
+                            {grouped.map(([catName, docs]) => (
+                                <div key={catName} className={styles.docHierarchyGroup}>
+                                    <div className={styles.docHierarchyGroupHeader}>
+                                        <span className={styles.docHierarchyCat}>📁 {catName}</span>
+                                        <span className={styles.docHierarchyCount}>{docs.length}</span>
                                     </div>
-                                ))}
+                                    {docs.map(doc => (
+                                        <div key={doc.doc_id} className={styles.docHierarchyRow}>
+                                            <span className={styles.fileIcon} style={{ fontSize: "0.55rem" }}>F</span>
+                                            <span className={styles.docHierarchyName}>{doc.filename}</span>
+                                            <span className={styles.docHierarchySize}>{fmtBytes(doc.size_bytes)}</span>
+                                            <span className={doc.status === "ready" ? styles.badgeGreen : styles.badgeAmber} style={{ fontSize: "0.65rem", padding: "0.1rem 0.45rem" }}>
+                                                {doc.status === "ready" ? "Ready" : "Processing"}
+                                            </span>
+                                            <button className={styles.queueRemove} title="Unlink from matter" onClick={() => unlinkDoc(doc.doc_id)}>✕</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </>)}
+
+                {/* ── Fees tab ── */}
+                {detailTab === "fees" && (<>
+                    {(() => {
+                        const unbilled  = fees.filter(f => !f.invoice_id);
+                        const billed    = fees.filter(f => !!f.invoice_id);
+                        const totalUnbilled = unbilled.reduce((s, f) => s + f.amount, 0);
+                        const totalAll  = fees.reduce((s, f) => s + f.amount, 0);
+                        return (
+                            <>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                                    <div style={{ display: "flex", gap: "1rem", fontSize: "0.82rem", color: "var(--text-2)" }}>
+                                        <span>Total: <strong style={{ color: "var(--text-1)" }}>{fmtPKR(totalAll)}</strong></span>
+                                        <span>Unbilled: <strong style={{ color: "var(--gold)" }}>{fmtPKR(totalUnbilled)}</strong></span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                                        {unbilled.length > 0 && (
+                                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }}
+                                                disabled={genInvLoading} onClick={generateInvoice}>
+                                                {genInvLoading ? "Creating…" : "Generate Invoice"}
+                                            </button>
+                                        )}
+                                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openFeeModal()}>
+                                            + Add Fee
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {feesLoading ? (
+                                    <div className={styles.emptyHint}>Loading…</div>
+                                ) : fees.length === 0 ? (
+                                    <div className={styles.emptyHint}>No fees recorded yet. Click "+ Add Fee" to start tracking.</div>
+                                ) : (
+                                    <div className={styles.tableWrap}>
+                                        <table className={styles.table}>
+                                            <thead><tr>
+                                                <th>Description</th><th>Type</th><th>Date</th>
+                                                <th style={{ textAlign: "right" }}>Amount (PKR)</th>
+                                                <th>Paid</th><th>Invoice</th><th>Actions</th>
+                                            </tr></thead>
+                                            <tbody>
+                                                {fees.map(fee => (
+                                                    <tr key={fee.fee_id} style={{ opacity: fee.is_paid ? 0.6 : 1 }}>
+                                                        <td>{fee.description}{fee.notes && <span className={styles.muted}> · {fee.notes}</span>}</td>
+                                                        <td className={styles.muted}>{fee.fee_type}</td>
+                                                        <td className={styles.muted}>{fee.fee_date}</td>
+                                                        <td style={{ textAlign: "right", fontWeight: 600 }}>{fee.amount.toLocaleString("en-PK")}</td>
+                                                        <td>
+                                                            <button
+                                                                className={fee.is_paid ? styles.badgeGreen : styles.badgeGray}
+                                                                style={{ border: "none", cursor: "pointer", fontSize: "0.72rem" }}
+                                                                onClick={() => toggleFeePaid(fee)}>
+                                                                {fee.is_paid ? "Paid" : "Unpaid"}
+                                                            </button>
+                                                        </td>
+                                                        <td className={styles.muted}>{fee.invoice_id ? <span className={styles.badgeBlue} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
+                                                        <td style={{ display: "flex", gap: "0.35rem" }}>
+                                                            <button className={styles.actionBtn} onClick={() => openFeeModal(fee)}>Edit</button>
+                                                            <button className={styles.actionBtnDanger} onClick={() => deleteFee(fee)}>Delete</button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                            <tfoot>
+                                                <tr>
+                                                    <td colSpan={3} style={{ textAlign: "right", fontWeight: 600, color: "var(--text-2)", fontSize: "0.82rem" }}>Total</td>
+                                                    <td style={{ textAlign: "right", fontWeight: 700, color: "var(--text-1)" }}>{totalAll.toLocaleString("en-PK")}</td>
+                                                    <td colSpan={3} />
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                )}
+                            </>
+                        );
+                    })()}
+                </>)}
+
+                {/* ── Fee add/edit modal ── */}
+                {showFeeModal && (
+                    <div className={styles.overlay} onClick={() => setShowFeeModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                            <div className={styles.modalTitle}>{editFee ? "Edit Fee" : "Add Fee"}</div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Description *</label>
+                                <input className={styles.formInput} value={feeForm.description} onChange={e => setFeeForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Court appearance — Session 1" />
                             </div>
-                        ))}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Type</label>
+                                    <select className={styles.formSelect} value={feeForm.fee_type} onChange={e => setFeeForm(f => ({ ...f, fee_type: e.target.value }))}>
+                                        {FEE_TYPES.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Amount (PKR) *</label>
+                                    <input type="number" min="0" className={styles.formInput} value={feeForm.amount} onChange={e => setFeeForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 25000" />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Date *</label>
+                                <input type="date" className={styles.formInput} value={feeForm.fee_date} onChange={e => setFeeForm(f => ({ ...f, fee_date: e.target.value }))} />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <input className={styles.formInput} value={feeForm.notes} onChange={e => setFeeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                            </div>
+                            {feeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{feeErr}</div>}
+                            <div className={styles.modalActions}>
+                                <button className={styles.btnGhost} onClick={() => setShowFeeModal(false)} disabled={feeSaving}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveFee} disabled={feeSaving}>{feeSaving ? "Saving…" : editFee ? "Save Changes" : "Add Fee"}</button>
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -1877,6 +2140,700 @@ const TeamPanel = ({ team, setTeam }: {
 
 // ── Subscription Panel ────────────────────────────────────────────────────────
 
+// ── Invoices Panel ────────────────────────────────────────────────────────────
+
+const InvoicesPanel = () => {
+    const [invoices,     setInvoices]     = useState<Invoice[]>([]);
+    const [loading,      setLoading]      = useState(true);
+    const [viewInvoice,  setViewInvoice]  = useState<Invoice | null>(null);
+    const [statusFilter, setStatusFilter] = useState("all");
+    const [updating,     setUpdating]     = useState<string | null>(null);
+
+    const load = () => {
+        setLoading(true);
+        fetch("/invoices", { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setInvoices(Array.isArray(d) ? d : []); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const openInvoice = (inv: Invoice) => {
+        fetch(`/invoices/${inv.invoice_id}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setViewInvoice(d))
+            .catch(() => {});
+    };
+
+    const updateStatus = async (inv: Invoice, status: string) => {
+        setUpdating(inv.invoice_id);
+        await fetch(`/invoices/${inv.invoice_id}`, {
+            method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ status }),
+        });
+        setUpdating(null);
+        load();
+        if (viewInvoice?.invoice_id === inv.invoice_id) {
+            setViewInvoice(v => v ? { ...v, status: status as Invoice["status"] } : v);
+        }
+    };
+
+    const printInvoice = (inv: Invoice) => {
+        const fees = inv.fees ?? [];
+        const total = fees.reduce((s, f) => s + f.amount, 0);
+        const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; margin: 0; padding: 32px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #b8972e; padding-bottom: 20px; margin-bottom: 24px; }
+  .brand { font-size: 1.4rem; font-weight: 700; color: #b8972e; }
+  .invoice-meta { text-align: right; }
+  .invoice-num { font-size: 1.1rem; font-weight: 700; color: #1a1a2e; }
+  .badge { display: inline-block; background: #b8972e22; color: #b8972e; border: 1px solid #b8972e55; border-radius: 100px; padding: 2px 10px; font-size: 0.75rem; font-weight: 700; text-transform: capitalize; }
+  .section { margin-bottom: 20px; }
+  .section-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; font-weight: 600; margin-bottom: 6px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th { background: #f8f4e8; text-align: left; padding: 8px 10px; font-size: 0.78rem; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 0.875rem; }
+  .amount { text-align: right; font-weight: 600; }
+  .total-row td { font-weight: 700; font-size: 1rem; background: #f8f4e8; border-top: 2px solid #b8972e; }
+  .footer { margin-top: 40px; font-size: 0.78rem; color: #aaa; border-top: 1px solid #eee; padding-top: 16px; }
+  @media print { body { padding: 0; } button { display: none; } }
+</style></head><body>
+<div class="header">
+  <div><div class="brand">Project Ease</div><div style="font-size:0.8rem;color:#888;margin-top:4px;">Legal Document Intelligence</div></div>
+  <div class="invoice-meta">
+    <div class="invoice-num">${inv.invoice_number}</div>
+    <div style="margin:4px 0"><span class="badge">${inv.status}</span></div>
+    <div style="font-size:0.8rem;color:#888;">Issued: ${inv.issued_date}</div>
+    ${inv.due_date ? `<div style="font-size:0.8rem;color:#888;">Due: ${inv.due_date}</div>` : ""}
+  </div>
+</div>
+<div class="grid2">
+  <div class="section">
+    <div class="section-title">Bill To</div>
+    <div style="font-weight:600">${inv.client_name ?? "—"}</div>
+    ${inv.client_email ? `<div style="font-size:0.83rem;color:#666">${inv.client_email}</div>` : ""}
+    ${inv.client_phone ? `<div style="font-size:0.83rem;color:#666">${inv.client_phone}</div>` : ""}
+  </div>
+  <div class="section">
+    <div class="section-title">Matter</div>
+    <div style="font-weight:600">${inv.matter_title ?? "—"}</div>
+    ${inv.case_number ? `<div style="font-size:0.83rem;color:#666">Case #${inv.case_number}</div>` : ""}
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">Invoice Title</div>
+  <div style="font-weight:600">${inv.title}</div>
+</div>
+<table>
+  <thead><tr><th>Description</th><th>Type</th><th>Date</th><th class="amount">Amount (PKR)</th></tr></thead>
+  <tbody>
+    ${fees.map(f => `<tr><td>${f.description}</td><td>${f.fee_type}</td><td>${f.fee_date}</td><td class="amount">${f.amount.toLocaleString("en-PK")}</td></tr>`).join("")}
+  </tbody>
+  <tfoot>
+    <tr class="total-row"><td colspan="3" style="text-align:right">Total</td><td class="amount">PKR ${total.toLocaleString("en-PK")}</td></tr>
+  </tfoot>
+</table>
+${inv.notes ? `<div class="section" style="margin-top:20px"><div class="section-title">Notes</div><div>${inv.notes}</div></div>` : ""}
+<div class="footer">Generated by Project Ease &nbsp;·&nbsp; projectease.ai</div>
+</body></html>`;
+        const w = window.open("", "_blank");
+        if (!w) { alert("Please allow pop-ups to print invoices."); return; }
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 300);
+    };
+
+    const filtered = statusFilter === "all" ? invoices : invoices.filter(i => i.status === statusFilter);
+
+    return (
+        <div className={styles.panelContent}>
+            <div className={styles.panelToolbar}>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    {(["all","draft","sent","paid","cancelled"] as const).map(s => (
+                        <button key={s} onClick={() => setStatusFilter(s)}
+                            style={{
+                                padding: "0.28rem 0.75rem", borderRadius: 100, fontSize: "0.78rem", fontWeight: 600,
+                                cursor: "pointer", textTransform: "capitalize",
+                                border: statusFilter === s ? "1px solid var(--gold)" : "1px solid var(--border)",
+                                background: statusFilter === s ? "var(--gold)" : "transparent",
+                                color: statusFilter === s ? "#1a1200" : "var(--text-2)",
+                            }}>{s}</button>
+                    ))}
+                    <span className={styles.muted} style={{ fontSize: "0.8rem", marginLeft: "0.5rem" }}>{filtered.length} invoice{filtered.length !== 1 ? "s" : ""}</span>
+                </div>
+            </div>
+
+            {loading ? (
+                <div className={styles.emptyHint}>Loading…</div>
+            ) : filtered.length === 0 ? (
+                <div className={styles.emptyHint}>
+                    No invoices yet. Open a matter, add fees, then click "Generate Invoice".
+                </div>
+            ) : (
+                <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead><tr>
+                            <th>Invoice #</th><th>Title</th><th>Matter</th><th>Client</th>
+                            <th style={{ textAlign: "right" }}>Amount (PKR)</th>
+                            <th>Issued</th><th>Status</th><th>Actions</th>
+                        </tr></thead>
+                        <tbody>
+                            {filtered.map(inv => (
+                                <tr key={inv.invoice_id}>
+                                    <td><button className={styles.linkBtn} onClick={() => openInvoice(inv)}>{inv.invoice_number}</button></td>
+                                    <td>{inv.title}</td>
+                                    <td className={styles.muted}>{inv.matter_title ?? "—"}</td>
+                                    <td className={styles.muted}>{inv.client_name ?? "—"}</td>
+                                    <td style={{ textAlign: "right", fontWeight: 600 }}>{inv.total_amount.toLocaleString("en-PK")}</td>
+                                    <td className={styles.muted}>{inv.issued_date}</td>
+                                    <td><span className={(styles as any)[INVOICE_STATUS_BADGE[inv.status] ?? "badgeGray"]} style={{ fontSize: "0.72rem" }}>{inv.status}</span></td>
+                                    <td style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                                        <button className={styles.actionBtn} onClick={() => openInvoice(inv)}>View</button>
+                                        <button className={styles.actionBtn} onClick={() => printInvoice(inv)}>Print</button>
+                                        {inv.status === "draft" && (
+                                            <button className={styles.actionBtn} disabled={updating === inv.invoice_id}
+                                                onClick={() => updateStatus(inv, "sent")}>Mark Sent</button>
+                                        )}
+                                        {inv.status === "sent" && (
+                                            <button className={styles.actionBtn} disabled={updating === inv.invoice_id}
+                                                onClick={() => updateStatus(inv, "paid")}>Mark Paid</button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* Invoice detail modal */}
+            {viewInvoice && (
+                <div className={styles.overlay} onClick={() => setViewInvoice(null)}>
+                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem" }}>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: "1rem" }}>{viewInvoice.invoice_number}</div>
+                                <div className={styles.muted} style={{ fontSize: "0.82rem" }}>{viewInvoice.title}</div>
+                            </div>
+                            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                                <span className={(styles as any)[INVOICE_STATUS_BADGE[viewInvoice.status] ?? "badgeGray"]}>{viewInvoice.status}</span>
+                                <button className={styles.btnGhost} style={{ fontSize: "0.78rem" }} onClick={() => printInvoice(viewInvoice)}>🖨 Print</button>
+                                <button className={styles.btnGhost} onClick={() => setViewInvoice(null)}>Close</button>
+                            </div>
+                        </div>
+
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem", fontSize: "0.83rem" }}>
+                            <div><span className={styles.muted}>Client: </span>{viewInvoice.client_name ?? "—"}</div>
+                            <div><span className={styles.muted}>Matter: </span>{viewInvoice.matter_title ?? "—"}</div>
+                            <div><span className={styles.muted}>Issued: </span>{viewInvoice.issued_date}</div>
+                            {viewInvoice.due_date && <div><span className={styles.muted}>Due: </span>{viewInvoice.due_date}</div>}
+                        </div>
+
+                        <div className={styles.tableWrap}>
+                            <table className={styles.table}>
+                                <thead><tr><th>Description</th><th>Type</th><th>Date</th><th style={{ textAlign: "right" }}>PKR</th></tr></thead>
+                                <tbody>
+                                    {(viewInvoice.fees ?? []).map(f => (
+                                        <tr key={f.fee_id}>
+                                            <td>{f.description}</td>
+                                            <td className={styles.muted}>{f.fee_type}</td>
+                                            <td className={styles.muted}>{f.fee_date}</td>
+                                            <td style={{ textAlign: "right", fontWeight: 600 }}>{f.amount.toLocaleString("en-PK")}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Total</td>
+                                        <td style={{ textAlign: "right", fontWeight: 700, color: "var(--gold)" }}>
+                                            PKR {viewInvoice.total_amount.toLocaleString("en-PK")}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <div className={styles.modalActions} style={{ marginTop: "1rem", justifyContent: "flex-end" }}>
+                            {viewInvoice.status === "draft" && <button className={styles.btnGhost} onClick={() => updateStatus(viewInvoice, "sent")}>Mark Sent</button>}
+                            {viewInvoice.status === "sent"  && <button className={styles.btnPrimary} onClick={() => updateStatus(viewInvoice, "paid")}>Mark Paid</button>}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ── Court Calendar Panel ──────────────────────────────────────────────────────
+
+interface Hearing {
+    hearing_id:   string;
+    matter_id:    string | null;
+    title:        string;
+    hearing_date: string;   // YYYY-MM-DD
+    hearing_time: string | null;
+    court_name:   string | null;
+    judge_name:   string | null;
+    notes:        string | null;
+    wa_reminder:  number;
+    matter_title: string | null;
+    case_number:  string | null;
+}
+
+interface Deadline {
+    deadline_id:    string;
+    matter_id:      string | null;
+    title:          string;
+    due_date:       string;   // YYYY-MM-DD
+    deadline_type:  string;
+    notes:          string | null;
+    is_completed:   number;
+    wa_reminder:    number;
+    matter_title:   string | null;
+    case_number:    string | null;
+}
+
+type CalEvent = ({ kind: "hearing" } & Hearing) | ({ kind: "deadline" } & Deadline);
+
+const DEADLINE_TYPES = ["Filing", "Response", "Appeal", "Service", "Payment", "Other"] as const;
+
+const MONTHS = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"];
+const DOW    = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+function isoDate(y: number, m: number, d: number): string {
+    return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+}
+
+function daysInMonth(y: number, m: number): number {
+    return new Date(y, m + 1, 0).getDate();
+}
+
+function firstDow(y: number, m: number): number {
+    return new Date(y, m, 1).getDay();
+}
+
+const CalendarPanel = () => {
+    const today = new Date();
+    const [viewYear,  setViewYear]  = useState(today.getFullYear());
+    const [viewMonth, setViewMonth] = useState(today.getMonth());
+    const [hearings,  setHearings]  = useState<Hearing[]>([]);
+    const [deadlines, setDeadlines] = useState<Deadline[]>([]);
+    const [matters,   setMatters]   = useState<{ matter_id: string; title: string }[]>([]);
+    const [loading,   setLoading]   = useState(true);
+    const [selected,  setSelected]  = useState<string | null>(null);  // YYYY-MM-DD
+
+    // Modal state — shared for add/edit
+    type ModalMode = "add-hearing" | "add-deadline" | "edit-hearing" | "edit-deadline" | null;
+    const [modal,     setModal]     = useState<ModalMode>(null);
+    const [editTarget, setEditTarget] = useState<Hearing | Deadline | null>(null);
+
+    // Form fields
+    const [fTitle,     setFTitle]     = useState("");
+    const [fDate,      setFDate]      = useState("");
+    const [fTime,      setFTime]      = useState("");
+    const [fCourt,     setFCourt]     = useState("");
+    const [fJudge,     setFJudge]     = useState("");
+    const [fDLType,    setFDLType]    = useState<string>("Filing");
+    const [fMatter,    setFMatter]    = useState("");
+    const [fNotes,     setFNotes]     = useState("");
+    const [fWA,        setFWA]        = useState(false);
+    const [fSaving,    setFSaving]    = useState(false);
+    const [fErr,       setFErr]       = useState("");
+
+    const fromDate = `${viewYear}-${String(viewMonth + 1).padStart(2,"0")}-01`;
+    const toDate   = isoDate(viewYear, viewMonth, daysInMonth(viewYear, viewMonth));
+
+    const load = () => {
+        setLoading(true);
+        Promise.all([
+            fetch(`/hearings?from_date=${fromDate}&to_date=${toDate}`, { headers: authHeaders() }).then(r => r.json()),
+            fetch(`/deadlines?from_date=${fromDate}&to_date=${toDate}`, { headers: authHeaders() }).then(r => r.json()),
+            fetch("/matters", { headers: authHeaders() }).then(r => r.json()),
+        ]).then(([h, d, m]) => {
+            setHearings(Array.isArray(h) ? h : []);
+            setDeadlines(Array.isArray(d) ? d : []);
+            setMatters(Array.isArray(m) ? m.map((x: any) => ({ matter_id: x.matter_id, title: x.title })) : []);
+            setLoading(false);
+        }).catch(() => setLoading(false));
+    };
+
+    useEffect(() => { load(); }, [viewYear, viewMonth]);
+
+    // Map date → events
+    const eventsByDate: Record<string, CalEvent[]> = {};
+    hearings.forEach(h => {
+        const k = h.hearing_date;
+        eventsByDate[k] = [...(eventsByDate[k] ?? []), { kind: "hearing", ...h }];
+    });
+    deadlines.forEach(d => {
+        const k = d.due_date;
+        eventsByDate[k] = [...(eventsByDate[k] ?? []), { kind: "deadline", ...d }];
+    });
+
+    const prevMonth = () => {
+        if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+        else setViewMonth(m => m - 1);
+        setSelected(null);
+    };
+    const nextMonth = () => {
+        if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+        else setViewMonth(m => m + 1);
+        setSelected(null);
+    };
+
+    const openAdd = (kind: "hearing" | "deadline", date?: string) => {
+        setFTitle(""); setFDate(date ?? ""); setFTime(""); setFCourt(""); setFJudge("");
+        setFDLType("Filing"); setFMatter(""); setFNotes(""); setFWA(false);
+        setFErr(""); setEditTarget(null);
+        setModal(kind === "hearing" ? "add-hearing" : "add-deadline");
+    };
+
+    const openEdit = (ev: CalEvent) => {
+        setEditTarget(ev);
+        setFErr(""); setFSaving(false);
+        if (ev.kind === "hearing") {
+            setFTitle(ev.title); setFDate(ev.hearing_date); setFTime(ev.hearing_time ?? "");
+            setFCourt(ev.court_name ?? ""); setFJudge(ev.judge_name ?? "");
+            setFMatter(ev.matter_id ?? ""); setFNotes(ev.notes ?? "");
+            setFWA(!!ev.wa_reminder); setModal("edit-hearing");
+        } else {
+            setFTitle(ev.title); setFDate(ev.due_date); setFDLType(ev.deadline_type);
+            setFMatter(ev.matter_id ?? ""); setFNotes(ev.notes ?? "");
+            setFWA(!!ev.wa_reminder); setModal("edit-deadline");
+        }
+    };
+
+    const closeModal = () => { setModal(null); setEditTarget(null); };
+
+    const saveHearing = async () => {
+        if (!fTitle.trim() || !fDate) { setFErr("Title and date are required."); return; }
+        setFSaving(true); setFErr("");
+        const body = {
+            title: fTitle.trim(), hearing_date: fDate,
+            hearing_time: fTime || undefined, court_name: fCourt || undefined,
+            judge_name: fJudge || undefined, matter_id: fMatter || undefined,
+            notes: fNotes || undefined, wa_reminder: fWA,
+        };
+        try {
+            let r: Response;
+            if (modal === "edit-hearing" && editTarget) {
+                r = await fetch(`/hearings/${(editTarget as Hearing).hearing_id}`, {
+                    method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+            } else {
+                r = await fetch("/hearings", {
+                    method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+            }
+            if (!r.ok) { const d = await r.json().catch(() => ({})); setFErr(d.error ?? "Save failed."); }
+            else { closeModal(); load(); }
+        } catch { setFErr("Network error."); }
+        finally { setFSaving(false); }
+    };
+
+    const saveDeadline = async () => {
+        if (!fTitle.trim() || !fDate) { setFErr("Title and date are required."); return; }
+        setFSaving(true); setFErr("");
+        const body = {
+            title: fTitle.trim(), due_date: fDate, deadline_type: fDLType,
+            matter_id: fMatter || undefined, notes: fNotes || undefined, wa_reminder: fWA,
+        };
+        try {
+            let r: Response;
+            if (modal === "edit-deadline" && editTarget) {
+                r = await fetch(`/deadlines/${(editTarget as Deadline).deadline_id}`, {
+                    method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+            } else {
+                r = await fetch("/deadlines", {
+                    method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+            }
+            if (!r.ok) { const d = await r.json().catch(() => ({})); setFErr(d.error ?? "Save failed."); }
+            else { closeModal(); load(); }
+        } catch { setFErr("Network error."); }
+        finally { setFSaving(false); }
+    };
+
+    const toggleComplete = async (dl: Deadline) => {
+        await fetch(`/deadlines/${dl.deadline_id}`, {
+            method: "PATCH",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ is_completed: dl.is_completed ? 0 : 1 }),
+        });
+        load();
+    };
+
+    const deleteEvent = async (ev: CalEvent) => {
+        if (!confirm(`Delete "${ev.title}"?`)) return;
+        if (ev.kind === "hearing") {
+            await fetch(`/hearings/${ev.hearing_id}`, { method: "DELETE", headers: authHeaders() });
+        } else {
+            await fetch(`/deadlines/${ev.deadline_id}`, { method: "DELETE", headers: authHeaders() });
+        }
+        load();
+    };
+
+    // Upcoming events across the whole loaded month, sorted by date
+    const allEvents: CalEvent[] = [
+        ...hearings.map(h => ({ kind: "hearing" as const, ...h })),
+        ...deadlines.map(d => ({ kind: "deadline" as const, ...d })),
+    ].sort((a, b) => {
+        const da = a.kind === "hearing" ? a.hearing_date : a.due_date;
+        const db = b.kind === "hearing" ? b.hearing_date : b.due_date;
+        return da.localeCompare(db);
+    });
+
+    const selectedEvents = selected ? (eventsByDate[selected] ?? []) : [];
+    const todayStr = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
+
+    // Calendar grid
+    const totalDays = daysInMonth(viewYear, viewMonth);
+    const startDow  = firstDow(viewYear, viewMonth);
+    const cells: (number | null)[] = [
+        ...Array(startDow).fill(null),
+        ...Array.from({ length: totalDays }, (_, i) => i + 1),
+    ];
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    const isHearing = (ev: CalEvent): ev is { kind: "hearing" } & Hearing => ev.kind === "hearing";
+
+    return (
+        <div className={styles.panelContent}>
+            <div className={styles.calLayout}>
+
+                {/* ── Left: Month grid ── */}
+                <div className={styles.calMain}>
+                    {/* Month nav */}
+                    <div className={styles.calMonthNav}>
+                        <button className={styles.calNavBtn} onClick={prevMonth}>‹</button>
+                        <span className={styles.calMonthLabel}>{MONTHS[viewMonth]} {viewYear}</span>
+                        <button className={styles.calNavBtn} onClick={nextMonth}>›</button>
+                        <button className={styles.btnGhost} style={{ marginLeft: "auto", fontSize: "0.8rem", padding: "0.3rem 0.75rem" }}
+                            onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelected(todayStr); }}>
+                            Today
+                        </button>
+                    </div>
+
+                    {/* Day-of-week header */}
+                    <div className={styles.calGrid}>
+                        {DOW.map(d => (
+                            <div key={d} className={styles.calDowCell}>{d}</div>
+                        ))}
+
+                        {loading ? (
+                            <div style={{ gridColumn: "1/-1", padding: "2rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
+                        ) : cells.map((day, idx) => {
+                            if (day === null) return <div key={`e${idx}`} className={styles.calEmptyCell} />;
+                            const dateStr = isoDate(viewYear, viewMonth, day);
+                            const evs     = eventsByDate[dateStr] ?? [];
+                            const isToday = dateStr === todayStr;
+                            const isSel   = dateStr === selected;
+                            return (
+                                <div
+                                    key={dateStr}
+                                    className={[
+                                        styles.calDayCell,
+                                        isToday ? styles.calToday : "",
+                                        isSel   ? styles.calSelected : "",
+                                    ].filter(Boolean).join(" ")}
+                                    onClick={() => setSelected(isSel ? null : dateStr)}
+                                >
+                                    <span className={styles.calDayNum}>{day}</span>
+                                    {evs.length > 0 && (
+                                        <div className={styles.calDots}>
+                                            {evs.slice(0, 3).map((ev, i) => (
+                                                <span
+                                                    key={i}
+                                                    className={isHearing(ev) ? styles.calDotHearing : styles.calDotDeadline}
+                                                    style={isHearing(ev) ? {} : { opacity: ev.is_completed ? 0.35 : 1 }}
+                                                />
+                                            ))}
+                                            {evs.length > 3 && <span className={styles.calDotMore}>+{evs.length-3}</span>}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Legend */}
+                    <div className={styles.calLegend}>
+                        <span className={styles.calDotHearing} /> Hearing
+                        <span className={styles.calDotDeadline} style={{ marginLeft: "0.75rem" }} /> Deadline
+                    </div>
+                </div>
+
+                {/* ── Right: Sidebar ── */}
+                <div className={styles.calSidebar}>
+                    <div className={styles.calSidebarHeader}>
+                        <span className={styles.calSidebarTitle}>
+                            {selected
+                                ? new Date(selected + "T00:00:00").toLocaleDateString("en-PK", { weekday: "long", day: "numeric", month: "long" })
+                                : "Upcoming This Month"}
+                        </span>
+                        <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
+                            <button className={styles.btnPrimary} style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
+                                onClick={() => openAdd("hearing", selected ?? undefined)}>
+                                + Hearing
+                            </button>
+                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
+                                onClick={() => openAdd("deadline", selected ?? undefined)}>
+                                + Deadline
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className={styles.calEventList}>
+                        {(selected ? selectedEvents : allEvents).length === 0 ? (
+                            <div className={styles.emptyHint}>
+                                {selected ? "No events on this day." : "No events this month."}
+                            </div>
+                        ) : (
+                            (selected ? selectedEvents : allEvents).map((ev, i) => {
+                                const dateLabel = isHearing(ev) ? ev.hearing_date : ev.due_date;
+                                const timeLabel = isHearing(ev) && ev.hearing_time ? ` · ${ev.hearing_time}` : "";
+                                const subLabel  = isHearing(ev)
+                                    ? ev.court_name ?? ev.matter_title ?? ""
+                                    : `${ev.deadline_type}${ev.matter_title ? " · " + ev.matter_title : ""}`;
+                                return (
+                                    <div key={i} className={[
+                                        styles.calEventCard,
+                                        isHearing(ev) ? styles.calEventHearing : styles.calEventDeadline,
+                                        !isHearing(ev) && ev.is_completed ? styles.calEventCompleted : "",
+                                    ].filter(Boolean).join(" ")}>
+                                        <div className={styles.calEventTop}>
+                                            <div className={styles.calEventTitle}>
+                                                {!isHearing(ev) && ev.is_completed && <span style={{ textDecoration: "line-through", opacity: 0.5 }}>{ev.title}</span>}
+                                                {(isHearing(ev) || !ev.is_completed) && ev.title}
+                                            </div>
+                                            <div className={styles.calEventActions}>
+                                                {!isHearing(ev) && (
+                                                    <button className={styles.calCheckBtn}
+                                                        title={ev.is_completed ? "Mark incomplete" : "Mark complete"}
+                                                        onClick={() => toggleComplete(ev as Deadline)}>
+                                                        {ev.is_completed ? "↩" : "✓"}
+                                                    </button>
+                                                )}
+                                                <button className={styles.calEditBtn} onClick={() => openEdit(ev)}>✎</button>
+                                                <button className={styles.calDelBtn} onClick={() => deleteEvent(ev)}>✕</button>
+                                            </div>
+                                        </div>
+                                        <div className={styles.calEventMeta}>
+                                            {!selected && <span>{dateLabel}{timeLabel}</span>}
+                                            {selected && isHearing(ev) && ev.hearing_time && <span>{ev.hearing_time}</span>}
+                                            {subLabel && <span>{subLabel}</span>}
+                                            {ev.wa_reminder === 1 && <span className={styles.calWABadge}>📲 WA</span>}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Add/Edit Modal ── */}
+            {modal && (
+                <div className={styles.overlay} onClick={closeModal}>
+                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+                        <div className={styles.modalTitle}>
+                            {modal === "add-hearing"   && "Add Hearing"}
+                            {modal === "edit-hearing"  && "Edit Hearing"}
+                            {modal === "add-deadline"  && "Add Deadline"}
+                            {modal === "edit-deadline" && "Edit Deadline"}
+                        </div>
+
+                        {/* Title */}
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Title *</label>
+                            <input className={styles.formInput} value={fTitle} onChange={e => setFTitle(e.target.value)}
+                                placeholder={modal?.includes("hearing") ? "e.g. First Hearing — ABC v XYZ" : "e.g. File written statement"} />
+                        </div>
+
+                        {/* Date + Time / Deadline type */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>{modal?.includes("hearing") ? "Hearing Date *" : "Due Date *"}</label>
+                                <input type="date" className={styles.formInput} value={fDate} onChange={e => setFDate(e.target.value)} />
+                            </div>
+                            {modal?.includes("hearing") ? (
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Time</label>
+                                    <input type="time" className={styles.formInput} value={fTime} onChange={e => setFTime(e.target.value)} />
+                                </div>
+                            ) : (
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Type</label>
+                                    <select className={styles.formSelect} value={fDLType} onChange={e => setFDLType(e.target.value)}>
+                                        {DEADLINE_TYPES.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Court + Judge (hearing only) */}
+                        {modal?.includes("hearing") && (
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Court</label>
+                                    <input className={styles.formInput} value={fCourt} onChange={e => setFCourt(e.target.value)} placeholder="e.g. Lahore High Court" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Judge</label>
+                                    <input className={styles.formInput} value={fJudge} onChange={e => setFJudge(e.target.value)} placeholder="Justice Name" />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Linked matter */}
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Linked Matter</label>
+                            <select className={styles.formSelect} value={fMatter} onChange={e => setFMatter(e.target.value)}>
+                                <option value="">— None —</option>
+                                {matters.map(m => <option key={m.matter_id} value={m.matter_id}>{m.title}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Notes */}
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Notes</label>
+                            <textarea className={styles.formTextarea} value={fNotes} onChange={e => setFNotes(e.target.value)}
+                                placeholder="Optional notes for this event" rows={2} />
+                        </div>
+
+                        {/* WhatsApp reminder */}
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.85rem", color: "var(--text-2)", marginBottom: "1rem", cursor: "pointer" }}>
+                            <input type="checkbox" checked={fWA} onChange={e => setFWA(e.target.checked)} />
+                            Send WhatsApp reminder 24 hours before
+                        </label>
+
+                        {fErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{fErr}</div>}
+
+                        <div className={styles.modalActions}>
+                            <button className={styles.btnGhost} onClick={closeModal} disabled={fSaving}>Cancel</button>
+                            <button className={styles.btnPrimary} disabled={fSaving}
+                                onClick={modal?.includes("hearing") ? saveHearing : saveDeadline}>
+                                {fSaving ? "Saving…" : (modal?.startsWith("edit") ? "Save Changes" : "Add")}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ── Subscription helpers ──────────────────────────────────────────────────────
 
 interface PlanTierConfig {
@@ -1910,11 +2867,6 @@ const TIER_LABELS: Record<string, string> = {
     pro:        "Pro",
     enterprise: "Enterprise",
 };
-
-function fmtPKR(paise: number): string {
-    if (paise === 0) return "Free";
-    return "PKR " + paise.toLocaleString("en-PK");
-}
 
 const SubscriptionPanel = ({
     plan, usage, maxDocs, maxUsers, teamCount,
@@ -2972,6 +3924,8 @@ const OwnerPortal = () => {
                             {panel === "documents"     && <DocumentsPanel docs={docs} setDocs={setDocs} usage={usage} plan={plan} />}
                             {panel === "clients"       && <ClientsPanel />}
                             {panel === "matters"       && <MattersPanel />}
+                            {panel === "calendar"      && <CalendarPanel />}
+                            {panel === "invoices"      && <InvoicesPanel />}
                             {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} />}
                             {panel === "audit"         && <AuditPanel />}
                             {panel === "subscription"  && (
