@@ -109,6 +109,44 @@ def send_registration_approved(to: str, firm_name: str) -> bool:
     return send_email(to, subject, html)
 
 
+def send_upgrade_approved(to: str, firm_name: str, new_plan: str) -> bool:
+    """Email sent to org owner when admin approves their plan upgrade."""
+    plan_label = new_plan.capitalize()
+    subject = f"Your Project Ease plan has been upgraded to {plan_label}"
+    html = _wrap(f"""
+      <h2 style="color:{_GOLD}; margin-top:0;">Plan Upgrade Confirmed</h2>
+      <p>Great news! Your upgrade request for <strong>{firm_name}</strong> has been approved.</p>
+      <p>Your workspace is now on the <strong style="color:{_GOLD};">{plan_label}</strong> plan.
+         Your new limits are active immediately.</p>
+      <p>Sign in at
+         <a href="https://projectease.ai" style="color:{_GOLD};">projectease.ai</a>
+         to continue using your upgraded workspace.</p>
+      <p style="font-size:0.85rem; color:#888;">
+        If you have any questions, contact us at
+        <a href="mailto:support@projectease.ai" style="color:{_GOLD};">support@projectease.ai</a>.
+      </p>
+    """)
+    return send_email(to, subject, html)
+
+
+def send_upgrade_request_received(to: str, firm_name: str, requested_plan: str) -> bool:
+    """Acknowledgement email sent when an org submits an upgrade request."""
+    plan_label = requested_plan.capitalize()
+    subject = f"Upgrade request received — {plan_label} plan"
+    html = _wrap(f"""
+      <h2 style="color:{_GOLD}; margin-top:0;">Upgrade Request Received</h2>
+      <p>We've received your upgrade request for <strong>{firm_name}</strong> to the
+         <strong style="color:{_GOLD};">{plan_label}</strong> plan.</p>
+      <p>Our team will verify your payment and activate your new plan within
+         <strong>1–2 business hours</strong> during business days (Mon–Sat, 9 AM – 6 PM PKT).</p>
+      <p>If you have questions, reach us on WhatsApp at
+         <strong>{os.getenv("SUPPORT_WHATSAPP", "+92-300-0000000")}</strong>
+         or email <a href="mailto:support@projectease.ai" style="color:{_GOLD};">support@projectease.ai</a>.
+      </p>
+    """)
+    return send_email(to, subject, html)
+
+
 def send_team_invite(to: str, firm_name: str, temp_password: str) -> bool:
     """Invitation email sent when an org owner adds a new team member."""
     subject = f"You have been invited to {firm_name} on Project Ease"

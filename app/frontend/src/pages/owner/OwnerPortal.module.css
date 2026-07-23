@@ -1345,3 +1345,365 @@
     margin-top: 0.5rem;
     align-items: center;
 }
+
+/* ── Subscription / Plan panels ─────────────────────────────────── */
+
+.trialBanner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: #7c5a001a;
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
+    padding: 0.75rem 1.1rem;
+    margin-bottom: 1.4rem;
+    font-size: 0.875rem;
+    color: var(--text-1);
+}
+
+.trialBannerIcon { font-size: 1.15rem; flex-shrink: 0; }
+
+.trialBannerText { flex: 1; line-height: 1.45; }
+
+.trialBannerUrgent {
+    background: #5c0a0a18;
+    border-color: var(--danger, #c94040);
+}
+
+.upgradePendingBanner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: #0a4a7c18;
+    border: 1px solid #4a90d9;
+    border-radius: var(--radius);
+    padding: 0.75rem 1.1rem;
+    margin-bottom: 1.4rem;
+    font-size: 0.875rem;
+    color: var(--text-1);
+}
+
+.pendingBannerIcon { font-size: 1.15rem; flex-shrink: 0; margin-top: 0.05rem; }
+
+.pendingBannerBody { flex: 1; line-height: 1.5; }
+
+.pendingBannerTitle { font-weight: 600; margin-bottom: 0.2rem; }
+
+.pendingBannerSub { color: var(--text-2); font-size: 0.82rem; }
+
+/* Usage section */
+.subUsageCard {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.6rem;
+}
+
+.subUsageTitle {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-3);
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.subUsageGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+@media (max-width: 760px) {
+    .subUsageGrid { grid-template-columns: 1fr; }
+}
+
+.subUsageItem {}
+
+.subUsageLabel {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    color: var(--text-2);
+    margin-bottom: 0.4rem;
+}
+
+.subUsageValue { font-weight: 600; color: var(--text-1); }
+
+.subUpgradeHint {
+    font-size: 0.78rem;
+    color: var(--gold);
+    margin-top: 0.35rem;
+    font-weight: 500;
+}
+
+/* Plan comparison cards */
+.planTierGrid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.6rem;
+}
+
+@media (max-width: 1100px) {
+    .planTierGrid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 680px) {
+    .planTierGrid { grid-template-columns: 1fr; }
+}
+
+.planTierCard {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem 1.15rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+    transition: border-color 0.15s;
+}
+
+.planTierCardCurrent {
+    border-color: var(--gold);
+    background: #7c5a000d;
+}
+
+.planTierCardPopular {
+    border-color: #4a90d9;
+}
+
+.planTierCurrentBadge {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--gold);
+    color: #1a1200;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.6rem;
+    border-radius: 20px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.planTierPopularBadge {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #4a90d9;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.6rem;
+    border-radius: 20px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.planTierName {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-3);
+    margin-bottom: 0.5rem;
+}
+
+.planTierPrice {
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: var(--text-1);
+    line-height: 1;
+    margin-bottom: 0.15rem;
+}
+
+.planTierPriceSub {
+    font-size: 0.75rem;
+    color: var(--text-3);
+    margin-bottom: 0.9rem;
+}
+
+.planTierDivider {
+    height: 1px;
+    background: var(--border);
+    margin: 0.75rem 0;
+}
+
+.planTierFeatureList {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.planTierFeatureItem {
+    font-size: 0.8rem;
+    color: var(--text-2);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    line-height: 1.35;
+}
+
+.planTierFeatureItem::before {
+    content: "✓";
+    color: var(--gold);
+    font-weight: 700;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+}
+
+.planTierLimits {
+    font-size: 0.78rem;
+    color: var(--text-3);
+    margin-bottom: 0.75rem;
+    line-height: 1.5;
+}
+
+.planTierBtn {
+    width: 100%;
+    padding: 0.55rem 0;
+    border-radius: calc(var(--radius) - 2px);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--gold);
+    background: var(--gold);
+    color: #1a1200;
+    transition: opacity 0.15s, transform 0.1s;
+    margin-top: auto;
+}
+
+.planTierBtn:hover:not(:disabled) {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+
+.planTierBtn:disabled {
+    background: var(--bg-2);
+    border-color: var(--border);
+    color: var(--text-3);
+    cursor: default;
+    transform: none;
+}
+
+.planTierBtnGhost {
+    background: transparent;
+    color: var(--gold);
+}
+
+.planTierBtnGhost:hover:not(:disabled) {
+    background: #7c5a0015;
+}
+
+/* Upgrade modal */
+.upgradeModalTitle {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-1);
+    margin-bottom: 0.25rem;
+}
+
+.upgradeModalSub {
+    font-size: 0.83rem;
+    color: var(--text-2);
+    margin-bottom: 1.25rem;
+    line-height: 1.5;
+}
+
+.bankCard {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) - 2px);
+    padding: 0.9rem 1rem;
+    margin-bottom: 1.1rem;
+    font-size: 0.83rem;
+}
+
+.bankCardTitle {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-3);
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+}
+
+.bankRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 0.22rem 0;
+    gap: 1rem;
+}
+
+.bankLabel {
+    color: var(--text-3);
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+.bankValue {
+    color: var(--text-1);
+    font-weight: 600;
+    text-align: right;
+    word-break: break-all;
+}
+
+.upgradeFormSection { margin-bottom: 1rem; }
+
+.upgradeFormLabel {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-2);
+    margin-bottom: 0.35rem;
+    font-weight: 500;
+}
+
+.upgradeFormInput {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) - 2px);
+    color: var(--text-1);
+    font-family: var(--sans);
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.upgradeFormInput:focus { border-color: var(--gold); }
+
+.upgradeFormTextarea {
+    resize: vertical;
+    min-height: 70px;
+}
+
+.upgradeSuccessBanner {
+    background: #0a4a1818;
+    border: 1px solid #3ab57a;
+    border-radius: var(--radius);
+    padding: 1rem 1.15rem;
+    font-size: 0.875rem;
+    color: var(--text-1);
+    line-height: 1.55;
+}
+
+.upgradeSuccessTitle {
+    font-weight: 700;
+    color: #3ab57a;
+    margin-bottom: 0.3rem;
+}

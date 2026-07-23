@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "orgs" | "registrations" | "evals" | "audit" | "settings";
+type Panel = "overview" | "orgs" | "registrations" | "upgrades" | "evals" | "audit" | "settings";
 
 interface Org {
     org_id:      string;
@@ -766,6 +766,215 @@ const RegistrationsPanel = () => {
     );
 };
 
+// ── Upgrade Requests Panel ────────────────────────────────────────────────────
+
+interface UpgradeRequest {
+    request_id:     string;
+    org_id:         string;
+    org_name:       string;
+    current_plan:   string;
+    requested_plan: string;
+    status:         "pending" | "approved" | "rejected";
+    payment_ref:    string | null;
+    notes:          string | null;
+    created_at:     string;
+    resolved_at:    string | null;
+    resolved_by:    string | null;
+}
+
+const UPGRADE_STATUS_COLORS: Record<string, string> = {
+    pending:  "#f59e0b",
+    approved: "#22c55e",
+    rejected: "#ef4444",
+};
+
+const AdminUpgradesPanel = () => {
+    const [requests, setRequests] = useState<UpgradeRequest[]>([]);
+    const [loading,  setLoading]  = useState(true);
+    const [filter,   setFilter]   = useState<"all" | "pending" | "approved" | "rejected">("pending");
+    const [acting,   setActing]   = useState<string | null>(null);
+    const [msg,      setMsg]      = useState<{ id: string; ok: boolean; text: string } | null>(null);
+
+    const load = (status?: string) => {
+        setLoading(true);
+        const qs = status && status !== "all" ? `?status=${status}` : "";
+        fetch(`/admin/upgrade-requests${qs}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setRequests(d.requests ?? []); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+
+    useEffect(() => { load(filter); }, [filter]);
+
+    const resolve = async (requestId: string, action: "approve" | "reject") => {
+        setActing(requestId); setMsg(null);
+        try {
+            const r = await fetch(`/admin/upgrade-requests/${requestId}/${action}`, {
+                method: "PATCH", headers: authHeaders(),
+            });
+            const d = await r.json().catch(() => ({}));
+            if (r.ok) {
+                setMsg({ id: requestId, ok: true, text: action === "approve" ? "Approved — plan upgraded." : "Rejected." });
+                load(filter);
+            } else {
+                setMsg({ id: requestId, ok: false, text: d.error ?? "Action failed." });
+            }
+        } catch {
+            setMsg({ id: requestId, ok: false, text: "Network error." });
+        } finally {
+            setActing(null);
+        }
+    };
+
+    const pending = requests.filter(r => r.status === "pending").length;
+
+    return (
+        <div style={{ padding: "0 0 2rem" }}>
+
+            {/* Filter bar */}
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem", flexWrap: "wrap", alignItems: "center" }}>
+                {(["pending", "approved", "rejected", "all"] as const).map(s => (
+                    <button
+                        key={s}
+                        onClick={() => setFilter(s)}
+                        style={{
+                            padding: "0.3rem 0.85rem",
+                            borderRadius: 100,
+                            border: filter === s ? "1px solid var(--gold)" : "1px solid var(--border)",
+                            background: filter === s ? "var(--gold)" : "transparent",
+                            color: filter === s ? "#1a1200" : "var(--text-2)",
+                            cursor: "pointer",
+                            fontSize: "0.82rem",
+                            fontWeight: 600,
+                            textTransform: "capitalize",
+                        }}
+                    >
+                        {s}{s === "pending" && pending > 0 ? ` (${pending})` : ""}
+                    </button>
+                ))}
+                <span className={styles.muted} style={{ marginLeft: "auto", fontSize: "0.8rem" }}>
+                    {requests.length} result{requests.length !== 1 ? "s" : ""}
+                </span>
+            </div>
+
+            {loading ? (
+                <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
+            ) : requests.length === 0 ? (
+                <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-3)" }}>
+                    No {filter !== "all" ? filter : ""} upgrade requests.
+                </div>
+            ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    {requests.map(req => (
+                        <div
+                            key={req.request_id}
+                            style={{
+                                background: "var(--bg-1)",
+                                border: `1px solid ${req.status === "pending" ? "var(--gold)" : "var(--border)"}`,
+                                borderRadius: 10,
+                                padding: "1rem 1.25rem",
+                            }}
+                        >
+                            {/* Header row */}
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+                                <div style={{ flex: 1, minWidth: 200 }}>
+                                    <div style={{ fontWeight: 700, color: "var(--text-1)", fontSize: "0.95rem", marginBottom: "0.2rem" }}>
+                                        {req.org_name}
+                                    </div>
+                                    <div style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>
+                                        <span style={{
+                                            color: UPGRADE_STATUS_COLORS[req.current_plan] ?? "var(--text-3)",
+                                            fontWeight: 600, textTransform: "capitalize",
+                                        }}>{req.current_plan}</span>
+                                        {" → "}
+                                        <span style={{
+                                            color: UPGRADE_STATUS_COLORS[req.requested_plan] ?? "var(--gold)",
+                                            fontWeight: 700, textTransform: "capitalize",
+                                        }}>{req.requested_plan}</span>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.2rem" }}>
+                                    <span style={{
+                                        background: `${UPGRADE_STATUS_COLORS[req.status]}22`,
+                                        color: UPGRADE_STATUS_COLORS[req.status],
+                                        border: `1px solid ${UPGRADE_STATUS_COLORS[req.status]}44`,
+                                        borderRadius: 100,
+                                        padding: "0.12rem 0.6rem",
+                                        fontSize: "0.72rem",
+                                        fontWeight: 700,
+                                        textTransform: "capitalize",
+                                    }}>{req.status}</span>
+                                    <span className={styles.muted} style={{ fontSize: "0.75rem" }}>
+                                        {fmtDate(req.created_at)}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Details */}
+                            <div style={{ marginTop: "0.75rem", display: "flex", gap: "1.5rem", flexWrap: "wrap", fontSize: "0.82rem" }}>
+                                {req.payment_ref && (
+                                    <div>
+                                        <span style={{ color: "var(--text-3)" }}>Payment Ref: </span>
+                                        <span style={{ color: "var(--text-1)", fontWeight: 600 }}>{req.payment_ref}</span>
+                                    </div>
+                                )}
+                                {req.notes && (
+                                    <div>
+                                        <span style={{ color: "var(--text-3)" }}>Notes: </span>
+                                        <span style={{ color: "var(--text-2)" }}>{req.notes}</span>
+                                    </div>
+                                )}
+                                {req.resolved_at && (
+                                    <div>
+                                        <span style={{ color: "var(--text-3)" }}>Resolved: </span>
+                                        <span style={{ color: "var(--text-2)" }}>{fmtDate(req.resolved_at)}</span>
+                                        {req.resolved_by && <span style={{ color: "var(--text-3)" }}> by {req.resolved_by}</span>}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Feedback message */}
+                            {msg?.id === req.request_id && (
+                                <div style={{
+                                    marginTop: "0.6rem",
+                                    fontSize: "0.82rem",
+                                    color: msg.ok ? "var(--success)" : "var(--danger)",
+                                    fontWeight: 500,
+                                }}>
+                                    {msg.text}
+                                </div>
+                            )}
+
+                            {/* Action buttons (pending only) */}
+                            {req.status === "pending" && (
+                                <div style={{ marginTop: "0.85rem", display: "flex", gap: "0.6rem" }}>
+                                    <button
+                                        className={styles.btnPrimary}
+                                        style={{ padding: "0.4rem 1.1rem", fontSize: "0.82rem" }}
+                                        disabled={acting === req.request_id}
+                                        onClick={() => resolve(req.request_id, "approve")}
+                                    >
+                                        {acting === req.request_id ? "…" : "Approve"}
+                                    </button>
+                                    <button
+                                        className={styles.btnGhost}
+                                        style={{ padding: "0.4rem 1.1rem", fontSize: "0.82rem", borderColor: "var(--danger, #c94040)", color: "var(--danger, #c94040)" }}
+                                        disabled={acting === req.request_id}
+                                        onClick={() => resolve(req.request_id, "reject")}
+                                    >
+                                        Reject
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ── Admin Audit Panel ─────────────────────────────────────────────────────────
 
 interface AuditLog {
@@ -931,18 +1140,20 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { id: Panel; icon: string; label: string }[] = [
-    { id: "overview",       icon: "📊", label: "Dashboard"      },
-    { id: "orgs",           icon: "🏢", label: "Organizations"  },
-    { id: "registrations",  icon: "📝", label: "Registrations"  },
-    { id: "evals",          icon: "✅", label: "Eval Quality"   },
-    { id: "audit",          icon: "🔍", label: "Audit Log"      },
-    { id: "settings",       icon: "⚙️", label: "Settings"       },
+    { id: "overview",       icon: "📊", label: "Dashboard"       },
+    { id: "orgs",           icon: "🏢", label: "Organizations"   },
+    { id: "registrations",  icon: "📝", label: "Registrations"   },
+    { id: "upgrades",       icon: "⬆️", label: "Upgrade Requests"},
+    { id: "evals",          icon: "✅", label: "Eval Quality"    },
+    { id: "audit",          icon: "🔍", label: "Audit Log"       },
+    { id: "settings",       icon: "⚙️", label: "Settings"        },
 ];
 
 const PANEL_TITLES: Record<Panel, string> = {
     overview:      "Platform Dashboard",
     orgs:          "Organizations",
     registrations: "Pending Registrations",
+    upgrades:      "Upgrade Requests",
     evals:         "Eval Quality",
     audit:         "Platform Audit Log",
     settings:      "Platform Settings",
@@ -952,6 +1163,7 @@ const PANEL_SUBS: Record<Panel, string> = {
     overview:      "Platform-wide summary across all organizations",
     orgs:          "Manage tenants, plans, and access",
     registrations: "Pending sign-ups awaiting approval",
+    upgrades:      "Review bank transfer proofs and approve or reject plan upgrades",
     evals:         "AI answer quality scores recorded per query",
     audit:         "All logins, searches, and actions across every organization",
     settings:      "Plan tiers and service configuration",
@@ -1034,6 +1246,7 @@ const AdminDashboard = () => {
                             {panel === "overview"       && <OverviewPanel stats={stats} orgs={orgs} />}
                             {panel === "orgs"           && <OrgsPanel orgs={orgs} setOrgs={setOrgs} />}
                             {panel === "registrations"  && <RegistrationsPanel />}
+                            {panel === "upgrades"       && <AdminUpgradesPanel />}
                             {panel === "evals"          && <EvalsPanel />}
                             {panel === "audit"          && <AdminAuditPanel orgs={orgs.map(o => ({ org_id: o.org_id, name: o.name }))} />}
                             {panel === "settings"       && <SettingsPanel />}

@@ -338,6 +338,8 @@ from db import (
     get_matter_with_docs, link_document_to_matter, unlink_document_from_matter,
     # Audit Log — Task #30
     log_event, get_audit_logs, count_audit_logs,
+    # Upgrade flow — Task #45
+    PLAN_CONFIG, create_upgrade_request, get_upgrade_requests, resolve_upgrade_request,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -452,6 +454,21 @@ async def upload_document():
 
     org_id: str | None = session.get("org")
     user_id: str | None = session.get("user_id")
+
+    # ── Plan limit check ──────────────────────────────────────────────────────
+    if org_id:
+        org = get_org(org_id)
+        if org:
+            plan_key = org.get("plan", "trial")
+            limits   = PLAN_CONFIG.get(plan_key, PLAN_CONFIG["trial"])
+            counts   = get_doc_counts(org_id)
+            if counts["total_docs"] >= limits["max_docs"]:
+                return jsonify({
+                    "error": f"Document limit reached ({limits['max_docs']} docs on {limits['label']} plan). "
+                             "Please upgrade your plan to upload more documents.",
+                    "limit_reached": "docs",
+                }), 403
+    # ─────────────────────────────────────────────────────────────────────────
 
     files = await request.files
     form  = await request.form
@@ -969,6 +986,22 @@ async def invite_member():
     role  = data.get("role", "employee")
     if not email or not name:
         return jsonify({"error": "Name and email are required"}), 400
+
+    # ── Plan limit check ──────────────────────────────────────────────────────
+    org_id_check = session.get("org") or ""
+    org_check    = get_org(org_id_check)
+    if org_check:
+        plan_key = org_check.get("plan", "trial")
+        limits   = PLAN_CONFIG.get(plan_key, PLAN_CONFIG["trial"])
+        current_users = len(get_users_for_org(org_id_check))
+        if current_users >= limits["max_users"]:
+            return jsonify({
+                "error": f"User limit reached ({limits['max_users']} users on {limits['label']} plan). "
+                         "Please upgrade your plan to add more team members.",
+                "limit_reached": "users",
+            }), 403
+    # ─────────────────────────────────────────────────────────────────────────
+
     # Generate a temp password; real flow would email this
     temp_pw = _secrets.token_urlsafe(8)
     try:
@@ -1718,6 +1751,147 @@ async def unlink_doc_from_matter(matter_id: str, doc_id: str):
     unlink_document_from_matter(doc_id, session.get("org") or "",
                                 actor=session.get("user_id") or SYSTEM)
     return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Plan & Upgrade API ───────────────────────────────────────
+
+# Bank transfer details — fill these in .env before going live (see PLACEHOLDERS.md)
+_BANK_NAME    = __import__("os").getenv("BANK_NAME",    "Your Bank Name")
+_BANK_ACCOUNT = __import__("os").getenv("BANK_ACCOUNT", "0000-0000-0000-0000")
+_BANK_IBAN    = __import__("os").getenv("BANK_IBAN",    "PK00XXXX0000000000000000")
+_BANK_TITLE   = __import__("os").getenv("BANK_TITLE",   "Project Ease Pvt Ltd")
+_SUPPORT_WA   = __import__("os").getenv("SUPPORT_WHATSAPP", "+92-300-0000000")
+
+
+@bp.route("/plan-config", methods=["GET"])
+async def get_plan_config():
+    """Return plan limits and pricing for the frontend."""
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org    = get_org(session.get("org") or "")
+    plan   = (org or {}).get("plan", "trial")
+    return jsonify({
+        "plans":        PLAN_CONFIG,
+        "current_plan": plan,
+        "bank": {
+            "name":    _BANK_NAME,
+            "account": _BANK_ACCOUNT,
+            "iban":    _BANK_IBAN,
+            "title":   _BANK_TITLE,
+        },
+        "support_whatsapp": _SUPPORT_WA,
+    })
+
+
+@bp.route("/upgrade-request", methods=["POST"])
+async def submit_upgrade_request():
+    """Owner submits an upgrade request after making a bank transfer."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data           = await request.get_json(silent=True) or {}
+    requested_plan = (data.get("requested_plan") or "").strip().lower()
+    payment_ref    = (data.get("payment_ref") or "").strip() or None
+    notes          = (data.get("notes") or "").strip() or None
+
+    if requested_plan not in PLAN_CONFIG:
+        return jsonify({"error": "Invalid plan"}), 400
+
+    org = get_org(session.get("org") or "")
+    if not org:
+        return jsonify({"error": "Organization not found"}), 404
+
+    current_plan = org.get("plan", "trial")
+    if requested_plan == current_plan:
+        return jsonify({"error": "You are already on this plan"}), 400
+
+    req = create_upgrade_request(
+        org_id        = org["org_id"],
+        current_plan  = current_plan,
+        requested_plan= requested_plan,
+        payment_ref   = payment_ref,
+        notes         = notes,
+    )
+    _audit(session, "upgrade_request",
+           resource_type="plan", resource_name=requested_plan,
+           details={"from": current_plan, "to": requested_plan, "payment_ref": payment_ref})
+
+    # Fire-and-forget acknowledgement email
+    try:
+        import asyncio as _asyncio
+        from email_helper import send_upgrade_request_received as _send_ack
+        owner = next(
+            (u for u in get_users_for_org(org["org_id"]) if u["role"] == "org_owner"),
+            None
+        )
+        if owner:
+            await _asyncio.to_thread(_send_ack, owner["email"], org["name"], requested_plan)
+    except Exception:
+        pass
+
+    return jsonify(req), 201
+
+
+@bp.route("/admin/upgrade-requests", methods=["GET"])
+async def admin_list_upgrade_requests():
+    err = _require_platform_admin()
+    if err:
+        return err
+    status = request.args.get("status") or None
+    return jsonify({"requests": get_upgrade_requests(status=status)})
+
+
+@bp.route("/admin/upgrade-requests/<request_id>/approve", methods=["PATCH"])
+async def admin_approve_upgrade(request_id: str):
+    import asyncio as _asyncio
+    err = _require_platform_admin()
+    if err:
+        return err
+    admin_session = _get_session()
+    resolver = (admin_session or {}).get("email") or SYSTEM
+
+    result = resolve_upgrade_request(request_id, "approved", resolver)
+    if not result:
+        return jsonify({"error": "Request not found"}), 404
+
+    # Fire-and-forget approval email
+    try:
+        from email_helper import send_upgrade_approved as _send_upgrade
+        org = get_org(result["org_id"])
+        if org:
+            owner = next(
+                (u for u in get_users_for_org(result["org_id"]) if u["role"] == "org_owner"),
+                None
+            )
+            if owner:
+                await _asyncio.to_thread(
+                    _send_upgrade, owner["email"], org["name"], result["requested_plan"]
+                )
+    except Exception:
+        pass
+
+    log_event("upgrade_approved", org_id=result["org_id"],
+              actor_name=resolver, details={"plan": result["requested_plan"]})
+    return jsonify(result)
+
+
+@bp.route("/admin/upgrade-requests/<request_id>/reject", methods=["PATCH"])
+async def admin_reject_upgrade(request_id: str):
+    err = _require_platform_admin()
+    if err:
+        return err
+    admin_session = _get_session()
+    resolver = (admin_session or {}).get("email") or SYSTEM
+
+    result = resolve_upgrade_request(request_id, "rejected", resolver)
+    if not result:
+        return jsonify({"error": "Request not found"}), 404
+
+    log_event("upgrade_rejected", org_id=result["org_id"],
+              actor_name=resolver, details={"plan": result["requested_plan"]})
+    return jsonify(result)
 
 
 # ─── PROJECT EASE: Audit Log API ─────────────────────────────────────────────

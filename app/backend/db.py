@@ -185,6 +185,19 @@ CREATE TABLE IF NOT EXISTS matters (
     modified_by    TEXT    NOT NULL DEFAULT 'system'
 );
 
+CREATE TABLE IF NOT EXISTS upgrade_requests (
+    request_id      TEXT PRIMARY KEY,
+    org_id          TEXT NOT NULL REFERENCES organizations(org_id),
+    current_plan    TEXT NOT NULL,
+    requested_plan  TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    payment_ref     TEXT,
+    notes           TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at     TEXT,
+    resolved_by     TEXT
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     log_id        TEXT PRIMARY KEY,
     org_id        TEXT,
@@ -281,6 +294,16 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE documents ADD COLUMN matter_id TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
+
+    # Self-service upgrade flow — Task #45
+    for _col, _def in [
+        ("requested_plan",     "TEXT"),
+        ("upgrade_requested_at", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE organizations ADD COLUMN {_col} {_def}")
+        except sqlite3.OperationalError:
+            pass
 
 
 def init_db():
@@ -598,11 +621,108 @@ def set_permissions(user_id: str, category_ids: list[str], actor: str = SYSTEM):
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
 
-PLAN_DEFAULTS = {
-    "free":       {"max_docs": 20,       "max_users": 5},
-    "pro":        {"max_docs": 500,      "max_users": 25},
-    "enterprise": {"max_docs": 9_999_999,"max_users": 9_999_999},
+# ── Plan configuration ────────────────────────────────────────────────────────
+# Single source of truth for all plan limits and pricing.
+# Update prices here when ready — they flow to the frontend via /plan-config.
+_MB  = 1024 * 1024
+_GB  = 1024 * _MB
+
+PLAN_CONFIG: dict[str, dict] = {
+    "trial": {
+        "label":         "Trial",
+        "max_docs":      10,
+        "max_users":     2,
+        "max_bytes":     30 * _MB,
+        "max_searches":  25,           # lifetime total during trial
+        "trial_days":    14,
+        "price_monthly": 0,
+        "price_annual":  0,
+        "features": [
+            "10 documents",
+            "2 users",
+            "25 AI searches",
+            "30 MB storage",
+            "Basic document search",
+        ],
+    },
+    "starter": {
+        "label":         "Starter",
+        "max_docs":      75,
+        "max_users":     5,
+        "max_bytes":     1 * _GB,
+        "max_searches":  None,         # unlimited
+        "trial_days":    None,
+        "price_monthly": 5_999,
+        "price_annual":  59_999,
+        "features": [
+            "75 documents",
+            "5 users",
+            "Unlimited AI searches",
+            "1 GB storage",
+            "Matter & client management",
+            "Document categories",
+            "Audit log",
+            "Email support (48h)",
+        ],
+    },
+    "pro": {
+        "label":         "Pro",
+        "max_docs":      500,
+        "max_users":     20,
+        "max_bytes":     5 * _GB,
+        "max_searches":  None,
+        "trial_days":    None,
+        "price_monthly": 14_999,
+        "price_annual":  149_999,
+        "features": [
+            "500 documents",
+            "20 users",
+            "Unlimited AI searches",
+            "5 GB storage",
+            "All Starter features",
+            "WhatsApp integration",
+            "Court calendar & reminders",
+            "Priority support (24h)",
+        ],
+    },
+    "enterprise": {
+        "label":         "Enterprise",
+        "max_docs":      9_999_999,
+        "max_users":     9_999_999,
+        "max_bytes":     25 * _GB,
+        "max_searches":  None,
+        "trial_days":    None,
+        "price_monthly": 34_999,
+        "price_annual":  349_999,
+        "features": [
+            "Unlimited documents",
+            "Unlimited users",
+            "Unlimited AI searches",
+            "25 GB storage",
+            "All Pro features",
+            "PLD/SCMR case law search",
+            "Document drafting templates",
+            "Client portal",
+            "Dedicated onboarding",
+            "WhatsApp direct support (4h)",
+        ],
+    },
+    # Legacy alias — existing "free" orgs keep working
+    "free": {
+        "label":         "Trial",
+        "max_docs":      10,
+        "max_users":     2,
+        "max_bytes":     30 * _MB,
+        "max_searches":  25,
+        "trial_days":    14,
+        "price_monthly": 0,
+        "price_annual":  0,
+        "features":      [],
+    },
 }
+
+# Keep backward-compat alias used by admin helpers
+PLAN_DEFAULTS = {k: {"max_docs": v["max_docs"], "max_users": v["max_users"]} for k, v in PLAN_CONFIG.items()}
 
 
 def get_all_orgs() -> list[dict]:
@@ -1159,6 +1279,104 @@ def unlink_document_from_matter(doc_id: str, org_id: str,
             (now, actor, doc_id, org_id),
         )
     return True
+
+
+# ── Upgrade Requests ──────────────────────────────────────────────────────────
+
+def create_upgrade_request(
+    org_id: str,
+    current_plan: str,
+    requested_plan: str,
+    payment_ref: str | None = None,
+    notes: str | None = None,
+) -> dict:
+    """
+    Create a pending upgrade request and mark the org with requested_plan.
+    Returns the new request record.
+    """
+    request_id = str(uuid.uuid4())
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO upgrade_requests
+                (request_id, org_id, current_plan, requested_plan, status, payment_ref, notes, created_at)
+            VALUES (?,?,?,?,?,?,?,?)
+            """,
+            (request_id, org_id, current_plan, requested_plan, "pending", payment_ref, notes, now),
+        )
+        # Mark org so the admin badge shows immediately
+        conn.execute(
+            "UPDATE organizations SET requested_plan=?, upgrade_requested_at=? WHERE org_id=?",
+            (requested_plan, now, org_id),
+        )
+    return {
+        "request_id":     request_id,
+        "org_id":         org_id,
+        "current_plan":   current_plan,
+        "requested_plan": requested_plan,
+        "status":         "pending",
+        "created_at":     now,
+    }
+
+
+def get_upgrade_requests(status: str | None = None) -> list[dict]:
+    """Return all upgrade requests, optionally filtered by status."""
+    where = "WHERE r.status = ?" if status else ""
+    params = [status] if status else []
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT r.*, o.name AS org_name, o.plan AS org_current_plan
+            FROM upgrade_requests r
+            JOIN organizations o ON r.org_id = o.org_id
+            {where}
+            ORDER BY r.created_at DESC
+            """,
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def resolve_upgrade_request(
+    request_id: str,
+    action: str,      # "approved" or "rejected"
+    resolver: str,    # user_id or email of admin
+) -> dict | None:
+    now = _now()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM upgrade_requests WHERE request_id=?", (request_id,)
+        ).fetchone()
+        if not row:
+            return None
+
+        row = dict(row)
+        conn.execute(
+            "UPDATE upgrade_requests SET status=?, resolved_at=?, resolved_by=? WHERE request_id=?",
+            (action, now, resolver, request_id),
+        )
+
+        if action == "approved":
+            new_plan = row["requested_plan"]
+            limits   = PLAN_DEFAULTS.get(new_plan, PLAN_DEFAULTS["starter"])
+            conn.execute(
+                """UPDATE organizations
+                   SET plan=?, max_docs=?, max_users=?,
+                       requested_plan=NULL, upgrade_requested_at=NULL,
+                       status='active', modified_at=?, modified_by=?
+                   WHERE org_id=?""",
+                (new_plan, limits["max_docs"], limits["max_users"],
+                 now, resolver, row["org_id"]),
+            )
+        else:
+            # On reject, just clear the pending flag
+            conn.execute(
+                "UPDATE organizations SET requested_plan=NULL, upgrade_requested_at=NULL WHERE org_id=?",
+                (row["org_id"],),
+            )
+
+    return {**row, "status": action, "resolved_at": now, "resolved_by": resolver}
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
