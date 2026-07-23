@@ -23,44 +23,91 @@ const PRACTICE_AREAS = [
 ];
 
 const SIGNUP_PLANS = [
-    { id: "free",       label: "Basic",        price: "Rs 5,000 / month",   users: "Up to 5 users" },
-    { id: "pro",        label: "Professional", price: "Rs 15,000 / month",  users: "Up to 25 users" },
-    { id: "enterprise", label: "Enterprise",   price: "Rs 40,000 / month",  users: "Unlimited users" },
+    { id: "starter",    label: "Starter",      price: "PKR 5,999 / month",  users: "Up to 5 users"  },
+    { id: "pro",        label: "Pro",          price: "PKR 14,999 / month", users: "Up to 20 users" },
+    { id: "enterprise", label: "Enterprise",   price: "PKR 34,999 / month", users: "Unlimited users" },
+];
+
+const PLANS = [
+    {
+        id:       "trial",
+        label:    "14-Day Trial",
+        price:    "Free",
+        period:   "",
+        docs:     "10 documents",
+        users:    "2 users",
+        features: ["Full AI search", "Document upload", "English & Urdu queries", "Email support"],
+        popular:  false,
+        cta:      "Start Free Trial",
+    },
+    {
+        id:       "starter",
+        label:    "Starter",
+        price:    "PKR 5,999",
+        period:   "/ month",
+        docs:     "75 documents",
+        users:    "5 users",
+        features: ["Everything in Trial", "Court calendar", "Fee tracking", "Invoice generation"],
+        popular:  false,
+        cta:      "Get Started",
+    },
+    {
+        id:       "pro",
+        label:    "Pro",
+        price:    "PKR 14,999",
+        period:   "/ month",
+        docs:     "500 documents",
+        users:    "20 users",
+        features: ["Everything in Starter", "Priority support", "Audit log export", "WhatsApp reminders"],
+        popular:  true,
+        cta:      "Get Started",
+    },
+    {
+        id:       "enterprise",
+        label:    "Enterprise",
+        price:    "PKR 34,999",
+        period:   "/ month",
+        docs:     "Unlimited",
+        users:    "Unlimited users",
+        features: ["Everything in Pro", "Dedicated onboarding", "Custom integrations", "SLA guarantee"],
+        popular:  false,
+        cta:      "Contact Us",
+    },
 ];
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
 const FEATURES = [
     {
-        icon: "🔐",
-        title: "Your Files Stay Completely Private",
-        desc: "Every firm gets its own completely isolated workspace. Your documents are never mixed with another firm's — it's like having a private filing room that only your team can access."
+        icon: "⚖️",
+        title: "Built for Pakistani Courts",
+        desc: "Search across PLD, SCMR, and MLD volumes alongside your firm's own case files. Ask 'What did the Lahore High Court hold on adverse possession?' and get a cited answer instantly.",
     },
     {
         icon: "⚡",
         title: "Find Any Answer in Seconds",
-        desc: "Ask any question about your documents in plain English or Urdu — just like asking a colleague. The system searches your entire library and returns a precise, sourced answer instantly."
+        desc: "Ask any question about your documents in plain English or Urdu — just like asking a colleague. The system searches your entire library and returns a precise, sourced answer instantly.",
     },
     {
         icon: "✅",
         title: "Answers You Can Actually Trust",
-        desc: "Every response is automatically verified for accuracy before it reaches your team. You always see which document the answer came from, so you can act with complete confidence."
+        desc: "Every response is automatically verified for accuracy before it reaches your team. You always see which document the answer came from — cite it, rely on it, act on it.",
     },
     {
         icon: "🌐",
-        title: "Works in English and Urdu",
-        desc: "Type your question in English, Roman Urdu, or Urdu script — the system understands all three naturally. No language settings. Your team works however feels comfortable."
+        title: "English, Roman Urdu, or Urdu Script",
+        desc: "Type your question however your team thinks. The system understands all three naturally. No language settings to configure. Your advocates and clerks work in the language they prefer.",
     },
     {
         icon: "📁",
         title: "Any Document, Any Format",
-        desc: "Upload contracts, case files, tax returns, scanned documents, spreadsheets — any format. Everything is automatically read, organized, and made instantly searchable. No manual sorting needed."
+        desc: "Upload vakalatnamas, plaints, FIR copies, property deeds, tax returns, scanned court orders — any format. Everything is read, organized, and made instantly searchable without manual tagging.",
     },
     {
-        icon: "📈",
-        title: "Simple Management Dashboard",
-        desc: "See how your team is using the system, how quickly questions are being answered, and how accurate the results are — presented simply for partners and managers, not IT teams."
-    }
+        icon: "🗓️",
+        title: "Court Calendar & WhatsApp Reminders",
+        desc: "Track hearing dates, filing deadlines, and adjournments in one calendar. Receive WhatsApp reminders the day before so no court date is ever missed.",
+    },
 ];
 
 const STEPS = [
@@ -105,27 +152,31 @@ const SECURITY_POINTS = [
 const INDUSTRIES = [
     {
         icon: "⚖️",
-        title: "Law Practices",
-        desc: "Instant access to case precedents, contract clauses, court orders, and legal briefs. Search in English or Urdu and get cited answers your team can act on immediately.",
-        tags: ["Contract Analysis", "Case Research", "Precedent Search", "Due Diligence"]
+        title: "Litigation & Advocacy",
+        desc: "Search your case files, court orders, and PLD judgments in one query. Draft arguments citing real precedents. Track hearings at the Lahore, Sindh, and Islamabad High Courts with WhatsApp reminders the day before.",
+        tags: ["PLD / SCMR Search", "Precedent Research", "Hearing Tracker", "Court Order Analysis"],
+    },
+    {
+        icon: "🏢",
+        title: "Corporate & Commercial Law",
+        desc: "Analyse contracts, shareholder agreements, SECP filings, and M&A documents at speed. Ask 'What are the termination clauses in this agreement?' and get an exact answer with the clause number.",
+        tags: ["Contract Review", "Due Diligence", "SECP Compliance", "M&A Documents"],
     },
     {
         icon: "📋",
-        title: "CA & Accounting Firms",
-        desc: "Navigate tax codes, audit reports, financial statements, and regulatory filings with AI precision. Surface the exact clause or figure your team needs in seconds.",
-        tags: ["Tax Compliance", "Audit Documentation", "Regulatory Filings", "Financial Reports"]
+        title: "CA & Tax Practices",
+        desc: "Navigate the Income Tax Ordinance, Sales Tax Act, and FBR circulars alongside your client files. Surface the exact provision or ruling your team needs in seconds — cited to the source.",
+        tags: ["FBR Circulars", "Tax Ordinance Search", "Audit Documentation", "Regulatory Filings"],
     },
-    {
-        icon: "🚢",
-        title: "Enterprise Logistics",
-        desc: "Manage shipping manifests, vendor contracts, compliance records, and operational documents at scale. Instant cross-document search across your entire library.",
-        tags: ["Shipping Manifests", "Vendor Contracts", "Compliance Records", "Operations"]
-    }
 ];
 
 const TRUST_BADGES = [
-    "Law Practices", "CA & Accounting Firms", "Enterprise Logistics",
-    "Financial Services", "Corporate Legal Teams", "Compliance Departments"
+    "⚖️  High Court Advocates",
+    "🏛️  Supreme Court Practices",
+    "📋  District Court Firms",
+    "🏢  Corporate Legal Teams",
+    "📑  CA & Accounting Firms",
+    "🏗️  Commercial Law Chambers",
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -156,18 +207,26 @@ const Landing = () => {
 
                 <ul className={styles.navLinks}>
                     <li><a href="#features">Features</a></li>
-                    <li><a href="#how-it-works">How It Works</a></li>
+                    <li><a href="#pld">PLD / SCMR</a></li>
+                    <li><a href="#pricing">Pricing</a></li>
                     <li><a href="#security">Security</a></li>
-                    <li><a href="#industries">Industries</a></li>
                     <li><a href="#contact">Contact</a></li>
                 </ul>
 
                 <div className={styles.navActions}>
+                    <a
+                        href="https://wa.me/923000000000?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
+                        className={styles.btnWa}
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        💬 WhatsApp
+                    </a>
                     <button className={styles.btnGhost} onClick={() => open("signin")}>
                         Sign In
                     </button>
-                    <button className={styles.btnGold} onClick={() => open("demo")}>
-                        Request a Demo
+                    <button className={styles.btnGold} onClick={() => open("signup")}>
+                        Free Trial
                     </button>
                 </div>
             </nav>
@@ -176,38 +235,39 @@ const Landing = () => {
             <section className={styles.hero}>
                 <div className={styles.heroInner}>
                     <div className={styles.heroEyebrow}>
-                        ✦ &nbsp;Enterprise Document Intelligence
+                        ✦ &nbsp;AI Document Intelligence for Pakistan's Legal Profession
                     </div>
 
                     <h1 className={styles.heroTitle}>
-                        Intelligence That<br />
-                        <span className={styles.heroTitleGold}>Earns Your Trust</span>
+                        Your Entire Case Library —<br />
+                        <span className={styles.heroTitleGold}>Answered in Seconds</span>
                     </h1>
 
                     <p className={styles.heroSub}>
-                        Project Ease transforms how law practices, CA firms, and enterprise
-                        organizations search, analyze, and act on their documents — with
-                        verified AI precision, multi-tenant security, and answers in the
-                        language you work in.
+                        Search PLD judgments, SCMR precedents, contracts, and your own case
+                        files in one query. Ask in English or Urdu. Get a cited, verified
+                        answer your team can act on — instantly.
                     </p>
 
                     <div className={styles.heroCtas}>
                         <button
                             className={`${styles.btnGold} ${styles.btnGoldLg}`}
-                            onClick={() => open("demo")}
+                            onClick={() => open("signup")}
                         >
-                            Request a Demo &nbsp;→
+                            Start 14-Day Free Trial &nbsp;→
                         </button>
-                        <button
-                            className={`${styles.btnGhost} ${styles.btnGhostLg}`}
-                            onClick={() => open("signin")}
+                        <a
+                            href="https://wa.me/923000000000?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
+                            className={`${styles.btnWa} ${styles.btnWaLg}`}
+                            target="_blank"
+                            rel="noreferrer"
                         >
-                            Sign In
-                        </button>
+                            💬 &nbsp;Chat on WhatsApp
+                        </a>
                     </div>
 
                     <p className={styles.heroCaveat}>
-                        Start with a free demo using your own documents. No commitment required.
+                        Free for 14 days · No credit card · Setup in under 10 minutes
                     </p>
                 </div>
             </section>
@@ -215,7 +275,7 @@ const Landing = () => {
             {/* ══════════════ TRUST BAR ══════════════ */}
             <div className={styles.trust}>
                 <p className={styles.trustLabel}>
-                    Built for professional excellence across industries
+                    Trusted by legal professionals across Pakistan
                 </p>
                 <div className={styles.trustBadges}>
                     {TRUST_BADGES.map(b => (
@@ -229,11 +289,11 @@ const Landing = () => {
                 <div className={`${styles.section} ${styles.sectionCenter}`}>
                     <span className={styles.eyebrow}>Core Capabilities</span>
                     <h2 className={styles.sectionTitle}>
-                        Built for Firms That Operate at the Highest Level
+                        Built for Pakistan's Legal Professionals
                     </h2>
                     <p className={styles.sectionSub}>
-                        Everything your firm needs to work faster, stay protected,
-                        and make better decisions — without needing any technical knowledge.
+                        Everything your firm needs to research faster, never miss a court date,
+                        and bill more accurately — without any technical knowledge.
                     </p>
                     <div className={styles.featuresGrid}>
                         {FEATURES.map(f => (
@@ -311,11 +371,11 @@ const Landing = () => {
                 <div className={`${styles.section} ${styles.sectionCenter}`}>
                     <span className={styles.eyebrow}>Who It's For</span>
                     <h2 className={styles.sectionTitle}>
-                        Purpose-Built for Professional Industries
+                        Designed for Every Practice Area
                     </h2>
                     <p className={styles.sectionSub}>
-                        Tailored to the document workflows, terminology, and compliance
-                        requirements of high-stakes professional environments.
+                        Whether you practise at the Supreme Court, a district court, or a
+                        corporate chamber — Project Ease speaks your language and knows your documents.
                     </p>
                     <div className={styles.industriesGrid}>
                         {INDUSTRIES.map(ind => (
@@ -331,6 +391,105 @@ const Landing = () => {
                             </div>
                         ))}
                     </div>
+                </div>
+            </div>
+
+            {/* ══════════════ PLD / SCMR CALLOUT ══════════════ */}
+            <div id="pld" className={styles.pldWrap}>
+                <div className={styles.pldInner}>
+                    <div className={styles.pldText}>
+                        <span className={styles.eyebrow}>Pakistani Case Law</span>
+                        <h2 className={styles.sectionTitle}>
+                            PLD & SCMR — At Your<br />Fingertips
+                        </h2>
+                        <p className={styles.securityDesc}>
+                            Pakistan Law Digest (PLD) and Supreme Court Monthly Review (SCMR)
+                            contain decades of binding precedent. Finding the right judgment
+                            used to take hours of manual searching.
+                        </p>
+                        <p className={styles.securityDesc} style={{ marginTop: "0.75rem" }}>
+                            With Project Ease, you upload your PLD volumes and SCMR reports
+                            alongside your own case files. Then ask a single question — and the
+                            system searches all of them at once, returning a cited answer with
+                            the exact volume, year, and page.
+                        </p>
+                        <div className={styles.pldBadges}>
+                            <span className={styles.pldBadge}>PLD volumes</span>
+                            <span className={styles.pldBadge}>SCMR reports</span>
+                            <span className={styles.pldBadge}>MLD judgments</span>
+                            <span className={styles.pldBadge}>CLC decisions</span>
+                            <span className={styles.pldBadge}>Your own case files</span>
+                        </div>
+                    </div>
+                    <div className={styles.pldVisual}>
+                        <div className={styles.pldCard}>
+                            <div className={styles.pldCardQ}>
+                                "What did the Supreme Court hold on adverse possession in agricultural land disputes?"
+                            </div>
+                            <div className={styles.pldCardDivider} />
+                            <div className={styles.pldCardA}>
+                                <div className={styles.pldCardALabel}>Answer</div>
+                                The Supreme Court held that adverse possession requires uninterrupted, hostile, and open possession for the statutory period under Section 28, Limitation Act. The burden of proof lies on the claimant to show animus possidendi throughout.
+                            </div>
+                            <div className={styles.pldCardCitations}>
+                                <span className={styles.pldCit}>PLD 2019 SC 412</span>
+                                <span className={styles.pldCit}>SCMR 2021 1048</span>
+                                <span className={styles.pldCit}>Your Matter — Khan v. Ahmad</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ══════════════ PRICING ══════════════ */}
+            <div id="pricing">
+                <div className={`${styles.section} ${styles.sectionCenter}`}>
+                    <span className={styles.eyebrow}>Transparent Pricing</span>
+                    <h2 className={styles.sectionTitle}>
+                        Simple PKR Pricing — No Hidden Fees
+                    </h2>
+                    <p className={styles.sectionSub}>
+                        Start free for 14 days. No credit card required.
+                        Upgrade only when you're ready.
+                    </p>
+                    <div className={styles.pricingGrid}>
+                        {PLANS.map(plan => (
+                            <div
+                                key={plan.id}
+                                className={`${styles.pricingCard} ${plan.popular ? styles.pricingCardPopular : ""}`}
+                            >
+                                {plan.popular && (
+                                    <div className={styles.pricingPopularBadge}>Most Popular</div>
+                                )}
+                                <div className={styles.pricingPlanName}>{plan.label}</div>
+                                <div className={styles.pricingPrice}>
+                                    {plan.price}
+                                    {plan.period && <span className={styles.pricingPeriod}>{plan.period}</span>}
+                                </div>
+                                <div className={styles.pricingMeta}>
+                                    {plan.docs} &nbsp;·&nbsp; {plan.users}
+                                </div>
+                                <div className={styles.pricingDivider} />
+                                <ul className={styles.pricingFeatureList}>
+                                    {plan.features.map(f => (
+                                        <li key={f} className={styles.pricingFeatureItem}>
+                                            <span className={styles.pricingCheck}>✓</span> {f}
+                                        </li>
+                                    ))}
+                                </ul>
+                                <button
+                                    className={plan.popular ? styles.btnGold : styles.btnGhost}
+                                    style={{ width: "100%", justifyContent: "center", marginTop: "auto" }}
+                                    onClick={() => plan.id === "enterprise" ? open("demo") : open("signup")}
+                                >
+                                    {plan.cta}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    <p className={styles.pricingNote}>
+                        All plans paid via bank transfer to our HBL account. Account activates within 24 hours of payment confirmation.
+                    </p>
                 </div>
             </div>
 
@@ -446,20 +605,25 @@ const Landing = () => {
                         pricing — we're here.
                     </p>
                     <div className={styles.contactCards}>
+                        <a
+                            href="https://wa.me/923000000000?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
+                            className={`${styles.contactCard} ${styles.contactCardWa}`}
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            <span className={styles.contactIcon}>💬</span>
+                            <span className={styles.contactCardLabel}>WhatsApp Us</span>
+                            <span className={styles.contactCardValue}>Fastest response · Usually within 1 hour</span>
+                        </a>
                         <a href="mailto:hasan.nasir.acmeone@gmail.com" className={styles.contactCard}>
                             <span className={styles.contactIcon}>✉</span>
                             <span className={styles.contactCardLabel}>Email Us</span>
                             <span className={styles.contactCardValue}>hasan.nasir.acmeone@gmail.com</span>
                         </a>
-                        <a href="https://wa.me/923000000000" className={styles.contactCard} target="_blank" rel="noreferrer">
-                            <span className={styles.contactIcon}>💬</span>
-                            <span className={styles.contactCardLabel}>WhatsApp</span>
-                            <span className={styles.contactCardValue}>Message us directly</span>
-                        </a>
                         <div className={styles.contactCard} onClick={() => open("demo")} style={{ cursor: "pointer" }}>
                             <span className={styles.contactIcon}>📅</span>
-                            <span className={styles.contactCardLabel}>Book a Demo</span>
-                            <span className={styles.contactCardValue}>We come to you</span>
+                            <span className={styles.contactCardLabel}>Book a Live Demo</span>
+                            <span className={styles.contactCardValue}>Free session using your own documents</span>
                         </div>
                     </div>
                 </div>
@@ -468,7 +632,7 @@ const Landing = () => {
             {/* ══════════════ FOOTER ══════════════ */}
             <footer className={styles.footer}>
                 <span className={styles.footerLogo}>Project Ease</span>
-                <span className={styles.footerCopy}>© 2025 Project Ease. All rights reserved.</span>
+                <span className={styles.footerCopy}>© 2026 Project Ease. All rights reserved.</span>
                 <div className={styles.footerRight}>
                     <a href="mailto:hasan.nasir.acmeone@gmail.com" className={styles.footerContact}>
                         hasan.nasir.acmeone@gmail.com
