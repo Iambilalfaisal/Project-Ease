@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "documents" | "clients" | "matters" | "team" | "subscription" | "settings";
+type Panel = "overview" | "documents" | "clients" | "matters" | "team" | "subscription" | "settings" | "audit";
 
 interface Category {
     category_id: string;
@@ -85,6 +85,21 @@ interface Matter {
     documents?:      MatterDoc[];
 }
 
+interface AuditLog {
+    log_id:        string;
+    org_id:        string | null;
+    user_id:       string | null;
+    actor_name:    string | null;
+    actor_role:    string | null;
+    event_type:    string;
+    resource_type: string | null;
+    resource_id:   string | null;
+    resource_name: string | null;
+    details:       string | null;  // JSON string
+    ip_address:    string | null;
+    created_at:    string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function authHeaders(): Record<string, string> {
@@ -115,6 +130,7 @@ const NAV: { id: Panel; icon: string; label: string }[] = [
     { id: "clients",      icon: "C", label: "Clients"      },
     { id: "matters",      icon: "M", label: "Matters"      },
     { id: "team",         icon: "T", label: "Team"         },
+    { id: "audit",        icon: "A", label: "Audit Log"    },
     { id: "subscription", icon: "P", label: "Subscription" },
     { id: "settings",     icon: "S", label: "Settings"     },
 ];
@@ -125,6 +141,7 @@ const PANEL_TITLES: Record<Panel, string> = {
     clients:      "Client Management",
     matters:      "Matter Management",
     team:         "Team Members",
+    audit:        "Audit Log",
     subscription: "Plan & Subscription",
     settings:     "Organization Settings",
 };
@@ -135,6 +152,7 @@ const PANEL_SUBS: Record<Panel, string> = {
     clients:      "Manage your firm's clients and their details",
     matters:      "Track cases, matters, and linked documents",
     team:         "Manage who has access to your workspace",
+    audit:        "Track logins, searches, and document activity",
     subscription: "Your current plan, usage, and billing",
     settings:     "Firm profile and account preferences",
 };
@@ -849,6 +867,188 @@ const MattersPanel = () => {
                         <MatterForm onSave={saveMatter} onCancel={() => setShowModal(false)} />
                     </div>
                 </div>
+            )}
+        </div>
+    );
+};
+
+// ── Audit Panel ───────────────────────────────────────────────────────────────
+
+const EVENT_LABELS: Record<string, string> = {
+    login_success:  "Login",
+    login_fail:     "Failed Login",
+    logout:         "Logout",
+    password_change:"Password Change",
+    doc_upload:     "Document Upload",
+    doc_delete:     "Document Delete",
+    search:         "Search",
+    member_invite:  "Member Invited",
+    member_remove:  "Member Removed",
+    client_create:  "Client Created",
+    client_update:  "Client Updated",
+    client_delete:  "Client Deleted",
+    matter_create:  "Matter Created",
+    matter_update:  "Matter Updated",
+    matter_delete:  "Matter Deleted",
+    org_update:     "Settings Updated",
+    access_denied:  "Access Denied",
+};
+
+const EVENT_BADGE: Record<string, string> = {
+    login_success:  "badgeGreen",
+    login_fail:     "badgeRed",
+    access_denied:  "badgeRed",
+    logout:         "badgeGray",
+    password_change:"badgeAmber",
+    doc_upload:     "badgeGold",
+    doc_delete:     "badgeRed",
+    search:         "badgeBlue",
+    member_invite:  "badgeGreen",
+    member_remove:  "badgeRed",
+    client_create:  "badgeGreen",
+    client_update:  "badgeAmber",
+    client_delete:  "badgeRed",
+    matter_create:  "badgeGreen",
+    matter_update:  "badgeAmber",
+    matter_delete:  "badgeRed",
+    org_update:     "badgeAmber",
+};
+
+const ALL_EVENT_TYPES = Object.keys(EVENT_LABELS);
+
+const AuditPanel = () => {
+    const [logs,       setLogs]       = useState<AuditLog[]>([]);
+    const [total,      setTotal]      = useState(0);
+    const [loading,    setLoading]    = useState(true);
+    const [filterType, setFilterType] = useState("all");
+    const [dateFrom,   setDateFrom]   = useState("");
+    const [dateTo,     setDateTo]     = useState("");
+    const [page,       setPage]       = useState(0);
+    const PAGE_SIZE = 100;
+
+    const load = (pg = 0) => {
+        setLoading(true);
+        const params = new URLSearchParams();
+        if (filterType !== "all") params.set("event_type", filterType);
+        if (dateFrom) params.set("date_from", dateFrom);
+        if (dateTo)   params.set("date_to",   dateTo);
+        params.set("limit",  String(PAGE_SIZE));
+        params.set("offset", String(pg * PAGE_SIZE));
+        fetch(`/audit-logs?${params}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setLogs(d.logs ?? []); setTotal(d.total ?? 0); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+
+    useEffect(() => { setPage(0); load(0); }, [filterType, dateFrom, dateTo]);
+
+    const exportCsv = () => {
+        const header = "Timestamp,Event,Actor,Role,Resource,IP Address,Details\n";
+        const rows = logs.map(l => {
+            const details = l.details ? (() => { try { return JSON.stringify(JSON.parse(l.details)); } catch { return l.details; } })() : "";
+            return [
+                l.created_at,
+                EVENT_LABELS[l.event_type] ?? l.event_type,
+                l.actor_name ?? "",
+                l.actor_role ?? "",
+                [l.resource_type, l.resource_name].filter(Boolean).join(": "),
+                l.ip_address ?? "",
+                details,
+            ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(",");
+        }).join("\n");
+        const blob = new Blob([header + rows], { type: "text/csv" });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href     = url;
+        a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+
+    return (
+        <div className={styles.panelContent}>
+            {/* Toolbar */}
+            <div className={styles.panelToolbar}>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                    <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                        value={filterType} onChange={e => setFilterType(e.target.value)}>
+                        <option value="all">All events</option>
+                        {ALL_EVENT_TYPES.map(t => <option key={t} value={t}>{EVENT_LABELS[t]}</option>)}
+                    </select>
+                    <input type="date" className={styles.formInput} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                        value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="From date" />
+                    <input type="date" className={styles.formInput} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                        value={dateTo} onChange={e => setDateTo(e.target.value)} title="To date" />
+                    <span className={styles.resultCount}>{total} event{total !== 1 ? "s" : ""}</span>
+                </div>
+                <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={exportCsv} disabled={logs.length === 0}>
+                    ↓ Export CSV
+                </button>
+            </div>
+
+            {loading ? (
+                <div className={styles.emptyHint}>Loading…</div>
+            ) : logs.length === 0 ? (
+                <div className={styles.emptyHint}>No audit events match the selected filters.</div>
+            ) : (
+                <>
+                    <div className={styles.tableWrap}>
+                        <table className={styles.table}>
+                            <thead><tr>
+                                <th>Timestamp</th><th>Event</th><th>Actor</th><th>Role</th><th>Resource</th><th>IP</th><th>Details</th>
+                            </tr></thead>
+                            <tbody>
+                                {logs.map(l => {
+                                    let detailStr = "";
+                                    if (l.details) {
+                                        try {
+                                            const parsed = JSON.parse(l.details);
+                                            if (parsed.query) detailStr = `"${parsed.query}"`;
+                                            else if (parsed.email) detailStr = parsed.email;
+                                            else detailStr = Object.entries(parsed).filter(([,v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(", ");
+                                        } catch { detailStr = l.details; }
+                                    }
+                                    return (
+                                        <tr key={l.log_id}>
+                                            <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
+                                            <td>
+                                                <span className={(styles as any)[EVENT_BADGE[l.event_type] ?? "badgeGray"]}>
+                                                    {EVENT_LABELS[l.event_type] ?? l.event_type}
+                                                </span>
+                                            </td>
+                                            <td style={{ fontSize: "0.82rem" }}>{l.actor_name ?? "—"}</td>
+                                            <td className={styles.muted}>{l.actor_role ?? "—"}</td>
+                                            <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                {[l.resource_type, l.resource_name].filter(Boolean).join(": ") || "—"}
+                                            </td>
+                                            <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
+                                            <td className={styles.muted} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
+                                                {detailStr || "—"}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    {totalPages > 1 && (
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem", justifyContent: "center" }}>
+                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }}
+                                disabled={page === 0} onClick={() => { setPage(page - 1); load(page - 1); }}>
+                                ← Prev
+                            </button>
+                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                                Page {page + 1} of {totalPages}
+                            </span>
+                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }}
+                                disabled={page >= totalPages - 1} onClick={() => { setPage(page + 1); load(page + 1); }}>
+                                Next →
+                            </button>
+                        </div>
+                    )}
+                </>
             )}
         </div>
     );
@@ -2472,6 +2672,7 @@ const OwnerPortal = () => {
                             {panel === "clients"       && <ClientsPanel />}
                             {panel === "matters"       && <MattersPanel />}
                             {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} />}
+                            {panel === "audit"         && <AuditPanel />}
                             {panel === "subscription"  && (
                                 <SubscriptionPanel
                                     plan={plan}

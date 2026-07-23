@@ -184,6 +184,24 @@ CREATE TABLE IF NOT EXISTS matters (
     modified_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     modified_by    TEXT    NOT NULL DEFAULT 'system'
 );
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    log_id        TEXT PRIMARY KEY,
+    org_id        TEXT,
+    user_id       TEXT,
+    actor_name    TEXT,
+    actor_role    TEXT,
+    event_type    TEXT NOT NULL,
+    resource_type TEXT,
+    resource_id   TEXT,
+    resource_name TEXT,
+    details       TEXT,
+    ip_address    TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_org_created   ON audit_logs(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_event_created ON audit_logs(event_type, created_at DESC);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -1141,6 +1159,115 @@ def unlink_document_from_matter(doc_id: str, org_id: str,
             (now, actor, doc_id, org_id),
         )
     return True
+
+
+# ── Audit Log ─────────────────────────────────────────────────────────────────
+
+def log_event(
+    event_type:    str,
+    org_id:        str | None = None,
+    user_id:       str | None = None,
+    actor_name:    str | None = None,
+    actor_role:    str | None = None,
+    resource_type: str | None = None,
+    resource_id:   str | None = None,
+    resource_name: str | None = None,
+    details:       dict | None = None,
+    ip_address:    str | None = None,
+) -> None:
+    """
+    Write one audit event. Safe to call fire-and-forget — errors are swallowed
+    so a logging failure never breaks the main request.
+    """
+    import json as _json
+    log_id       = str(uuid.uuid4())
+    details_json = _json.dumps(details) if details else None
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO audit_logs
+                    (log_id, org_id, user_id, actor_name, actor_role,
+                     event_type, resource_type, resource_id, resource_name,
+                     details, ip_address)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (log_id, org_id, user_id, actor_name, actor_role,
+                 event_type, resource_type, resource_id, resource_name,
+                 details_json, ip_address),
+            )
+    except Exception:
+        pass  # never surface logging errors to callers
+
+
+def get_audit_logs(
+    org_id:     str | None = None,  # None = all orgs (admin view)
+    event_type: str | None = None,
+    user_id:    str | None = None,
+    date_from:  str | None = None,  # ISO date string "YYYY-MM-DD"
+    date_to:    str | None = None,
+    limit:      int = 200,
+    offset:     int = 0,
+) -> list[dict]:
+    clauses: list[str] = []
+    params:  list      = []
+
+    if org_id:
+        clauses.append("org_id = ?"); params.append(org_id)
+    if event_type:
+        clauses.append("event_type = ?"); params.append(event_type)
+    if user_id:
+        clauses.append("user_id = ?"); params.append(user_id)
+    if date_from:
+        clauses.append("created_at >= ?"); params.append(date_from + " 00:00:00")
+    if date_to:
+        clauses.append("created_at <= ?"); params.append(date_to + " 23:59:59")
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    params += [limit, offset]
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT log_id, org_id, user_id, actor_name, actor_role,
+                   event_type, resource_type, resource_id, resource_name,
+                   details, ip_address, created_at
+            FROM   audit_logs
+            {where}
+            ORDER  BY created_at DESC
+            LIMIT  ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_audit_logs(
+    org_id:     str | None = None,
+    event_type: str | None = None,
+    user_id:    str | None = None,
+    date_from:  str | None = None,
+    date_to:    str | None = None,
+) -> int:
+    clauses: list[str] = []
+    params:  list      = []
+
+    if org_id:
+        clauses.append("org_id = ?"); params.append(org_id)
+    if event_type:
+        clauses.append("event_type = ?"); params.append(event_type)
+    if user_id:
+        clauses.append("user_id = ?"); params.append(user_id)
+    if date_from:
+        clauses.append("created_at >= ?"); params.append(date_from + " 00:00:00")
+    if date_to:
+        clauses.append("created_at <= ?"); params.append(date_to + " 23:59:59")
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT COUNT(*) FROM audit_logs {where}", params
+        ).fetchone()[0]
 
 
 def get_platform_stats() -> dict:

@@ -262,6 +262,13 @@ async def chat(auth_claims: dict[str, Any]):
             context=context,
             session_state=session_state,
         )
+        # Log the search — extract last user message as query
+        try:
+            messages = request_json.get("messages", [])
+            query = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), None)
+            _audit(_get_session(), "search", details={"query": query})
+        except Exception:
+            pass
         return jsonify(result)
     except Exception as error:
         return error_response(error, "/chat")
@@ -329,6 +336,8 @@ from db import (
     get_custom_courts, add_custom_court, delete_custom_court,
     get_matters, create_matter, update_matter, delete_matter,
     get_matter_with_docs, link_document_to_matter, unlink_document_from_matter,
+    # Audit Log — Task #30
+    log_event, get_audit_logs, count_audit_logs,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -341,6 +350,27 @@ def _get_session(req=None) -> dict | None:
     r = req or request
     token = r.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     return _sessions.get(token)
+
+
+def _get_ip() -> str | None:
+    """Best-effort caller IP from X-Forwarded-For or remote_addr."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or None
+
+
+def _audit(session: dict | None, event_type: str, **kwargs):
+    """Convenience wrapper — pulls org/user/actor fields from session."""
+    log_event(
+        event_type  = event_type,
+        org_id      = (session or {}).get("org"),
+        user_id     = (session or {}).get("user_id"),
+        actor_name  = (session or {}).get("name"),
+        actor_role  = (session or {}).get("role"),
+        ip_address  = _get_ip(),
+        **kwargs,
+    )
 
 
 @bp.route("/auth/login", methods=["POST"])
@@ -358,10 +388,13 @@ async def auth_login():
         token = _secrets.token_hex(32)
         session_data = {"email": email, "name": "Platform Admin", "role": "platform_admin", "org": None}
         _sessions[token] = session_data
+        log_event("login_success", actor_name=email, actor_role="platform_admin", ip_address=_get_ip(),
+                  details={"email": email})
         return jsonify({"token": token, "user": session_data})
 
     user = get_user_by_email(email)
     if not user or not _check_pw(password, user["password_hash"]):
+        log_event("login_fail", ip_address=_get_ip(), details={"email": email})
         return jsonify({"error": "Invalid email or password"}), 401
 
     token = _secrets.token_hex(32)
@@ -373,6 +406,10 @@ async def auth_login():
         "org":     user["org_id"],
     }
     _sessions[token] = session_data
+    log_event("login_success",
+              org_id=user["org_id"], user_id=user["user_id"],
+              actor_name=user["name"], actor_role=user["role"],
+              ip_address=_get_ip(), details={"email": email})
     return jsonify({
         "token": token,
         "user": {
@@ -396,7 +433,8 @@ async def auth_me():
 async def auth_logout():
     """Invalidate a session token."""
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    _sessions.pop(token, None)
+    session = _sessions.pop(token, None)
+    _audit(session, "logout")
     return jsonify({"success": True})
 
 
@@ -562,6 +600,10 @@ async def upload_document():
             pass
 
         update_document_status(doc_record["doc_id"], "ready", actor=user_id or SYSTEM)
+        _audit(_get_session(), "doc_upload",
+               resource_type="document", resource_id=doc_record["doc_id"],
+               resource_name=filename,
+               details={"size_bytes": doc_record.get("size_bytes"), "category_id": category_id})
         return jsonify({"success": True, "filename": filename, "org": org_id, "doc": doc_record})
 
     except Exception as e:
@@ -624,6 +666,9 @@ async def remove_document(doc_id: str):
     doc = delete_document(doc_id, org_id or "", actor=session.get("user_id") or SYSTEM)
     if not doc:
         return jsonify({"error": "Document not found"}), 404
+    _audit(session, "doc_delete",
+           resource_type="document", resource_id=doc_id,
+           resource_name=doc.get("filename"))
 
     # Remove from Azure AI Search index
     try:
@@ -758,6 +803,7 @@ async def update_own_org():
         name=data.get("name"),
         industry=data.get("industry"),
     )
+    _audit(session, "org_update", details={"name": data.get("name"), "industry": data.get("industry")})
     return jsonify(updated)
 
 
@@ -897,6 +943,7 @@ async def change_password():
                modified_at=datetime('now'), modified_by=? WHERE user_id=?""",
             (_hash_pw(new_pw), actor, user["user_id"]),
         )
+    _audit(session, "password_change", resource_type="user", resource_id=user["user_id"])
     return jsonify({"success": True})
 
 
@@ -931,6 +978,9 @@ async def invite_member():
             actor=session.get("user_id") or SYSTEM,
             password=temp_pw, must_change=True,
         )
+        _audit(session, "member_invite",
+               resource_type="user", resource_id=user["user_id"],
+               resource_name=name, details={"email": email, "role": role})
         return jsonify({**user, "temp_password": temp_pw}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -942,10 +992,14 @@ async def remove_member(user_id: str):
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     # Invalidate any active sessions for this user
+    removed_user = get_user_by_id(user_id)
     for tok, s in list(_sessions.items()):
         if s.get("user_id") == user_id:
             _sessions.pop(tok, None)
     delete_user(user_id, actor=session.get("user_id") or SYSTEM)
+    _audit(session, "member_remove",
+           resource_type="user", resource_id=user_id,
+           resource_name=(removed_user or {}).get("name"))
     return jsonify({"success": True})
 
 
@@ -1392,6 +1446,8 @@ async def add_client():
         notes=data.get("notes") or None,
         actor=session.get("user_id") or SYSTEM,
     )
+    _audit(session, "client_create",
+           resource_type="client", resource_id=client["client_id"], resource_name=name)
     return jsonify(client), 201
 
 
@@ -1419,6 +1475,9 @@ async def edit_client(client_id: str):
     )
     if not updated:
         return jsonify({"error": "Not found"}), 404
+    _audit(session, "client_update",
+           resource_type="client", resource_id=client_id,
+           resource_name=(updated or {}).get("name"))
     return jsonify(updated)
 
 
@@ -1429,6 +1488,7 @@ async def remove_client(client_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_client(client_id, session.get("org") or "",
                   actor=session.get("user_id") or SYSTEM)
+    _audit(session, "client_delete", resource_type="client", resource_id=client_id)
     return jsonify({"success": True})
 
 
@@ -1586,6 +1646,9 @@ async def add_matter():
         notes=data.get("notes") or None,
         actor=session.get("user_id") or SYSTEM,
     )
+    _audit(session, "matter_create",
+           resource_type="matter", resource_id=matter["matter_id"], resource_name=title,
+           details={"matter_type": matter_type, "status": data.get("status", "Active")})
     return jsonify(matter), 201
 
 
@@ -1617,6 +1680,10 @@ async def edit_matter(matter_id: str):
     )
     if not updated:
         return jsonify({"error": "Not found"}), 404
+    _audit(session, "matter_update",
+           resource_type="matter", resource_id=matter_id,
+           resource_name=(updated or {}).get("title"),
+           details={"status": data.get("status")})
     return jsonify(updated)
 
 
@@ -1627,6 +1694,7 @@ async def remove_matter(matter_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_matter(matter_id, session.get("org") or "",
                   actor=session.get("user_id") or SYSTEM)
+    _audit(session, "matter_delete", resource_type="matter", resource_id=matter_id)
     return jsonify({"success": True})
 
 
@@ -1650,6 +1718,42 @@ async def unlink_doc_from_matter(matter_id: str, doc_id: str):
     unlink_document_from_matter(doc_id, session.get("org") or "",
                                 actor=session.get("user_id") or SYSTEM)
     return jsonify({"success": True})
+
+
+# ─── PROJECT EASE: Audit Log API ─────────────────────────────────────────────
+
+@bp.route("/audit-logs", methods=["GET"])
+async def list_audit_logs():
+    """Return paginated audit logs scoped to the caller's org (owner) or all orgs (admin)."""
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    role = session.get("role")
+    if role not in ("org_owner", "platform_admin"):
+        # Log the access attempt and reject
+        _audit(session, "access_denied",
+               details={"route": "/audit-logs", "reason": "insufficient_role"})
+        return jsonify({"error": "Forbidden"}), 403
+
+    # Platform admins can query across all orgs; org_owners are always scoped to their own
+    org_id = None if role == "platform_admin" else session.get("org")
+    # Admin may optionally filter by org
+    if role == "platform_admin":
+        org_id = request.args.get("org_id") or None
+
+    event_type = request.args.get("event_type") or None
+    user_id    = request.args.get("user_id")    or None
+    date_from  = request.args.get("date_from")  or None
+    date_to    = request.args.get("date_to")    or None
+    limit      = min(int(request.args.get("limit",  "200")), 500)
+    offset     = int(request.args.get("offset", "0"))
+
+    logs  = get_audit_logs(org_id=org_id, event_type=event_type, user_id=user_id,
+                           date_from=date_from, date_to=date_to, limit=limit, offset=offset)
+    total = count_audit_logs(org_id=org_id, event_type=event_type, user_id=user_id,
+                             date_from=date_from, date_to=date_to)
+    return jsonify({"logs": logs, "total": total, "limit": limit, "offset": offset})
 
 
 @bp.before_app_serving

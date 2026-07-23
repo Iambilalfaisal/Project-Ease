@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "orgs" | "registrations" | "evals" | "settings";
+type Panel = "overview" | "orgs" | "registrations" | "evals" | "audit" | "settings";
 
 interface Org {
     org_id:      string;
@@ -766,6 +766,168 @@ const RegistrationsPanel = () => {
     );
 };
 
+// ── Admin Audit Panel ─────────────────────────────────────────────────────────
+
+interface AuditLog {
+    log_id:        string;
+    org_id:        string | null;
+    user_id:       string | null;
+    actor_name:    string | null;
+    actor_role:    string | null;
+    event_type:    string;
+    resource_type: string | null;
+    resource_id:   string | null;
+    resource_name: string | null;
+    details:       string | null;
+    ip_address:    string | null;
+    created_at:    string;
+}
+
+const ADMIN_EVENT_LABELS: Record<string, string> = {
+    login_success:  "Login",       login_fail:     "Failed Login",
+    logout:         "Logout",      password_change: "Password Change",
+    doc_upload:     "Doc Upload",  doc_delete:     "Doc Delete",
+    search:         "Search",      member_invite:  "Member Invited",
+    member_remove:  "Member Removed",
+    client_create:  "Client Created",  client_update:  "Client Updated",
+    client_delete:  "Client Deleted",  matter_create:  "Matter Created",
+    matter_update:  "Matter Updated",  matter_delete:  "Matter Deleted",
+    org_update:     "Settings Updated", access_denied: "Access Denied",
+};
+
+const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] }) => {
+    const [logs,       setLogs]       = useState<AuditLog[]>([]);
+    const [total,      setTotal]      = useState(0);
+    const [loading,    setLoading]    = useState(true);
+    const [filterType, setFilterType] = useState("all");
+    const [filterOrg,  setFilterOrg]  = useState("all");
+    const [dateFrom,   setDateFrom]   = useState("");
+    const [dateTo,     setDateTo]     = useState("");
+    const [page,       setPage]       = useState(0);
+    const PAGE_SIZE = 200;
+
+    const load = (pg = 0) => {
+        setLoading(true);
+        const params = new URLSearchParams();
+        if (filterType !== "all") params.set("event_type", filterType);
+        if (filterOrg  !== "all") params.set("org_id",     filterOrg);
+        if (dateFrom) params.set("date_from", dateFrom);
+        if (dateTo)   params.set("date_to",   dateTo);
+        params.set("limit",  String(PAGE_SIZE));
+        params.set("offset", String(pg * PAGE_SIZE));
+        fetch(`/audit-logs?${params}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setLogs(d.logs ?? []); setTotal(d.total ?? 0); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+
+    useEffect(() => { setPage(0); load(0); }, [filterType, filterOrg, dateFrom, dateTo]);
+
+    const exportCsv = () => {
+        const header = "Timestamp,Org,Event,Actor,Role,Resource,IP,Details\n";
+        const rows = logs.map(l => {
+            const orgName = orgs.find(o => o.org_id === l.org_id)?.name ?? l.org_id ?? "";
+            let details = "";
+            if (l.details) { try { details = JSON.stringify(JSON.parse(l.details)); } catch { details = l.details; } }
+            return [
+                l.created_at,
+                orgName,
+                ADMIN_EVENT_LABELS[l.event_type] ?? l.event_type,
+                l.actor_name ?? "",
+                l.actor_role ?? "",
+                [l.resource_type, l.resource_name].filter(Boolean).join(": "),
+                l.ip_address ?? "",
+                details,
+            ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(",");
+        }).join("\n");
+        const blob = new Blob([header + rows], { type: "text/csv" });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href     = url;
+        a.download = `platform-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+
+    return (
+        <div className={styles.panelContent}>
+            <div className={styles.toolbar}>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                    <select className={styles.select} value={filterOrg} onChange={e => setFilterOrg(e.target.value)}>
+                        <option value="all">All organizations</option>
+                        {orgs.map(o => <option key={o.org_id} value={o.org_id}>{o.name}</option>)}
+                    </select>
+                    <select className={styles.select} value={filterType} onChange={e => setFilterType(e.target.value)}>
+                        <option value="all">All events</option>
+                        {Object.entries(ADMIN_EVENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                    <input type="date" className={styles.input} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="From" />
+                    <input type="date" className={styles.input} value={dateTo}   onChange={e => setDateTo(e.target.value)}   title="To" />
+                    <span className={styles.muted} style={{ fontSize: "0.8rem" }}>{total} event{total !== 1 ? "s" : ""}</span>
+                </div>
+                <button className={styles.btnSecondary} onClick={exportCsv} disabled={logs.length === 0}>↓ Export CSV</button>
+            </div>
+
+            {loading ? (
+                <div className={styles.empty}>Loading…</div>
+            ) : logs.length === 0 ? (
+                <div className={styles.empty}>No events match the selected filters.</div>
+            ) : (
+                <>
+                    <div className={styles.tableWrap}>
+                        <table className={styles.table}>
+                            <thead><tr>
+                                <th>Timestamp</th><th>Org</th><th>Event</th><th>Actor</th><th>Role</th><th>Resource</th><th>IP</th><th>Details</th>
+                            </tr></thead>
+                            <tbody>
+                                {logs.map(l => {
+                                    const orgName = orgs.find(o => o.org_id === l.org_id)?.name ?? l.org_id ?? "—";
+                                    let detailStr = "";
+                                    if (l.details) {
+                                        try {
+                                            const parsed = JSON.parse(l.details);
+                                            if (parsed.query) detailStr = `"${parsed.query}"`;
+                                            else if (parsed.email) detailStr = parsed.email;
+                                            else detailStr = Object.entries(parsed).filter(([,v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(", ");
+                                        } catch { detailStr = l.details; }
+                                    }
+                                    return (
+                                        <tr key={l.log_id}>
+                                            <td className={styles.muted} style={{ whiteSpace: "nowrap", fontSize: "0.78rem" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
+                                            <td style={{ fontSize: "0.8rem" }}>{orgName}</td>
+                                            <td style={{ fontSize: "0.8rem", fontWeight: 600 }}>{ADMIN_EVENT_LABELS[l.event_type] ?? l.event_type}</td>
+                                            <td style={{ fontSize: "0.8rem" }}>{l.actor_name ?? "—"}</td>
+                                            <td className={styles.muted}>{l.actor_role ?? "—"}</td>
+                                            <td className={styles.muted} style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                {[l.resource_type, l.resource_name].filter(Boolean).join(": ") || "—"}
+                                            </td>
+                                            <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
+                                            <td className={styles.muted} style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
+                                                {detailStr || "—"}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    {totalPages > 1 && (
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem", justifyContent: "center" }}>
+                            <button className={styles.btnSecondary} disabled={page === 0}
+                                onClick={() => { setPage(page - 1); load(page - 1); }}>← Prev</button>
+                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Page {page + 1} of {totalPages}</span>
+                            <button className={styles.btnSecondary} disabled={page >= totalPages - 1}
+                                onClick={() => { setPage(page + 1); load(page + 1); }}>Next →</button>
+                        </div>
+                    )}
+                </>
+            )}
+        </div>
+    );
+};
+
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { id: Panel; icon: string; label: string }[] = [
@@ -773,6 +935,7 @@ const NAV_ITEMS: { id: Panel; icon: string; label: string }[] = [
     { id: "orgs",           icon: "🏢", label: "Organizations"  },
     { id: "registrations",  icon: "📝", label: "Registrations"  },
     { id: "evals",          icon: "✅", label: "Eval Quality"   },
+    { id: "audit",          icon: "🔍", label: "Audit Log"      },
     { id: "settings",       icon: "⚙️", label: "Settings"       },
 ];
 
@@ -781,14 +944,17 @@ const PANEL_TITLES: Record<Panel, string> = {
     orgs:          "Organizations",
     registrations: "Pending Registrations",
     evals:         "Eval Quality",
+    audit:         "Platform Audit Log",
     settings:      "Platform Settings",
 };
 
 const PANEL_SUBS: Record<Panel, string> = {
-    overview: "Platform-wide summary across all organizations",
-    orgs:     "Manage tenants, plans, and access",
-    evals:    "AI answer quality scores recorded per query",
-    settings: "Plan tiers and service configuration",
+    overview:      "Platform-wide summary across all organizations",
+    orgs:          "Manage tenants, plans, and access",
+    registrations: "Pending sign-ups awaiting approval",
+    evals:         "AI answer quality scores recorded per query",
+    audit:         "All logins, searches, and actions across every organization",
+    settings:      "Plan tiers and service configuration",
 };
 
 const AdminDashboard = () => {
@@ -869,6 +1035,7 @@ const AdminDashboard = () => {
                             {panel === "orgs"           && <OrgsPanel orgs={orgs} setOrgs={setOrgs} />}
                             {panel === "registrations"  && <RegistrationsPanel />}
                             {panel === "evals"          && <EvalsPanel />}
+                            {panel === "audit"          && <AdminAuditPanel orgs={orgs.map(o => ({ org_id: o.org_id, name: o.name }))} />}
                             {panel === "settings"       && <SettingsPanel />}
                         </>
                     )}
