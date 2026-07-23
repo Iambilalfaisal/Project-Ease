@@ -340,6 +340,18 @@
     font-family: monospace;
 }
 
+/* Case law citation — blue tint to distinguish from firm docs */
+.citationTagCaseLaw {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.55rem;
+    background: rgba(59, 130, 246, 0.10);
+    border: 1px solid rgba(59, 130, 246, 0.30);
+    border-radius: 99px;
+    color: #60a5fa;
+    font-family: monospace;
+}
+
 /* Verification badge */
 .verificationBadge {
     display: inline-flex;

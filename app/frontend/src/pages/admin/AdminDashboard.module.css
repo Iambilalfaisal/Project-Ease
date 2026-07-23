@@ -597,6 +597,59 @@
 .body::-webkit-scrollbar-thumb,
 .nav::-webkit-scrollbar-thumb  { background: var(--border-md); border-radius: 2px; }
 
+/* ── Success banner ─────────────────────────────────────────────── */
+.successBanner {
+    background: rgba(46, 158, 79, 0.10);
+    border: 1px solid rgba(46, 158, 79, 0.35);
+    color: #2e9e4f;
+    font-size: 0.83rem;
+    padding: 0.65rem 1rem;
+    border-radius: 8px;
+    line-height: 1.5;
+}
+
+/* ── Filter chips ───────────────────────────────────────────────── */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.85rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: var(--sans);
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.chip:hover { border-color: var(--gold); color: var(--gold); }
+
+.chipActive {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.85rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: var(--sans);
+    border-radius: 100px;
+    border: 1px solid var(--gold);
+    background: rgba(184, 150, 76, 0.10);
+    color: var(--gold);
+    cursor: pointer;
+}
+
+/* ── Badge ──────────────────────────────────────────────────────── */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.6rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 900px) {
     .statsGrid { grid-template-columns: repeat(2, 1fr); }

@@ -348,6 +348,9 @@ from db import (
     # Fee tracking & Invoices — Task #44
     get_fees, create_fee, get_fee, update_fee, delete_fee,
     get_invoices, create_invoice, get_invoice_with_fees, update_invoice,
+    # Case Law — Task #33
+    create_case_law_doc, get_case_law_doc, list_case_law_docs,
+    set_case_law_doc_status, delete_case_law_doc,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2218,6 +2221,197 @@ async def remove_deadline(deadline_id: str):
     actor = session.get("user_id") or SYSTEM
     delete_deadline(deadline_id, session.get("org") or "", actor=actor)
     _audit(session, "deadline_delete", resource_type="deadline", resource_name=d.get("title", ""))
+    return jsonify({"ok": True})
+
+
+# ─── Case Law (PLD / SCMR / MLD / CLC) — Task #33 ──────────────────────────
+# Documents are indexed into Azure Search with category="__case_law__" so they
+# are visible to every authenticated user alongside their own org's documents.
+# Only the platform admin can upload / delete case law documents.
+
+CASE_LAW_CATEGORY = "__case_law__"
+
+VALID_PUBLISHERS = {"PLD", "SCMR", "MLD", "CLC", "OTHER"}
+
+
+@bp.route("/admin/case-law", methods=["GET"])
+async def admin_list_case_law():
+    session = _get_session()
+    if not session or session.get("role") != "platform_admin":
+        return jsonify({"error": "Unauthorized"}), 401
+    publisher = request.args.get("publisher")
+    docs = list_case_law_docs(publisher or None)
+    return jsonify({"docs": docs})
+
+
+@bp.route("/admin/case-law/upload", methods=["POST"])
+async def admin_upload_case_law():
+    """Admin uploads a PLD/SCMR/MLD/CLC PDF to the shared case law index."""
+    session = _get_session()
+    if not session or session.get("role") != "platform_admin":
+        return jsonify({"error": "Unauthorized"}), 401
+
+    files = await request.files
+    form  = await request.form
+    if "file" not in files:
+        return jsonify({"error": "No file provided"}), 400
+
+    uploaded_file = files["file"]
+    filename: str = uploaded_file.filename or "upload"
+
+    import os as _os
+    ext = _os.path.splitext(filename)[1].lower()
+    if ext != ".pdf":
+        return jsonify({"error": "Only PDF files are supported for case law."}), 400
+
+    publisher = (form.get("publisher") or "OTHER").upper()
+    if publisher not in VALID_PUBLISHERS:
+        publisher = "OTHER"
+    title  = (form.get("title") or filename).strip()
+    year_s = form.get("year") or ""
+    volume = (form.get("volume") or "").strip() or None
+    court  = (form.get("court")  or "").strip() or None
+
+    try:
+        year = int(year_s) if year_s.strip().isdigit() else None
+    except ValueError:
+        year = None
+
+    actor = session.get("user_id") or SYSTEM
+
+    try:
+        import tempfile, asyncio as _asyncio
+        from dotenv import load_dotenv as _ld
+        _ld(dotenv_path=_os.path.join(_os.path.dirname(__file__), ".env"), override=True)
+
+        from azure.core.credentials import AzureKeyCredential as _AKC
+        from azure.identity.aio import AzureDeveloperCliCredential as _AzCred
+        from prepdocslib.servicesetup import (
+            OpenAIHost, setup_search_info, setup_blob_manager,
+            setup_embeddings_service, setup_openai_client,
+            build_file_processors,
+        )
+        from prepdocslib.listfilestrategy import LocalListFileStrategy
+        from prepdocslib.filestrategy import FileStrategy
+        from prepdocslib.strategy import DocumentAction
+
+        azure_credential = _AzCred(process_timeout=60)
+        OPENAI_HOST = OpenAIHost(_os.environ["OPENAI_HOST"])
+
+        search_key = _os.getenv("AZURE_SEARCH_KEY")
+        search_info = setup_search_info(
+            search_service=_os.environ["AZURE_SEARCH_SERVICE"],
+            index_name=_os.environ["AZURE_SEARCH_INDEX"],
+            azure_credential=azure_credential,
+            search_key=search_key,
+        )
+
+        blob_manager = setup_blob_manager(
+            azure_credential=azure_credential,
+            storage_account=_os.environ["AZURE_STORAGE_ACCOUNT"],
+            storage_container=_os.environ["AZURE_STORAGE_CONTAINER"],
+            storage_resource_group=_os.environ.get("AZURE_STORAGE_RESOURCE_GROUP"),
+            subscription_id=_os.environ.get("AZURE_SUBSCRIPTION_ID"),
+            storage_key=_os.getenv("AZURE_STORAGE_KEY"),
+        )
+
+        openai_client, azure_openai_endpoint = setup_openai_client(
+            openai_host=OPENAI_HOST,
+            azure_credential=azure_credential,
+            azure_openai_service=_os.getenv("AZURE_OPENAI_SERVICE"),
+            azure_openai_api_key=_os.getenv("AZURE_OPENAI_API_KEY_OVERRIDE"),
+        )
+
+        doc_int_service = _os.getenv("AZURE_DOCUMENTINTELLIGENCE_SERVICE")
+        doc_int_key = _os.getenv("AZURE_DOCUMENTINTELLIGENCE_KEY")
+        file_processors, figure_processor = build_file_processors(
+            azure_credential=azure_credential,
+            document_intelligence_service=doc_int_service,
+            document_intelligence_key=doc_int_key if doc_int_key and doc_int_key != "YOUR_DOC_INTELLIGENCE_KEY_HERE" else None,
+            use_local_pdf_parser=not doc_int_service,
+            use_local_html_parser=not doc_int_service,
+        ), None
+        if isinstance(file_processors, tuple):
+            file_processors, figure_processor = file_processors
+
+        embeddings_service = setup_embeddings_service(
+            OPENAI_HOST, openai_client,
+            emb_model_name=_os.environ["AZURE_OPENAI_EMB_MODEL_NAME"],
+            emb_model_dimensions=int(_os.getenv("AZURE_OPENAI_EMB_DIMENSIONS", "1536")),
+            azure_openai_deployment=_os.getenv("AZURE_OPENAI_EMB_DEPLOYMENT"),
+            azure_openai_endpoint=azure_openai_endpoint,
+        )
+
+        file_bytes = uploaded_file.read()
+        size_bytes = len(file_bytes)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+
+        # Create DB record
+        doc_record = create_case_law_doc(
+            publisher=publisher, title=title,
+            filename=filename, size_bytes=size_bytes,
+            year=year, volume=volume, court=court,
+            actor=actor,
+        )
+        doc_id = doc_record["doc_id"]
+
+        async def _index_case_law():
+            try:
+                list_strategy = LocalListFileStrategy(path_pattern=tmp_path)
+                strategy = FileStrategy(
+                    search_info=search_info,
+                    list_file_strategy=list_strategy,
+                    blob_manager=blob_manager,
+                    file_processors=file_processors,
+                    document_action=DocumentAction.Add,
+                    embeddings=embeddings_service,
+                    image_embeddings=None,
+                    search_field_name_embedding=_os.getenv("AZURE_SEARCH_FIELD_NAME_EMBEDDING", "embedding"),
+                    use_acls=False,
+                    category=CASE_LAW_CATEGORY,   # ← shared pool, NOT org_id
+                    figure_processor=figure_processor,
+                )
+                await strategy.setup()
+                await strategy.run()
+                set_case_law_doc_status(doc_id, "ready", actor=actor)
+            except Exception as exc:
+                set_case_law_doc_status(doc_id, "error", error_msg=str(exc), actor=actor)
+                logging.getLogger(__name__).error("Case law indexing failed: %s", exc)
+            finally:
+                try:
+                    _os.remove(tmp_path)
+                    md5 = tmp_path + ".md5"
+                    if _os.path.exists(md5):
+                        _os.remove(md5)
+                except Exception:
+                    pass
+
+        _asyncio.ensure_future(_index_case_law())
+        _audit(session, "case_law_upload", resource_type="case_law_doc",
+               resource_name=title, resource_id=doc_id)
+        return jsonify({"doc": doc_record, "message": "Indexing started. Status will update to 'ready' when complete."})
+
+    except Exception as exc:
+        logging.getLogger(__name__).error("Case law upload error: %s", exc)
+        return jsonify({"error": f"Upload failed: {exc}"}), 500
+
+
+@bp.route("/admin/case-law/<doc_id>", methods=["DELETE"])
+async def admin_delete_case_law(doc_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "platform_admin":
+        return jsonify({"error": "Unauthorized"}), 401
+    doc = get_case_law_doc(doc_id)
+    if not doc:
+        return jsonify({"error": "Not found"}), 404
+    actor = session.get("user_id") or SYSTEM
+    delete_case_law_doc(doc_id, actor=actor)
+    _audit(session, "case_law_delete", resource_type="case_law_doc",
+           resource_name=doc.get("title", ""), resource_id=doc_id)
+    # Note: blob + search index cleanup left to admin manually for now
+    # (or add a separate cleanup job — see PLACEHOLDERS.md)
     return jsonify({"ok": True})
 
 

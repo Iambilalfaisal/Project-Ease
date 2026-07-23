@@ -60,6 +60,12 @@ function fmtDate(iso: string): string {
     return iso ? iso.slice(0, 10) : "—";
 }
 
+// Detect case law citations by filename pattern (PLD, SCMR, MLD, CLC prefixes)
+const CASE_LAW_RE = /^(PLD|SCMR|MLD|CLC)[-_\s]/i;
+function isCaseLawCitation(citation: string): boolean {
+    return CASE_LAW_RE.test(citation.trim());
+}
+
 // ── Theme Toggle ──────────────────────────────────────────────────────────────
 
 const ThemeToggle = () => {
@@ -302,7 +308,13 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                                     {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
                                         <div className={styles.msgCitations}>
                                             {msg.citations.map(c => (
-                                                <span key={c} className={styles.citationTag}>{c}</span>
+                                                isCaseLawCitation(c) ? (
+                                                    <span key={c} className={styles.citationTagCaseLaw} title="Case Law — PLD / SCMR / MLD / CLC">
+                                                        📖 {c}
+                                                    </span>
+                                                ) : (
+                                                    <span key={c} className={styles.citationTag}>📁 {c}</span>
+                                                )
                                             ))}
                                         </div>
                                     )}

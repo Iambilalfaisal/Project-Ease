@@ -298,6 +298,27 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_org_created   ON audit_logs(org_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_event_created ON audit_logs(event_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS case_law_docs (
+    doc_id          TEXT PRIMARY KEY,
+    publisher       TEXT NOT NULL,          -- PLD | SCMR | MLD | CLC | OTHER
+    title           TEXT NOT NULL,          -- e.g. "PLD 2019 Supreme Court 412"
+    year            INTEGER,                -- e.g. 2019
+    volume          TEXT,                   -- e.g. "Vol. 5" or blank
+    court           TEXT,                   -- e.g. "Supreme Court", "Lahore High Court"
+    filename        TEXT NOT NULL,          -- blob filename used in Azure Search
+    size_bytes      INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'processing',  -- processing | ready | error
+    error_msg       TEXT,
+    indexed_by      TEXT NOT NULL DEFAULT 'system',
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    modified_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by     TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS idx_case_law_publisher ON case_law_docs(publisher, year DESC);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -1970,6 +1991,72 @@ def get_deadlines_needing_reminder() -> list[dict]:
 def mark_deadline_reminder_sent(deadline_id: str):
     with get_conn() as conn:
         conn.execute("UPDATE deadlines SET reminder_sent=1 WHERE deadline_id=?", (deadline_id,))
+
+
+# ─── Case Law Documents ───────────────────────────────────────────────────────
+
+def create_case_law_doc(
+    publisher: str,
+    title: str,
+    filename: str,
+    size_bytes: int,
+    year: int | None = None,
+    volume: str | None = None,
+    court: str | None = None,
+    actor: str = "system",
+) -> dict:
+    doc_id = _new_id()
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO case_law_docs
+               (doc_id, publisher, title, year, volume, court, filename,
+                size_bytes, status, indexed_by,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (doc_id, publisher, title, year, volume, court, filename,
+             size_bytes, "processing", actor,
+             now, actor, now, actor),
+        )
+    return get_case_law_doc(doc_id) or {}
+
+
+def get_case_law_doc(doc_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM case_law_docs WHERE doc_id=? AND is_active=1", (doc_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_case_law_docs(publisher: str | None = None) -> list[dict]:
+    with get_conn() as conn:
+        if publisher:
+            rows = conn.execute(
+                "SELECT * FROM case_law_docs WHERE is_active=1 AND publisher=? ORDER BY year DESC, title",
+                (publisher,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM case_law_docs WHERE is_active=1 ORDER BY publisher, year DESC, title"
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_case_law_doc_status(doc_id: str, status: str, error_msg: str | None = None, actor: str = "system"):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE case_law_docs SET status=?, error_msg=?, modified_at=?, modified_by=? WHERE doc_id=?",
+            (status, error_msg, _now(), actor, doc_id),
+        )
+
+
+def delete_case_law_doc(doc_id: str, actor: str = "system"):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE case_law_docs SET is_active=0, modified_at=?, modified_by=? WHERE doc_id=?",
+            (_now(), actor, doc_id),
+        )
 
 
 def get_platform_stats() -> dict:

@@ -277,14 +277,18 @@ class Approach(ABC):
         self.global_blob_manager = global_blob_manager
         self.user_blob_manager = user_blob_manager
 
+    # The special category value used in Azure Search for all shared case law documents
+    # (PLD, SCMR, MLD, CLC volumes uploaded by the platform admin).
+    CASE_LAW_CATEGORY = "__case_law__"
+
     def build_filter(self, overrides: dict[str, Any], auth_claims: Optional[dict[str, Any]] = None) -> Optional[str]:
         include_category = overrides.get("include_category")
         exclude_category = overrides.get("exclude_category")
-        filters = []
+        global_filters: list[str] = []
         if include_category:
-            filters.append("category eq '{}'".format(include_category.replace("'", "''")))
+            global_filters.append("category eq '{}'".format(include_category.replace("'", "''")))
         if exclude_category:
-            filters.append("category ne '{}'".format(exclude_category.replace("'", "''")))
+            global_filters.append("category ne '{}'".format(exclude_category.replace("'", "''")))
 
         # PROJECT EASE: multi-tenancy — restrict every search to the requesting org's documents.
         #
@@ -306,25 +310,48 @@ class Approach(ABC):
             # Fallback: local dev / auth disabled
             organization_id = overrides.get("organization_id")
 
+        # ── PROJECT EASE: Case Law OR condition ───────────────────────────────
+        # When an org is known, build a compound filter that includes BOTH:
+        #   • The org's own documents (category eq '{org_id}')
+        #   • The shared public case law pool (category eq '__case_law__')
+        #
+        # Employee sourcefile scoping only restricts firm docs — case law is always
+        # visible to any authenticated user so they can do general legal research.
+        #
+        # Final filter structure (with employee scoping):
+        #   (category eq 'org' and search.in(sourcefile,'f1,f2',',')) or (category eq '__case_law__')
+        #
+        # Without employee scoping (owner / admin):
+        #   (category eq 'org') or (category eq '__case_law__')
         if organization_id:
-            # Documents are indexed with org_id stored in the 'category' field.
-            filters.append("category eq '{}'".format(organization_id.replace("'", "''")))
+            safe_org = organization_id.replace("'", "''")
+            org_clause = f"category eq '{safe_org}'"
 
-        # PROJECT EASE: employee category scoping — restrict to permitted document filenames.
-        # None  = key not set → no restriction (owner / admin sees all org docs)
-        # []    = key set but empty → employee has no permissions → match nothing
-        # [...]  = filter to only these filenames
-        permitted_sourcefiles = overrides.get("permitted_sourcefiles")
-        if permitted_sourcefiles is not None:
-            if permitted_sourcefiles:
-                escaped = [f.replace("'", "''") for f in permitted_sourcefiles]
-                joined  = ",".join(escaped)
-                filters.append(f"search.in(sourcefile, '{joined}', ',')")
+            # PROJECT EASE: employee category scoping — restrict to permitted document filenames.
+            # None  = key not set → no restriction (owner sees all org docs)
+            # []    = key set but empty → employee has no org-doc permissions (case law still works)
+            # [...]  = filter to only these filenames
+            permitted_sourcefiles = overrides.get("permitted_sourcefiles")
+            if permitted_sourcefiles is not None:
+                if permitted_sourcefiles:
+                    escaped = [f.replace("'", "''") for f in permitted_sourcefiles]
+                    joined  = ",".join(escaped)
+                    org_clause = f"({org_clause} and search.in(sourcefile, '{joined}', ','))"
+                else:
+                    # Employee has no firm-doc permissions → suppress firm docs entirely
+                    org_clause = None
+
+            case_law_clause = f"category eq '{self.CASE_LAW_CATEGORY}'"
+
+            if org_clause:
+                tenant_filter = f"({org_clause}) or ({case_law_clause})"
             else:
-                # Employee exists but has no permitted categories → return nothing
-                filters.append("sourcefile eq '__pe_no_access__'")
+                # Employee with no firm permissions — case law only
+                tenant_filter = case_law_clause
 
-        return None if not filters else " and ".join(filters)
+            global_filters.append(tenant_filter)
+
+        return None if not global_filters else " and ".join(global_filters)
 
     async def search(
         self,

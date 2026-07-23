@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "orgs" | "registrations" | "upgrades" | "evals" | "audit" | "settings";
+type Panel = "overview" | "orgs" | "registrations" | "upgrades" | "case_law" | "evals" | "audit" | "settings";
 
 interface Org {
     org_id:      string;
@@ -1137,6 +1137,245 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
     );
 };
 
+// ── Case Law Panel ────────────────────────────────────────────────────────────
+
+interface CaseLawDoc {
+    doc_id:     string;
+    publisher:  string;
+    title:      string;
+    year:       number | null;
+    volume:     string | null;
+    court:      string | null;
+    filename:   string;
+    size_bytes: number;
+    status:     "processing" | "ready" | "error";
+    error_msg:  string | null;
+    indexed_by: string;
+    created_at: string;
+}
+
+const PUBLISHERS = ["PLD", "SCMR", "MLD", "CLC", "OTHER"];
+
+const STATUS_BADGE: Record<string, string> = {
+    ready:      "#2e9e4f",
+    processing: "#b8964c",
+    error:      "#e05260",
+};
+
+function fmtBytesAdmin(b: number): string {
+    if (b >= 1_048_576) return `${(b / 1_048_576).toFixed(1)} MB`;
+    if (b >= 1024)      return `${Math.round(b / 1024)} KB`;
+    return `${b} B`;
+}
+
+const AdminCaseLawPanel = () => {
+    const [docs,       setDocs]       = useState<CaseLawDoc[]>([]);
+    const [loading,    setLoading]    = useState(true);
+    const [pubFilter,  setPubFilter]  = useState("ALL");
+    const [uploading,  setUploading]  = useState(false);
+    const [uploadErr,  setUploadErr]  = useState<string | null>(null);
+    const [uploadOk,   setUploadOk]   = useState(false);
+    const [deleting,   setDeleting]   = useState<string | null>(null);
+
+    // Upload form state
+    const [file,      setFile]      = useState<File | null>(null);
+    const [publisher, setPublisher] = useState("PLD");
+    const [title,     setTitle]     = useState("");
+    const [year,      setYear]      = useState("");
+    const [volume,    setVolume]    = useState("");
+    const [court,     setCourt]     = useState("");
+
+    const token = () => sessionStorage.getItem("pe_token") ?? "";
+    const auth  = () => ({ Authorization: `Bearer ${token()}` });
+
+    const load = async () => {
+        setLoading(true);
+        try {
+            const url = pubFilter !== "ALL" ? `/admin/case-law?publisher=${pubFilter}` : "/admin/case-law";
+            const res = await fetch(url, { headers: auth() });
+            if (res.ok) {
+                const d = await res.json();
+                setDocs(d.docs ?? []);
+            }
+        } catch { /* silent */ }
+        setLoading(false);
+    };
+
+    useEffect(() => { load(); }, [pubFilter]);
+
+    const handleUpload = async () => {
+        if (!file) { setUploadErr("Please select a PDF file."); return; }
+        if (!title.trim()) { setUploadErr("Please enter a title."); return; }
+        setUploadErr(null); setUploadOk(false); setUploading(true);
+        try {
+            const fd = new FormData();
+            fd.append("file",      file);
+            fd.append("publisher", publisher);
+            fd.append("title",     title.trim());
+            fd.append("year",      year);
+            fd.append("volume",    volume.trim());
+            fd.append("court",     court.trim());
+            const res = await fetch("/admin/case-law/upload", { method: "POST", headers: auth(), body: fd });
+            const data = await res.json();
+            if (!res.ok) { setUploadErr(data.error ?? "Upload failed."); return; }
+            setUploadOk(true);
+            setFile(null); setTitle(""); setYear(""); setVolume(""); setCourt("");
+            setTimeout(() => { setUploadOk(false); load(); }, 1500);
+        } catch { setUploadErr("Network error. Please try again."); }
+        finally { setUploading(false); }
+    };
+
+    const handleDelete = async (docId: string) => {
+        if (!window.confirm("Remove this document from the case law library? It will no longer appear in searches.")) return;
+        setDeleting(docId);
+        try {
+            await fetch(`/admin/case-law/${docId}`, { method: "DELETE", headers: auth() });
+            setDocs(prev => prev.filter(d => d.doc_id !== docId));
+        } catch { /* silent */ }
+        setDeleting(null);
+    };
+
+    return (
+        <div className={styles.panelBody}>
+            {/* ── Upload form ── */}
+            <div className={styles.card} style={{ marginBottom: "1.5rem" }}>
+                <div className={styles.cardTitle}>Upload Case Law Document</div>
+                <p style={{ fontSize: "0.82rem", color: "var(--text-3)", marginBottom: "1.25rem" }}>
+                    Upload a PDF volume of PLD, SCMR, MLD, or CLC. It will be indexed into the shared
+                    case law pool and will appear in every user's AI search results automatically.
+                </p>
+
+                {uploadErr && (
+                    <div className={styles.errorBanner} style={{ marginBottom: "1rem" }}>{uploadErr}</div>
+                )}
+                {uploadOk && (
+                    <div className={styles.successBanner} style={{ marginBottom: "1rem" }}>
+                        ✓ Upload started — indexing in background. Status will update to "Ready" when complete.
+                    </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div>
+                        <label className={styles.formLabel}>Publisher</label>
+                        <select className={styles.formInput} value={publisher} onChange={e => setPublisher(e.target.value)}>
+                            {PUBLISHERS.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className={styles.formLabel}>Year</label>
+                        <input className={styles.formInput} type="number" placeholder="2019" value={year}
+                            onChange={e => setYear(e.target.value)} min={1900} max={2099} />
+                    </div>
+                    <div style={{ gridColumn: "1/-1" }}>
+                        <label className={styles.formLabel}>Title <span style={{ color: "var(--gold)" }}>*</span></label>
+                        <input className={styles.formInput} type="text"
+                            placeholder="e.g. PLD 2019 Supreme Court 412"
+                            value={title} onChange={e => setTitle(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className={styles.formLabel}>Volume / Issue</label>
+                        <input className={styles.formInput} type="text" placeholder="Vol. 5 (optional)"
+                            value={volume} onChange={e => setVolume(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className={styles.formLabel}>Court</label>
+                        <input className={styles.formInput} type="text" placeholder="Supreme Court (optional)"
+                            value={court} onChange={e => setCourt(e.target.value)} />
+                    </div>
+                    <div style={{ gridColumn: "1/-1" }}>
+                        <label className={styles.formLabel}>PDF File <span style={{ color: "var(--gold)" }}>*</span></label>
+                        <input type="file" accept=".pdf"
+                            onChange={e => setFile(e.target.files?.[0] ?? null)}
+                            style={{ color: "var(--text-2)", fontSize: "0.85rem" }} />
+                    </div>
+                </div>
+
+                <button
+                    className={styles.btnGold}
+                    style={{ marginTop: "1.25rem" }}
+                    onClick={handleUpload}
+                    disabled={uploading}
+                >
+                    {uploading ? "Uploading…" : "Upload & Index"}
+                </button>
+            </div>
+
+            {/* ── Publisher filter + doc list ── */}
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+                {["ALL", ...PUBLISHERS].map(p => (
+                    <button
+                        key={p}
+                        className={pubFilter === p ? styles.chipActive : styles.chip}
+                        onClick={() => setPubFilter(p)}
+                    >
+                        {p}
+                    </button>
+                ))}
+                <button className={styles.chip} onClick={load} style={{ marginLeft: "auto" }}>↻ Refresh</button>
+            </div>
+
+            {loading ? (
+                <div style={{ color: "var(--text-3)", fontSize: "0.85rem", padding: "2rem 0" }}>Loading…</div>
+            ) : docs.length === 0 ? (
+                <div style={{ color: "var(--text-3)", fontSize: "0.85rem", padding: "2rem 0" }}>
+                    No case law documents uploaded yet. Use the form above to add PLD or SCMR volumes.
+                </div>
+            ) : (
+                <table className={styles.table}>
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Publisher</th>
+                            <th>Year</th>
+                            <th>Court</th>
+                            <th>Size</th>
+                            <th>Status</th>
+                            <th>Uploaded</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {docs.map(doc => (
+                            <tr key={doc.doc_id}>
+                                <td style={{ fontWeight: 500 }}>{doc.title}</td>
+                                <td>
+                                    <span className={styles.badge} style={{ background: "var(--gold-dim)", color: "var(--gold)", border: "1px solid var(--gold-border)" }}>
+                                        {doc.publisher}
+                                    </span>
+                                </td>
+                                <td style={{ color: "var(--text-3)" }}>{doc.year ?? "—"}</td>
+                                <td style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>{doc.court ?? "—"}</td>
+                                <td style={{ color: "var(--text-3)" }}>{fmtBytesAdmin(doc.size_bytes)}</td>
+                                <td>
+                                    <span style={{
+                                        fontSize: "0.75rem", fontWeight: 600,
+                                        color: STATUS_BADGE[doc.status] ?? "var(--text-3)",
+                                    }}>
+                                        {doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}
+                                        {doc.status === "error" && doc.error_msg && (
+                                            <span title={doc.error_msg} style={{ marginLeft: "0.3rem", cursor: "help" }}>⚠</span>
+                                        )}
+                                    </span>
+                                </td>
+                                <td style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>{doc.created_at?.slice(0, 10)}</td>
+                                <td>
+                                    <button
+                                        className={styles.btnDanger}
+                                        onClick={() => handleDelete(doc.doc_id)}
+                                        disabled={deleting === doc.doc_id}
+                                    >
+                                        {deleting === doc.doc_id ? "…" : "Remove"}
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+        </div>
+    );
+};
+
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { id: Panel; icon: string; label: string }[] = [
@@ -1144,6 +1383,7 @@ const NAV_ITEMS: { id: Panel; icon: string; label: string }[] = [
     { id: "orgs",           icon: "🏢", label: "Organizations"   },
     { id: "registrations",  icon: "📝", label: "Registrations"   },
     { id: "upgrades",       icon: "⬆️", label: "Upgrade Requests"},
+    { id: "case_law",       icon: "⚖️", label: "Case Law Library"},
     { id: "evals",          icon: "✅", label: "Eval Quality"    },
     { id: "audit",          icon: "🔍", label: "Audit Log"       },
     { id: "settings",       icon: "⚙️", label: "Settings"        },
@@ -1154,6 +1394,7 @@ const PANEL_TITLES: Record<Panel, string> = {
     orgs:          "Organizations",
     registrations: "Pending Registrations",
     upgrades:      "Upgrade Requests",
+    case_law:      "Case Law Library",
     evals:         "Eval Quality",
     audit:         "Platform Audit Log",
     settings:      "Platform Settings",
@@ -1164,6 +1405,7 @@ const PANEL_SUBS: Record<Panel, string> = {
     orgs:          "Manage tenants, plans, and access",
     registrations: "Pending sign-ups awaiting approval",
     upgrades:      "Review bank transfer proofs and approve or reject plan upgrades",
+    case_law:      "Upload PLD, SCMR, MLD and CLC volumes — visible to all users during AI search",
     evals:         "AI answer quality scores recorded per query",
     audit:         "All logins, searches, and actions across every organization",
     settings:      "Plan tiers and service configuration",
@@ -1247,6 +1489,7 @@ const AdminDashboard = () => {
                             {panel === "orgs"           && <OrgsPanel orgs={orgs} setOrgs={setOrgs} />}
                             {panel === "registrations"  && <RegistrationsPanel />}
                             {panel === "upgrades"       && <AdminUpgradesPanel />}
+                            {panel === "case_law"       && <AdminCaseLawPanel />}
                             {panel === "evals"          && <EvalsPanel />}
                             {panel === "audit"          && <AdminAuditPanel orgs={orgs.map(o => ({ org_id: o.org_id, name: o.name }))} />}
                             {panel === "settings"       && <SettingsPanel />}
