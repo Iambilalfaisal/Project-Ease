@@ -622,3 +622,39 @@
     color: var(--text-3);
     font-size: 0.875rem;
 }
+
+/* ── Answer export bar ───────────────────────────────────────────── */
+.exportBar {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    padding-left: 0.1rem;
+}
+
+.exportBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: var(--sans);
+    letter-spacing: 0.04em;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.exportBtn:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: rgba(184, 150, 76, 0.06);
+}
+
+.exportBtn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
