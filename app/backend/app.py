@@ -351,6 +351,9 @@ from db import (
     # Case Law — Task #33
     create_case_law_doc, get_case_law_doc, list_case_law_docs,
     set_case_law_doc_status, delete_case_law_doc,
+    # Templates & Drafting — Task #38
+    list_templates, create_template, get_template, update_template, delete_template,
+    TEMPLATE_TYPES,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2630,6 +2633,271 @@ async def export_answer():
     response.headers["Content-Type"]        = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+# ─── Templates & Document Drafting ─────────────────────────────────────────
+
+@bp.route("/templates", methods=["GET"])
+async def templates_list():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session["organization_id"]
+    ttype  = request.args.get("type")
+    rows   = list_templates(org_id, ttype if ttype else None)
+    return jsonify(rows)
+
+
+@bp.route("/templates", methods=["POST"])
+async def templates_create():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session["organization_id"]
+    actor  = session["user_id"]
+    body   = await request.get_json(force=True) or {}
+
+    title         = (body.get("title") or "").strip()
+    template_type = (body.get("template_type") or "general").strip()
+    content       = (body.get("content") or "").strip()
+    description   = (body.get("description") or "").strip()
+
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+    if template_type not in TEMPLATE_TYPES:
+        return jsonify({"error": f"template_type must be one of {TEMPLATE_TYPES}"}), 400
+
+    row = create_template(org_id, title, template_type, content, description, actor)
+    log_event(org_id=org_id, user_id=actor, event_type="template_created",
+              resource_type="template", resource_id=row["template_id"], resource_name=title)
+    return jsonify(row), 201
+
+
+@bp.route("/templates/<template_id>", methods=["PATCH"])
+async def templates_update(template_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session["organization_id"]
+    actor  = session["user_id"]
+
+    existing = get_template(template_id)
+    if not existing or existing["org_id"] != org_id:
+        return jsonify({"error": "Not found"}), 404
+
+    body          = await request.get_json(force=True) or {}
+    title         = body.get("title")
+    template_type = body.get("template_type")
+    content       = body.get("content")
+    description   = body.get("description")
+
+    if template_type is not None and template_type not in TEMPLATE_TYPES:
+        return jsonify({"error": f"template_type must be one of {TEMPLATE_TYPES}"}), 400
+
+    row = update_template(template_id, actor,
+                          title=title, template_type=template_type,
+                          content=content, description=description)
+    log_event(org_id=org_id, user_id=actor, event_type="template_updated",
+              resource_type="template", resource_id=template_id,
+              resource_name=row["title"] if row else template_id)
+    return jsonify(row)
+
+
+@bp.route("/templates/<template_id>", methods=["DELETE"])
+async def templates_delete(template_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session["organization_id"]
+    actor  = session["user_id"]
+
+    existing = get_template(template_id)
+    if not existing or existing["org_id"] != org_id:
+        return jsonify({"error": "Not found"}), 404
+
+    delete_template(template_id, actor)
+    log_event(org_id=org_id, user_id=actor, event_type="template_deleted",
+              resource_type="template", resource_id=template_id, resource_name=existing["title"])
+    return jsonify({"ok": True})
+
+
+@bp.route("/draft", methods=["POST"])
+async def draft_document():
+    """Fill a template with matter/client context and AI, return .docx.
+
+    Request JSON:
+        template_id : str  – which template to use
+        matter_id   : str  – matter to pull context from (optional)
+        extra_vars  : dict – caller-supplied {{variable}} overrides (optional)
+    """
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session["organization_id"]
+    actor  = session["user_id"]
+
+    try:
+        from docx import Document as _DocxDocument  # type: ignore[import]
+        from docx.shared import Pt, RGBColor, Inches  # type: ignore[import]
+        from docx.enum.text import WD_ALIGN_PARAGRAPH  # type: ignore[import]
+    except ImportError:
+        return jsonify({"error": "python-docx not installed. Run: pip install python-docx"}), 503
+
+    body        = await request.get_json(force=True) or {}
+    template_id = (body.get("template_id") or "").strip()
+    matter_id   = (body.get("matter_id")   or "").strip()
+    extra_vars  = body.get("extra_vars") or {}
+
+    if not template_id:
+        return jsonify({"error": "template_id is required"}), 400
+
+    # ── Load template ──────────────────────────────────────────────────────────
+    tmpl = get_template(template_id)
+    if not tmpl or tmpl["org_id"] != org_id:
+        return jsonify({"error": "Template not found"}), 404
+
+    # ── Load org name ──────────────────────────────────────────────────────────
+    org_row = get_org(org_id)
+    org_name = org_row["name"] if org_row else "Your Firm"
+
+    # ── Load matter + client context ───────────────────────────────────────────
+    matter_ctx: dict = {}
+    if matter_id:
+        m = get_matter_with_docs(matter_id)
+        if m and m["org_id"] == org_id:
+            client_row = None
+            if m.get("client_id"):
+                clients = get_clients(org_id)
+                client_row = next((c for c in clients if c["client_id"] == m["client_id"]), None)
+            matter_ctx = {
+                "matter_title":       m.get("title", ""),
+                "matter_type":        m.get("matter_type", ""),
+                "matter_description": m.get("description", ""),
+                "case_number":        m.get("case_number", ""),
+                "court_name":         m.get("court", ""),
+                "client_name":        (client_row or {}).get("name", ""),
+                "client_cnic":        (client_row or {}).get("cnic", ""),
+                "client_email":       (client_row or {}).get("email", ""),
+                "client_phone":       (client_row or {}).get("phone", ""),
+            }
+
+    import datetime as _dt
+    known_vars: dict = {
+        "org_name":     org_name,
+        "date":         _dt.date.today().strftime("%d-%m-%Y"),
+        "date_long":    _dt.date.today().strftime("%-d %B %Y"),
+        "advocate_name": org_row.get("contact_name", "") if org_row else "",
+        **matter_ctx,
+        **{str(k): str(v) for k, v in extra_vars.items()},
+    }
+
+    # ── Fill known variables ───────────────────────────────────────────────────
+    import re as _re
+    content = tmpl["content"]
+    for var, val in known_vars.items():
+        content = content.replace("{{" + var + "}}", val)
+
+    # ── Find remaining unfilled placeholders ───────────────────────────────────
+    remaining = list(dict.fromkeys(_re.findall(r"\{\{(\w+)\}\}", content)))
+
+    # ── AI-fill remaining placeholders via Azure OpenAI ───────────────────────
+    if remaining and current_app.config.get("AZURE_CONFIGURED"):
+        try:
+            openai_client = current_app.config[CONFIG_OPENAI_CLIENT]
+            context_summary = "\n".join(f"  {k}: {v}" for k, v in known_vars.items() if v)
+            vars_list       = ", ".join("{{" + v + "}}" for v in remaining)
+            system_msg = (
+                "You are a Pakistani legal document drafting assistant. "
+                "Fill in the placeholder variables in a legal document based on the context provided. "
+                "Return ONLY a JSON object mapping each variable name to its filled value. "
+                "Use formal legal language appropriate for Pakistani courts. "
+                "If a value cannot be determined, use a sensible placeholder like '[To be provided]'."
+            )
+            user_msg = (
+                f"Document type: {tmpl['template_type']}\n"
+                f"Known context:\n{context_summary}\n\n"
+                f"Fill these variables: {vars_list}\n\n"
+                "Return JSON only, e.g.: {\"variable_name\": \"filled value\"}"
+            )
+            ai_resp = await openai_client.chat.completions.create(
+                model=current_app.config.get("OPENAI_CHATGPT_MODEL", "gpt-5-mini-1"),
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user",   "content": user_msg},
+                ],
+                temperature=0.2,
+                max_tokens=800,
+            )
+            raw = (ai_resp.choices[0].message.content or "").strip()
+            # Strip markdown fences if present
+            raw = _re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=_re.MULTILINE).strip()
+            ai_vars = json.loads(raw)
+            for var, val in ai_vars.items():
+                content = content.replace("{{" + var + "}}", str(val))
+        except Exception as exc:
+            logging.getLogger(__name__).warning("AI draft fill failed: %s", exc)
+            # Leave remaining placeholders as-is — document still downloads
+
+    # ── Build .docx ───────────────────────────────────────────────────────────
+    doc = _DocxDocument()
+    for section in doc.sections:
+        section.top_margin    = Inches(1.0)
+        section.bottom_margin = Inches(1.0)
+        section.left_margin   = Inches(1.25)
+        section.right_margin  = Inches(1.25)
+
+    # Brand header
+    h = doc.add_paragraph()
+    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    hr = h.add_run(org_name)
+    hr.bold = True
+    hr.font.size = Pt(16)
+    hr.font.color.rgb = RGBColor(0xB8, 0x96, 0x4C)
+
+    sub = doc.add_paragraph()
+    sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    subr = sub.add_run(tmpl["title"])
+    subr.font.size = Pt(11)
+    subr.bold = True
+
+    date_p = doc.add_paragraph()
+    date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    date_r = date_p.add_run(_dt.date.today().strftime("%-d %B %Y"))
+    date_r.font.size = Pt(9)
+    date_r.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+
+    doc.add_paragraph()  # spacer
+
+    # Body — split by line breaks, preserve empty lines as paragraph breaks
+    for line in content.split("\n"):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(2)
+        run = p.add_run(line)
+        run.font.size = Pt(11)
+
+    # Footer disclaimer
+    doc.add_paragraph()
+    fp = doc.add_paragraph()
+    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fr = fp.add_run("Generated by Project Ease · Verify all details before filing.")
+    fr.font.size = Pt(8)
+    fr.font.color.rgb = RGBColor(0xAA, 0xAA, 0xAA)
+    fr.italic = True
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    safe_title = _re.sub(r"[^\w\s-]", "", tmpl["title"][:40]).strip().replace(" ", "_")
+    filename = f"ProjectEase_Draft_{safe_title}.docx"
+
+    log_event(org_id=org_id, user_id=actor, event_type="document_drafted",
+              resource_type="template", resource_id=template_id, resource_name=tmpl["title"])
+
+    resp = await make_response(buf.read())
+    resp.headers["Content-Type"]        = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
 
 
 @bp.before_app_serving

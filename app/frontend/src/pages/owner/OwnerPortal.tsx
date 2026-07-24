@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "invoices" | "team" | "subscription" | "settings" | "audit";
+type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "invoices" | "team" | "subscription" | "settings" | "audit" | "drafting";
 
 interface Category {
     category_id: string;
@@ -133,6 +133,17 @@ interface AuditLog {
     created_at:    string;
 }
 
+interface Template {
+    template_id:   string;
+    org_id:        string;
+    title:         string;
+    template_type: string;
+    content:       string;
+    description:   string | null;
+    created_at:    string;
+    modified_at:   string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function authHeaders(): Record<string, string> {
@@ -164,10 +175,11 @@ const NAV: { id: Panel; icon: string; label: string }[] = [
     { id: "matters",      icon: "M", label: "Matters"      },
     { id: "calendar",     icon: "K", label: "Calendar"     },
     { id: "invoices",     icon: "I", label: "Invoices"     },
-    { id: "team",         icon: "T", label: "Team"         },
-    { id: "audit",        icon: "A", label: "Audit Log"    },
-    { id: "subscription", icon: "P", label: "Subscription" },
-    { id: "settings",     icon: "S", label: "Settings"     },
+    { id: "team",         icon: "T",  label: "Team"         },
+    { id: "drafting",     icon: "Dr", label: "Drafting"     },
+    { id: "audit",        icon: "A",  label: "Audit Log"    },
+    { id: "subscription", icon: "P",  label: "Subscription" },
+    { id: "settings",     icon: "S",  label: "Settings"     },
 ];
 
 const PANEL_TITLES: Record<Panel, string> = {
@@ -178,6 +190,7 @@ const PANEL_TITLES: Record<Panel, string> = {
     calendar:     "Court Calendar",
     invoices:     "Invoices",
     team:         "Team Members",
+    drafting:     "Document Drafting",
     audit:        "Audit Log",
     subscription: "Plan & Subscription",
     settings:     "Organization Settings",
@@ -191,6 +204,7 @@ const PANEL_SUBS: Record<Panel, string> = {
     calendar:     "Hearings, deadlines, and WhatsApp reminders",
     invoices:     "Fee entries and client invoices across all matters",
     team:         "Manage who has access to your workspace",
+    drafting:     "AI-powered vakalatnamas, plaints, agreements, and notices",
     audit:        "Track logins, searches, and document activity",
     subscription: "Your current plan, usage, and billing",
     settings:     "Firm profile and account preferences",
@@ -3763,6 +3777,480 @@ const SettingsPanel = ({
     );
 };
 
+// ── Drafting Panel ────────────────────────────────────────────────────────────
+
+const TEMPLATE_TYPES_UI = [
+    { value: "vakalatnama", label: "Vakalatnama" },
+    { value: "plaint",      label: "Plaint / Petition" },
+    { value: "agreement",   label: "Agreement" },
+    { value: "notice",      label: "Legal Notice" },
+    { value: "general",     label: "General" },
+];
+
+const DEFAULT_TEMPLATES: Record<string, string> = {
+    vakalatnama: `VAKALATNAMA
+
+I, {{client_name}}, S/O or D/O _________________________, CNIC No. {{client_cnic}}, resident of _________________________, do hereby appoint and authorise {{advocate_name}} of {{org_name}} to act and appear on my behalf in the case of:
+
+Matter: {{matter_title}}
+Case No.: {{case_number}}
+Court: {{court_name}}
+
+I hereby confer upon my said counsel full authority to do all acts, deeds, and things as may be necessary for the conduct of the said case, including filing of pleadings, appearances, and taking such steps as may be required.
+
+Date: {{date_long}}
+
+_______________________
+Signature of Executant
+{{client_name}}`,
+
+    plaint: `IN THE COURT OF LEARNED {{court_name}}
+
+Case No.: {{case_number}}
+
+{{client_name}}
+                                                                   …Plaintiff
+versus
+
+[Defendant Name]
+                                                                   …Defendant
+
+PLAINT
+
+Most respectfully sheweth that:
+
+1. The Plaintiff is {{client_name}}, CNIC No. {{client_cnic}}, resident of _________________________.
+
+2. The brief facts of the matter are as follows:
+   {{matter_description}}
+
+3. The Plaintiff therefore prays that this Honourable Court may be pleased to:
+   (a) [Relief sought]
+   (b) Any other relief deemed fit and proper.
+
+Place: _____________
+Date: {{date_long}}
+
+_______________________
+Advocate for Plaintiff
+{{org_name}}`,
+
+    notice: `LEGAL NOTICE
+Date: {{date_long}}
+
+To,
+[Recipient Name]
+[Recipient Address]
+
+Subject: Legal Notice regarding {{matter_title}}
+
+Dear Sir/Madam,
+
+Under instructions from and on behalf of my client {{client_name}}, I hereby issue this Legal Notice to you as under:
+
+1. [Background facts]
+
+2. {{matter_description}}
+
+3. You are hereby called upon to [action required] within 15 (fifteen) days from the receipt of this notice, failing which my client shall be constrained to initiate legal proceedings against you before the competent court of law without further notice, at your risk, cost, and consequences.
+
+This notice is being issued without prejudice to all other rights and remedies available to my client.
+
+Yours faithfully,
+
+_______________________
+{{advocate_name}}
+{{org_name}}`,
+
+    agreement: `AGREEMENT
+
+This Agreement is entered into on {{date_long}} between:
+
+Party A: {{client_name}}, CNIC No. {{client_cnic}}
+                                                ("Party A")
+AND
+Party B: _______________________________
+                                                ("Party B")
+
+RECITALS
+
+1. [Background / Recital]
+
+TERMS AND CONDITIONS
+
+1. [Term 1]
+2. [Term 2]
+3. [Term 3]
+
+IN WITNESS WHEREOF, the Parties have executed this Agreement as of the date first written above.
+
+Party A: _______________________          Party B: _______________________
+{{client_name}}                           [Name]
+CNIC: {{client_cnic}}                     CNIC: ___________________________
+Date: {{date_long}}                       Date: ___________________________
+
+WITNESSES:
+1. _______________________
+2. _______________________`,
+
+    general: `{{org_name}}
+
+Date: {{date_long}}
+Ref: {{case_number}}
+
+Subject: {{matter_title}}
+
+Dear Sir/Madam,
+
+[Body of document]
+
+Yours faithfully,
+
+_______________________
+{{advocate_name}}
+{{org_name}}`,
+};
+
+const DraftingPanel = () => {
+    const [templates,    setTemplates]    = useState<Template[]>([]);
+    const [matters,      setMatters]      = useState<Matter[]>([]);
+    const [loading,      setLoading]      = useState(true);
+    const [filterType,   setFilterType]   = useState<string>("all");
+
+    // Editor modal
+    const [editorOpen,   setEditorOpen]   = useState(false);
+    const [editing,      setEditing]      = useState<Template | null>(null);
+    const [eTitle,       setETitle]       = useState("");
+    const [eType,        setEType]        = useState("general");
+    const [eContent,     setEContent]     = useState("");
+    const [eDesc,        setEDesc]        = useState("");
+    const [saving,       setSaving]       = useState(false);
+    const [saveErr,      setSaveErr]      = useState("");
+
+    // Draft modal
+    const [draftOpen,    setDraftOpen]    = useState(false);
+    const [draftTmpl,    setDraftTmpl]    = useState<Template | null>(null);
+    const [draftMatter,  setDraftMatter]  = useState("");
+    const [drafting,     setDrafting]     = useState(false);
+    const [draftErr,     setDraftErr]     = useState("");
+
+    const [deleteId,     setDeleteId]     = useState<string | null>(null);
+    const [deleting,     setDeleting]     = useState(false);
+
+    const load = async () => {
+        setLoading(true);
+        try {
+            const [tRes, mRes] = await Promise.all([
+                fetch("/templates", { headers: authHeaders() }),
+                fetch("/matters",   { headers: authHeaders() }),
+            ]);
+            if (tRes.ok) setTemplates(await tRes.json());
+            if (mRes.ok) setMatters(await mRes.json());
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const openNew = () => {
+        setEditing(null);
+        setETitle(""); setEType("general"); setEDesc("");
+        setEContent(DEFAULT_TEMPLATES["general"]);
+        setSaveErr(""); setEditorOpen(true);
+    };
+
+    const openEdit = (t: Template) => {
+        setEditing(t);
+        setETitle(t.title); setEType(t.template_type);
+        setEDesc(t.description ?? ""); setEContent(t.content);
+        setSaveErr(""); setEditorOpen(true);
+    };
+
+    const handleTypeChange = (v: string) => {
+        setEType(v);
+        if (!editing) setEContent(DEFAULT_TEMPLATES[v] ?? "");
+    };
+
+    const handleSave = async () => {
+        if (!eTitle.trim()) { setSaveErr("Title is required."); return; }
+        setSaving(true); setSaveErr("");
+        try {
+            const url    = editing ? `/templates/${editing.template_id}` : "/templates";
+            const method = editing ? "PATCH" : "POST";
+            const res    = await fetch(url, {
+                method,
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ title: eTitle, template_type: eType, content: eContent, description: eDesc }),
+            });
+            if (!res.ok) { const d = await res.json(); setSaveErr(d.error ?? "Save failed"); return; }
+            setEditorOpen(false);
+            load();
+        } finally { setSaving(false); }
+    };
+
+    const handleDelete = async () => {
+        if (!deleteId) return;
+        setDeleting(true);
+        try {
+            await fetch(`/templates/${deleteId}`, { method: "DELETE", headers: authHeaders() });
+            setDeleteId(null);
+            load();
+        } finally { setDeleting(false); }
+    };
+
+    const openDraft = (t: Template) => {
+        setDraftTmpl(t);
+        setDraftMatter("");
+        setDraftErr("");
+        setDraftOpen(true);
+    };
+
+    const handleDraft = async () => {
+        if (!draftTmpl) return;
+        setDrafting(true); setDraftErr("");
+        try {
+            const res = await fetch("/draft", {
+                method:  "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body:    JSON.stringify({ template_id: draftTmpl.template_id, matter_id: draftMatter || null }),
+            });
+            if (!res.ok) {
+                const d = await res.json();
+                setDraftErr(d.error ?? "Draft failed");
+                return;
+            }
+            const blob = await res.blob();
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement("a");
+            a.href     = url;
+            a.download = `Draft_${draftTmpl.title.replace(/\s+/g, "_")}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setDraftOpen(false);
+        } finally { setDrafting(false); }
+    };
+
+    const filtered = filterType === "all"
+        ? templates
+        : templates.filter(t => t.template_type === filterType);
+
+    const extractVars = (content: string) => {
+        const matches = content.match(/\{\{(\w+)\}\}/g) ?? [];
+        return [...new Set(matches)];
+    };
+
+    if (loading) return <div style={{ padding: "2rem", color: "var(--text-3)" }}>Loading templates…</div>;
+
+    return (
+        <div className={styles.draftingWrap}>
+            {/* Header row */}
+            <div className={styles.draftingHeader}>
+                <div className={styles.filterChips}>
+                    <button
+                        className={filterType === "all" ? styles.chipActive : styles.chip}
+                        onClick={() => setFilterType("all")}
+                    >All</button>
+                    {TEMPLATE_TYPES_UI.map(t => (
+                        <button
+                            key={t.value}
+                            className={filterType === t.value ? styles.chipActive : styles.chip}
+                            onClick={() => setFilterType(t.value)}
+                        >{t.label}</button>
+                    ))}
+                </div>
+                <button className={styles.addBtn} onClick={openNew}>+ New Template</button>
+            </div>
+
+            {/* Template grid */}
+            {filtered.length === 0 ? (
+                <div className={styles.emptyState}>
+                    <p>No templates yet. Create your first template to get started.</p>
+                    <button className={styles.addBtn} onClick={openNew}>Create Template</button>
+                </div>
+            ) : (
+                <div className={styles.templateGrid}>
+                    {filtered.map(t => {
+                        const vars = extractVars(t.content);
+                        const typeLabel = TEMPLATE_TYPES_UI.find(x => x.value === t.template_type)?.label ?? t.template_type;
+                        return (
+                            <div key={t.template_id} className={styles.templateCard}>
+                                <div className={styles.templateCardHead}>
+                                    <span className={styles.templateTypeBadge}>{typeLabel}</span>
+                                    <span className={styles.templateDate}>{fmtDate(t.modified_at)}</span>
+                                </div>
+                                <div className={styles.templateTitle}>{t.title}</div>
+                                {t.description && <div className={styles.templateDesc}>{t.description}</div>}
+                                {vars.length > 0 && (
+                                    <div className={styles.templateVars}>
+                                        {vars.slice(0, 4).map(v => (
+                                            <span key={v} className={styles.varChip}>{v}</span>
+                                        ))}
+                                        {vars.length > 4 && <span className={styles.varChip}>+{vars.length - 4}</span>}
+                                    </div>
+                                )}
+                                <div className={styles.templateCardActions}>
+                                    <button className={styles.draftBtn} onClick={() => openDraft(t)}>
+                                        ↓ Draft Document
+                                    </button>
+                                    <button className={styles.editBtn} onClick={() => openEdit(t)}>Edit</button>
+                                    <button className={styles.deleteBtn} onClick={() => setDeleteId(t.template_id)}>Delete</button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* ── Editor Modal ─────────────────────────────────────────── */}
+            {editorOpen && (
+                <div className={styles.modalOverlay} onClick={() => setEditorOpen(false)}>
+                    <div className={styles.draftModal} onClick={e => e.stopPropagation()}>
+                        <div className={styles.modalHead}>
+                            <h2>{editing ? "Edit Template" : "New Template"}</h2>
+                            <button className={styles.modalClose} onClick={() => setEditorOpen(false)}>✕</button>
+                        </div>
+
+                        <div className={styles.modalBody}>
+                            <div className={styles.fieldRow}>
+                                <div className={styles.fieldGroup} style={{ flex: 2 }}>
+                                    <label className={styles.fieldLabel}>Title</label>
+                                    <input
+                                        className={styles.fieldInput}
+                                        value={eTitle}
+                                        onChange={e => setETitle(e.target.value)}
+                                        placeholder="e.g. Standard Vakalatnama"
+                                    />
+                                </div>
+                                <div className={styles.fieldGroup} style={{ flex: 1 }}>
+                                    <label className={styles.fieldLabel}>Type</label>
+                                    <select
+                                        className={styles.fieldSelect}
+                                        value={eType}
+                                        onChange={e => handleTypeChange(e.target.value)}
+                                    >
+                                        {TEMPLATE_TYPES_UI.map(t => (
+                                            <option key={t.value} value={t.value}>{t.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className={styles.fieldGroup}>
+                                <label className={styles.fieldLabel}>Description (optional)</label>
+                                <input
+                                    className={styles.fieldInput}
+                                    value={eDesc}
+                                    onChange={e => setEDesc(e.target.value)}
+                                    placeholder="Brief description of when to use this template"
+                                />
+                            </div>
+
+                            <div className={styles.fieldGroup}>
+                                <label className={styles.fieldLabel}>
+                                    Template Content
+                                    <span className={styles.varHint}>Use &#123;&#123;variable_name&#125;&#125; for auto-fill placeholders</span>
+                                </label>
+                                <textarea
+                                    className={styles.templateTextarea}
+                                    value={eContent}
+                                    onChange={e => setEContent(e.target.value)}
+                                    rows={20}
+                                    spellCheck={false}
+                                />
+                            </div>
+
+                            <div className={styles.varPreview}>
+                                <span className={styles.varPreviewLabel}>Variables detected:</span>
+                                {extractVars(eContent).length === 0
+                                    ? <span className={styles.varChip} style={{ opacity: 0.5 }}>none</span>
+                                    : extractVars(eContent).map(v => <span key={v} className={styles.varChip}>{v}</span>)
+                                }
+                            </div>
+
+                            {saveErr && <div className={styles.formError}>{saveErr}</div>}
+                        </div>
+
+                        <div className={styles.modalFoot}>
+                            <button className={styles.cancelBtn} onClick={() => setEditorOpen(false)}>Cancel</button>
+                            <button className={styles.saveBtn} onClick={handleSave} disabled={saving}>
+                                {saving ? "Saving…" : editing ? "Save Changes" : "Create Template"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Draft Modal ──────────────────────────────────────────── */}
+            {draftOpen && draftTmpl && (
+                <div className={styles.modalOverlay} onClick={() => setDraftOpen(false)}>
+                    <div className={styles.draftModal} style={{ maxWidth: "520px" }} onClick={e => e.stopPropagation()}>
+                        <div className={styles.modalHead}>
+                            <h2>Draft: {draftTmpl.title}</h2>
+                            <button className={styles.modalClose} onClick={() => setDraftOpen(false)}>✕</button>
+                        </div>
+
+                        <div className={styles.modalBody}>
+                            <p style={{ color: "var(--text-2)", marginBottom: "1rem", fontSize: "0.875rem" }}>
+                                Select a matter to auto-fill client and case details. AI will fill any remaining placeholders.
+                            </p>
+
+                            <div className={styles.fieldGroup}>
+                                <label className={styles.fieldLabel}>Link to Matter (optional)</label>
+                                <select
+                                    className={styles.fieldSelect}
+                                    value={draftMatter}
+                                    onChange={e => setDraftMatter(e.target.value)}
+                                >
+                                    <option value="">— No matter (fill manually after download) —</option>
+                                    {matters.filter(m => m.status !== "Closed").map(m => (
+                                        <option key={m.matter_id} value={m.matter_id}>
+                                            {m.title} — {m.client_name} ({m.matter_type})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className={styles.varPreview} style={{ marginTop: "1rem" }}>
+                                <span className={styles.varPreviewLabel}>Variables in this template:</span>
+                                {extractVars(draftTmpl.content).map(v => (
+                                    <span key={v} className={styles.varChip}>{v}</span>
+                                ))}
+                            </div>
+
+                            {draftErr && <div className={styles.formError}>{draftErr}</div>}
+                        </div>
+
+                        <div className={styles.modalFoot}>
+                            <button className={styles.cancelBtn} onClick={() => setDraftOpen(false)}>Cancel</button>
+                            <button className={styles.draftBtnLg} onClick={handleDraft} disabled={drafting}>
+                                {drafting ? "Generating…" : "↓ Download .docx"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Delete Confirm ───────────────────────────────────────── */}
+            {deleteId && (
+                <div className={styles.modalOverlay} onClick={() => setDeleteId(null)}>
+                    <div className={styles.confirmModal} onClick={e => e.stopPropagation()}>
+                        <p>Delete this template? This cannot be undone.</p>
+                        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+                            <button className={styles.cancelBtn} onClick={() => setDeleteId(null)}>Cancel</button>
+                            <button className={styles.deleteConfirmBtn} onClick={handleDelete} disabled={deleting}>
+                                {deleting ? "Deleting…" : "Delete"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ── Theme Toggle ──────────────────────────────────────────────────────────────
 
 const ThemeToggle = () => {
@@ -3927,6 +4415,7 @@ const OwnerPortal = () => {
                             {panel === "calendar"      && <CalendarPanel />}
                             {panel === "invoices"      && <InvoicesPanel />}
                             {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} />}
+                            {panel === "drafting"      && <DraftingPanel />}
                             {panel === "audit"         && <AuditPanel />}
                             {panel === "subscription"  && (
                                 <SubscriptionPanel

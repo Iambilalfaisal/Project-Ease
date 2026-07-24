@@ -319,6 +319,21 @@ CREATE TABLE IF NOT EXISTS case_law_docs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_case_law_publisher ON case_law_docs(publisher, year DESC);
+
+CREATE TABLE IF NOT EXISTS templates (
+    template_id   TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES organizations(org_id),
+    title         TEXT NOT NULL,
+    template_type TEXT NOT NULL DEFAULT 'general',  -- vakalatnama | plaint | agreement | notice | general
+    content       TEXT NOT NULL DEFAULT '',          -- body with {{variable}} placeholders
+    description   TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by    TEXT    NOT NULL DEFAULT 'system',
+    modified_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by   TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_templates_org ON templates(org_id, template_type);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -2056,6 +2071,85 @@ def delete_case_law_doc(doc_id: str, actor: str = "system"):
         conn.execute(
             "UPDATE case_law_docs SET is_active=0, modified_at=?, modified_by=? WHERE doc_id=?",
             (_now(), actor, doc_id),
+        )
+
+
+# ── Templates ─────────────────────────────────────────────────────────────────
+
+TEMPLATE_TYPES = ("vakalatnama", "plaint", "agreement", "notice", "general")
+
+
+def list_templates(org_id: str, template_type: str | None = None) -> list[dict]:
+    with get_conn() as conn:
+        if template_type:
+            rows = conn.execute(
+                "SELECT * FROM templates WHERE org_id=? AND template_type=? AND is_active=1 ORDER BY title",
+                (org_id, template_type),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM templates WHERE org_id=? AND is_active=1 ORDER BY template_type, title",
+                (org_id,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_template(
+    org_id: str,
+    title: str,
+    template_type: str,
+    content: str,
+    description: str,
+    actor: str,
+) -> dict:
+    tid = "tmpl_" + secrets.token_hex(8)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO templates
+               (template_id, org_id, title, template_type, content, description,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (tid, org_id, title, template_type, content, description,
+             _now(), actor, _now(), actor),
+        )
+    return get_template(tid)
+
+
+def get_template(template_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM templates WHERE template_id=? AND is_active=1", (template_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_template(
+    template_id: str,
+    actor: str,
+    title: str | None = None,
+    template_type: str | None = None,
+    content: str | None = None,
+    description: str | None = None,
+) -> dict | None:
+    fields, vals = [], []
+    if title is not None:        fields.append("title=?");         vals.append(title)
+    if template_type is not None: fields.append("template_type=?"); vals.append(template_type)
+    if content is not None:      fields.append("content=?");       vals.append(content)
+    if description is not None:  fields.append("description=?");   vals.append(description)
+    if not fields:
+        return get_template(template_id)
+    fields += ["modified_at=?", "modified_by=?"]
+    vals   += [_now(), actor, template_id]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE templates SET {','.join(fields)} WHERE template_id=?", vals)
+    return get_template(template_id)
+
+
+def delete_template(template_id: str, actor: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE templates SET is_active=0, modified_at=?, modified_by=? WHERE template_id=?",
+            (_now(), actor, template_id),
         )
 
 
