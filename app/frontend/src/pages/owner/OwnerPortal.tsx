@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "invoices" | "team" | "subscription" | "settings" | "audit" | "drafting" | "causelist" | "vakalat" | "intelligence";
+type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "diary" | "invoices" | "team" | "subscription" | "settings" | "audit" | "drafting" | "causelist" | "vakalat" | "intelligence";
 
 interface Category {
     category_id: string;
@@ -415,6 +415,7 @@ const NAV: { id: Panel; icon: string; label: string }[] = [
     { id: "invoices",     icon: "I", label: "Invoices"     },
     { id: "team",         icon: "T",  label: "Team"         },
     { id: "drafting",     icon: "Dr", label: "Drafting"     },
+    { id: "diary",        icon: "📅", label: "Daily Diary"  },
     { id: "causelist",    icon: "CL", label: "Cause List"   },
     { id: "vakalat",      icon: "VK", label: "Vakalatnama"  },
     { id: "intelligence", icon: "IN", label: "Intelligence"  },
@@ -435,6 +436,7 @@ const PANEL_TITLES: Record<Panel, string> = {
     audit:        "Audit Log",
     subscription: "Plan & Subscription",
     settings:     "Organization Settings",
+    diary:        "Daily Diary",
     causelist:    "Cause List",
     vakalat:      "Vakalatnama Register",
     intelligence: "Counsel & Judge Intelligence",
@@ -452,6 +454,7 @@ const PANEL_SUBS: Record<Panel, string> = {
     audit:        "Track logins, searches, and document activity",
     subscription: "Your current plan, usage, and billing",
     settings:     "Firm profile and account preferences",
+    diary:        "Today's court appearances and deadlines — printable & shareable",
     causelist:    "Daily court cause list — parse and match to your matters",
     vakalat:      "Cross-matter vakalatnama filing status register",
     intelligence: "Private notes on opposing counsel and judges",
@@ -8671,6 +8674,200 @@ const ThemeToggle = () => {
     return <button className={styles.themeToggle} onClick={handle}>{theme === "dark" ? "Light Mode" : "Dark Mode"}</button>;
 };
 
+// ── Daily Diary Panel — Task #161 ────────────────────────────────────────────
+interface DiaryHearing {
+    hearing_id: string; title: string; hearing_time?: string;
+    court_name?: string; judge_name?: string;
+    matter_title?: string; case_number?: string; notes?: string;
+}
+interface DiaryDeadline {
+    deadline_id: string; title: string; priority?: string;
+    matter_title?: string; case_number?: string; notes?: string;
+}
+
+const DiaryPanel = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const [date, setDate]             = useState<string>(today);
+    const [hearings, setHearings]     = useState<DiaryHearing[]>([]);
+    const [deadlines, setDeadlines]   = useState<DiaryDeadline[]>([]);
+    const [loading, setLoading]       = useState(false);
+    const [err, setErr]               = useState<string | null>(null);
+
+    const loadDiary = async (d: string) => {
+        setLoading(true); setErr(null);
+        try {
+            const token = localStorage.getItem("token") || "";
+            const r = await fetch(`/diary/${d}`, { headers: { Authorization: `Bearer ${token}` } });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const data = await r.json();
+            setHearings(data.hearings  || []);
+            setDeadlines(data.deadlines || []);
+        } catch (e: any) {
+            setErr(e.message || "Failed to load diary");
+        } finally { setLoading(false); }
+    };
+
+    useEffect(() => { loadDiary(date); }, [date]);
+
+    // ── Print / WhatsApp share ─────────────────────────────────────────────
+    const buildShareText = () => {
+        const fmt = new Date(date + "T00:00:00").toLocaleDateString("en-PK", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+        let txt = `📅 *Daily Diary — ${fmt}*\n\n`;
+        if (hearings.length) {
+            txt += `⚖️ *Court Hearings (${hearings.length})*\n`;
+            hearings.forEach(h => {
+                txt += `• ${h.hearing_time ? h.hearing_time + " — " : ""}${h.title}`;
+                if (h.matter_title) txt += ` [${h.matter_title}]`;
+                if (h.court_name)   txt += ` @ ${h.court_name}`;
+                txt += "\n";
+            });
+            txt += "\n";
+        }
+        if (deadlines.length) {
+            txt += `⏰ *Deadlines (${deadlines.length})*\n`;
+            deadlines.forEach(d => {
+                txt += `• ${d.title}`;
+                if (d.matter_title) txt += ` [${d.matter_title}]`;
+                txt += "\n";
+            });
+        }
+        if (!hearings.length && !deadlines.length) txt += "No hearings or deadlines today.";
+        return txt;
+    };
+
+    const handlePrint = () => window.print();
+    const handleWhatsApp = () => {
+        const encoded = encodeURIComponent(buildShareText());
+        window.open(`https://wa.me/?text=${encoded}`, "_blank");
+    };
+
+    const fmtDate = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-PK", {
+        weekday: "long", day: "numeric", month: "long", year: "numeric"
+    });
+
+    const priorityBadge = (p?: string) => {
+        const c = p === "High" ? "#e53e3e" : p === "Medium" ? "#d97706" : "#4a90d9";
+        return p ? <span style={{ background: c, color: "#fff", borderRadius: 4, padding: "1px 7px", fontSize: 11, marginLeft: 6 }}>{p}</span> : null;
+    };
+
+    const prev = () => { const d = new Date(date); d.setDate(d.getDate() - 1); setDate(d.toISOString().slice(0, 10)); };
+    const next = () => { const d = new Date(date); d.setDate(d.getDate() + 1); setDate(d.toISOString().slice(0, 10)); };
+
+    const total = hearings.length + deadlines.length;
+
+    return (
+        <div className={styles.panel} id="diary-print-area">
+            {/* Header row */}
+            <div className={styles.panelHeader} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <h2 className={styles.panelTitle}>📅 Daily Diary</h2>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+                    <button className={styles.btnSecondary} onClick={prev}>◀</button>
+                    <input
+                        type="date"
+                        value={date}
+                        onChange={e => setDate(e.target.value)}
+                        className={styles.filterInput}
+                        style={{ width: 160 }}
+                    />
+                    <button className={styles.btnSecondary} onClick={next}>▶</button>
+                    <button className={styles.btnSecondary} onClick={() => setDate(today)}>Today</button>
+                    <button className={styles.btnSecondary} onClick={handlePrint} title="Print diary">🖨 Print</button>
+                    <button className={styles.btnSecondary} onClick={handleWhatsApp} title="Share via WhatsApp" style={{ background: "#25d366", color: "#fff", borderColor: "#25d366" }}>📲 WhatsApp</button>
+                </div>
+            </div>
+
+            {/* Date display */}
+            <div style={{ padding: "6px 0 16px", color: "var(--text-2)", fontSize: 14 }}>
+                {fmtDate(date)}
+                {!loading && <span style={{ marginLeft: 10, color: total === 0 ? "var(--text-3)" : "var(--gold)", fontWeight: 600 }}>
+                    {total === 0 ? "— Clear day" : `${total} item${total !== 1 ? "s" : ""}`}
+                </span>}
+            </div>
+
+            {loading && <p className={styles.emptyState}>Loading…</p>}
+            {err    && <p style={{ color: "#e53e3e", padding: 12 }}>{err}</p>}
+
+            {!loading && !err && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+
+                    {/* ── Hearings column ─────────────────────────────────── */}
+                    <div>
+                        <h3 style={{ color: "var(--gold)", marginBottom: 10, fontSize: 14, textTransform: "uppercase", letterSpacing: 1 }}>
+                            ⚖️ Court Hearings ({hearings.length})
+                        </h3>
+                        {hearings.length === 0 && (
+                            <div className={styles.emptyState} style={{ fontSize: 13, padding: "20px 0" }}>No hearings scheduled</div>
+                        )}
+                        {hearings.map(h => (
+                            <div key={h.hearing_id} style={{
+                                background: "var(--bg-1)", border: "1px solid var(--border)",
+                                borderRadius: 8, padding: "12px 14px", marginBottom: 10,
+                                borderLeft: "3px solid var(--gold)"
+                            }}>
+                                <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                                    {h.hearing_time && (
+                                        <span style={{ background: "var(--gold)", color: "#0f1117", borderRadius: 4, padding: "1px 8px", fontSize: 12, fontWeight: 700 }}>
+                                            {h.hearing_time}
+                                        </span>
+                                    )}
+                                    {h.title}
+                                </div>
+                                {h.matter_title && (
+                                    <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 2 }}>
+                                        Matter: <strong>{h.matter_title}</strong>
+                                        {h.case_number && <span style={{ marginLeft: 6, color: "var(--text-3)" }}>({h.case_number})</span>}
+                                    </div>
+                                )}
+                                {h.court_name  && <div style={{ fontSize: 12, color: "var(--text-2)" }}>🏛 {h.court_name}</div>}
+                                {h.judge_name  && <div style={{ fontSize: 12, color: "var(--text-2)" }}>👨‍⚖️ {h.judge_name}</div>}
+                                {h.notes       && <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 4, fontStyle: "italic" }}>{h.notes}</div>}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* ── Deadlines column ────────────────────────────────── */}
+                    <div>
+                        <h3 style={{ color: "#e53e3e", marginBottom: 10, fontSize: 14, textTransform: "uppercase", letterSpacing: 1 }}>
+                            ⏰ Deadlines ({deadlines.length})
+                        </h3>
+                        {deadlines.length === 0 && (
+                            <div className={styles.emptyState} style={{ fontSize: 13, padding: "20px 0" }}>No deadlines due</div>
+                        )}
+                        {deadlines.map(d => (
+                            <div key={d.deadline_id} style={{
+                                background: "var(--bg-1)", border: "1px solid var(--border)",
+                                borderRadius: 8, padding: "12px 14px", marginBottom: 10,
+                                borderLeft: "3px solid #e53e3e"
+                            }}>
+                                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                    {d.title}
+                                    {priorityBadge(d.priority)}
+                                </div>
+                                {d.matter_title && (
+                                    <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 2 }}>
+                                        Matter: <strong>{d.matter_title}</strong>
+                                        {d.case_number && <span style={{ marginLeft: 6, color: "var(--text-3)" }}>({d.case_number})</span>}
+                                    </div>
+                                )}
+                                {d.notes && <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 4, fontStyle: "italic" }}>{d.notes}</div>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Print-only styles */}
+            <style>{`
+                @media print {
+                    body > *:not(#diary-print-area) { display: none !important; }
+                    #diary-print-area { display: block !important; color: #000 !important; background: #fff !important; }
+                    .${styles.panelHeader} button { display: none !important; }
+                }
+            `}</style>
+        </div>
+    );
+};
+
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
 const OwnerPortal = () => {
@@ -8842,6 +9039,7 @@ const OwnerPortal = () => {
                             {panel === "invoices"      && <InvoicesPanel />}
                             {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} maxUsers={maxUsers} onUpgrade={() => setPanel("subscription")} />}
                             {panel === "drafting"      && <DraftingPanel />}
+                            {panel === "diary"         && <DiaryPanel />}
                             {panel === "causelist"     && <CauseListPanel />}
                             {panel === "vakalat"       && <VakalatnamaPanel />}
                             {panel === "intelligence"  && <IntelligencePanel />}

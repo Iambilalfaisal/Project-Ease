@@ -3839,6 +3839,18 @@ async def remove_hearing(hearing_id: str):
     return jsonify({"ok": True})
 
 
+@bp.route("/diary/<date_str>", methods=["GET"])
+async def get_diary(date_str: str):
+    """Task #161: Return all hearings + deadlines for a given date (YYYY-MM-DD)."""
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session.get("org") or ""
+    hearings = get_hearings(org_id, from_date=date_str, to_date=date_str)
+    deadlines = get_deadlines(org_id, from_date=date_str, to_date=date_str)
+    return jsonify({"date": date_str, "hearings": hearings, "deadlines": deadlines})
+
+
 @bp.route("/deadlines", methods=["GET"])
 async def list_deadlines():
     session = _get_session()
