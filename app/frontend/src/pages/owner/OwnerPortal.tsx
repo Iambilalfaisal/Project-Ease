@@ -86,6 +86,7 @@ interface Matter {
     limitation_date?:      string;
     vakalatnama_status?:   string;
     adjournment_count?:    number;
+    priority?:             string;
     created_at:            string;
     doc_count?:            number;
     documents?:            MatterDoc[];
@@ -781,18 +782,19 @@ function limitationDaysRemaining(limitationDate: string): number {
 }
 
 const VAKALATNAMA_STATUSES = ["Not Required", "Pending", "Filed"] as const;
+const MATTER_PRIORITIES    = ["Urgent", "High", "Normal", "Low"] as const;
 
 const BLANK_MATTER: {
     client_id: string; title: string; matter_type: string; status: MatterStatus;
     court_name: string; case_number: string; filing_date: string; opposing_party: string;
     team_id: string; notes: string;
     limitation_type: string; cause_of_action_date: string; limitation_date: string;
-    vakalatnama_status: string;
+    vakalatnama_status: string; priority: string;
 } = {
     client_id: "", title: "", matter_type: MATTER_TYPES[0], status: "Active",
     court_name: "", case_number: "", filing_date: "", opposing_party: "", team_id: "", notes: "",
     limitation_type: "", cause_of_action_date: "", limitation_date: "",
-    vakalatnama_status: "Pending",
+    vakalatnama_status: "Pending", priority: "Normal",
 };
 
 const MattersPanel = () => {
@@ -807,8 +809,9 @@ const MattersPanel = () => {
     const [form,        setForm]        = useState({ ...BLANK_MATTER });
     const [saving,      setSaving]      = useState(false);
     const [formErr,     setFormErr]     = useState<string | null>(null);
-    const [filterStatus, setFilterStatus] = useState("all");
-    const [filterType,   setFilterType]   = useState("all");
+    const [filterStatus,   setFilterStatus]   = useState("all");
+    const [filterType,     setFilterType]     = useState("all");
+    const [filterPriority, setFilterPriority] = useState("all");
     const [removing,    setRemoving]    = useState<string | null>(null);
     // Link doc modal
     const [showLinkModal, setShowLinkModal] = useState(false);
@@ -1345,8 +1348,9 @@ const MattersPanel = () => {
     };
 
     const filtered = matters.filter(m =>
-        (filterStatus === "all" || m.status === filterStatus) &&
-        (filterType   === "all" || m.matter_type === filterType)
+        (filterStatus   === "all" || m.status        === filterStatus)   &&
+        (filterType     === "all" || m.matter_type   === filterType)     &&
+        (filterPriority === "all" || (m.priority ?? "Normal") === filterPriority)
     );
 
     const MatterForm = ({ onSave, onCancel }: { onSave: () => void; onCancel: () => void }) => (
@@ -1424,6 +1428,12 @@ const MattersPanel = () => {
                         {VAKALATNAMA_STATUSES.map(s => <option key={s}>{s}</option>)}
                     </select>
                 </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Priority</label>
+                    <select className={styles.formSelect} value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
+                        {MATTER_PRIORITIES.map(p => <option key={p}>{p}</option>)}
+                    </select>
+                </div>
                 {/* Limitation fields */}
                 <div className={styles.formGroup} style={{ gridColumn: "1/-1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
                     <label className={styles.formLabel} style={{ color: "var(--gold)", fontWeight: 700 }}>⚠ Limitation (Limitation Act 1908)</label>
@@ -1486,6 +1496,7 @@ const MattersPanel = () => {
                                     cause_of_action_date: detail.cause_of_action_date ?? "",
                                     limitation_date: detail.limitation_date ?? "",
                                     vakalatnama_status: detail.vakalatnama_status ?? "Pending",
+                                    priority: detail.priority ?? "Normal",
                                 });
                                 setFormErr(null); setEditDetail(true);
                             }}>Edit</button>
@@ -1554,6 +1565,31 @@ const MattersPanel = () => {
                                         {detail.adjournment_count ?? 0} adjournment{(detail.adjournment_count ?? 0) !== 1 ? "s" : ""}
                                     </span>
                                     <span className={styles.muted} style={{ fontSize: "0.75rem", marginLeft: "0.4rem" }}>(from Court Orders log)</span>
+                                </span>
+                            </div>
+                            <div className={styles.detailInfoItem}>
+                                <span className={styles.detailInfoLabel}>Priority</span>
+                                <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                    <span className={styles.priorityBadge} data-priority={detail.priority ?? "Normal"}>
+                                        {detail.priority ?? "Normal"}
+                                    </span>
+                                    {MATTER_PRIORITIES.filter(p => p !== (detail.priority ?? "Normal")).map(p => (
+                                        <button key={p} className={styles.btnGhost} style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem" }}
+                                            onClick={async () => {
+                                                const r = await fetch(`/matters/${detail.matter_id}`, {
+                                                    method: "PATCH",
+                                                    headers: { ...authHeaders(), "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ priority: p }),
+                                                });
+                                                if (r.ok) {
+                                                    const updated = await r.json();
+                                                    setDetail(updated);
+                                                    setMatters(prev => prev.map(m => m.matter_id === updated.matter_id ? { ...m, priority: updated.priority } : m));
+                                                }
+                                            }}>
+                                            → {p}
+                                        </button>
+                                    ))}
                                 </span>
                             </div>
                             {detail.limitation_date && (() => {
@@ -2212,6 +2248,11 @@ const MattersPanel = () => {
                         <option value="all">All types</option>
                         {MATTER_TYPES.map(t => <option key={t}>{t}</option>)}
                     </select>
+                    <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                        value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
+                        <option value="all">All priorities</option>
+                        {MATTER_PRIORITIES.map(p => <option key={p}>{p}</option>)}
+                    </select>
                 </div>
                 {clients.length === 0 ? (
                     <span className={styles.muted} style={{ fontSize: "0.8rem" }}>Add a client first</span>
@@ -2274,7 +2315,7 @@ const MattersPanel = () => {
                 <div className={styles.tableWrap}>
                     <table className={styles.table}>
                         <thead><tr>
-                            <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Vakalatnama</th><th>Adj.</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
+                            <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Priority</th><th>Vakalatnama</th><th>Adj.</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
                         </tr></thead>
                         <tbody>
                             {filtered.map(m => {
@@ -2292,6 +2333,11 @@ const MattersPanel = () => {
                                     <td className={styles.muted}>{m.client_name}</td>
                                     <td className={styles.muted}>{m.matter_type}</td>
                                     <td><span className={(styles as any)[STATUS_BADGE[m.status] ?? "badgeGray"]}>{m.status}</span></td>
+                                    <td>
+                                        <span className={styles.priorityBadge} data-priority={m.priority ?? "Normal"}>
+                                            {m.priority ?? "Normal"}
+                                        </span>
+                                    </td>
                                     <td>
                                         <span className={
                                             m.vakalatnama_status === "Filed"        ? styles.badgeGreen :

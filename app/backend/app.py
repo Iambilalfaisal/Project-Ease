@@ -372,6 +372,8 @@ from db import (
     link_cause_list_entry, delete_cause_list_entry, get_today_cause_list_matches,
     # Matter Notes — Task #138
     NOTE_TYPES, get_matter_notes, create_matter_note, update_matter_note, delete_matter_note,
+    # Matter Priority — Task #139
+    MATTER_PRIORITIES,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -1923,7 +1925,8 @@ async def list_matters():
     if not session:
         return jsonify({"error": "Unauthorized"}), 401
     client_id = request.args.get("client_id") or None
-    return jsonify({"matters": get_matters(session.get("org") or "", client_id=client_id)})
+    return jsonify({"matters": get_matters(session.get("org") or "", client_id=client_id),
+                    "priorities": list(MATTER_PRIORITIES)})
 
 
 @bp.route("/matters", methods=["POST"])
@@ -1958,6 +1961,7 @@ async def add_matter():
         cause_of_action_date=coa_date,
         limitation_date=lim_date,
         vakalatnama_status=data.get("vakalatnama_status", "Pending"),
+        priority=data.get("priority", "Normal"),
         actor=session.get("user_id") or SYSTEM,
     )
     _audit(session, "matter_create",

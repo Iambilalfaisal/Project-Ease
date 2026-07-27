@@ -2898,3 +2898,19 @@
 .noteTypeBadge[data-type="Email"]       { background: #ede9fe; color: #5b21b6; }
 .noteTypeBadge[data-type="WhatsApp"]    { background: #dcfce7; color: #166534; }
 .noteTypeBadge[data-type="Note"]        { background: var(--bg-2); color: var(--text-2); }
+
+/* ── Matter Priority — Task #139 ───────────────────────────────────────────── */
+.priorityBadge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--bg-2);
+    color: var(--text-2);
+}
+.priorityBadge[data-priority="Urgent"] { background: #fee2e2; color: #991b1b; }
+.priorityBadge[data-priority="High"]   { background: #fef3c7; color: #92400e; }
+.priorityBadge[data-priority="Normal"] { background: var(--bg-2); color: var(--text-2); }
+.priorityBadge[data-priority="Low"]    { background: #f1f5f9; color: #64748b; }
