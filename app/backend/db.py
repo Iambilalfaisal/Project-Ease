@@ -584,6 +584,25 @@ CREATE TABLE IF NOT EXISTS matter_outcomes (
     modified_at      TEXT    NOT NULL DEFAULT (datetime('now')),
     modified_by      TEXT    NOT NULL DEFAULT 'system'
 );
+
+CREATE TABLE IF NOT EXISTS matter_charges (
+    charge_id        TEXT    PRIMARY KEY,
+    org_id           TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id        TEXT    NOT NULL REFERENCES matters(matter_id),
+    section_no       TEXT    NOT NULL,
+    description      TEXT,
+    plea             TEXT    NOT NULL DEFAULT 'No Plea',
+    charge_framed    INTEGER NOT NULL DEFAULT 0,
+    charge_framed_date TEXT,
+    court            TEXT,
+    notes            TEXT,
+    is_active        INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by       TEXT    NOT NULL DEFAULT 'system',
+    modified_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by      TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_matter_charges ON matter_charges(matter_id);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -3786,3 +3805,84 @@ def upsert_matter_outcome(
             (matter_id, org_id),
         ).fetchone()
     return dict(row) if row else {}
+
+
+# ── Matter Charges (Task #147) ────────────────────────────────────────────────
+
+PLEA_OPTIONS = ("No Plea", "Not Guilty", "Guilty", "Absconder")
+
+
+def get_matter_charges(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM matter_charges WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY created_at ASC",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_matter_charge(
+    org_id: str,
+    matter_id: str,
+    section_no: str,
+    description: str | None = None,
+    plea: str = "No Plea",
+    charge_framed: int = 0,
+    charge_framed_date: str | None = None,
+    court: str | None = None,
+    notes: str | None = None,
+    actor: str = SYSTEM,
+) -> dict:
+    charge_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO matter_charges (charge_id, org_id, matter_id, section_no, description, "
+            "plea, charge_framed, charge_framed_date, court, notes, "
+            "created_at, created_by, modified_at, modified_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (charge_id, org_id, matter_id, section_no, description, plea,
+             charge_framed, charge_framed_date, court, notes, now, actor, now, actor),
+        )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_charges WHERE charge_id=?", (charge_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_matter_charge(
+    charge_id: str,
+    org_id: str,
+    actor: str = SYSTEM,
+    **kwargs,
+) -> dict:
+    allowed = {"section_no", "description", "plea", "charge_framed", "charge_framed_date", "court", "notes"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return {}
+    now = _now()
+    fields["modified_at"] = now
+    fields["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in fields)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_charges SET {set_clause} WHERE charge_id=? AND org_id=?",
+            (*fields.values(), charge_id, org_id),
+        )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_charges WHERE charge_id=?", (charge_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_matter_charge(charge_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_charges SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE charge_id=? AND org_id=?",
+            (now, actor, charge_id, org_id),
+        )

@@ -187,6 +187,19 @@ interface MatterCorrespondence {
     created_at:   string;
 }
 
+interface MatterCharge {
+    charge_id:          string;
+    matter_id:          string;
+    section_no:         string;
+    description:        string | null;
+    plea:               string;
+    charge_framed:      number;
+    charge_framed_date: string | null;
+    court:              string | null;
+    notes:              string | null;
+    created_at:         string;
+}
+
 interface MatterOutcome {
     outcome_id:        string;
     matter_id:         string;
@@ -911,7 +924,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome" | "charges">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -1034,6 +1047,16 @@ const MattersPanel = () => {
     const [outcomeSaving,     setOutcomeSaving]     = useState(false);
     const [outcomeErr,        setOutcomeErr]        = useState("");
     const [outcomeSaved,      setOutcomeSaved]      = useState(false);
+    // Charges — Task #147
+    const PLEA_OPTIONS_UI = ["No Plea", "Not Guilty", "Guilty", "Absconder"];
+    const BLANK_CHARGE = { section_no: "", description: "", plea: "No Plea", charge_framed: false, charge_framed_date: "", court: "", notes: "" };
+    const [matterCharges,     setMatterCharges]     = useState<MatterCharge[]>([]);
+    const [chargesLoading,    setChargesLoading]    = useState(false);
+    const [showChargeModal,   setShowChargeModal]   = useState(false);
+    const [editCharge,        setEditCharge]        = useState<MatterCharge | null>(null);
+    const [chargeForm,        setChargeForm]        = useState<{ section_no: string; description: string; plea: string; charge_framed: boolean; charge_framed_date: string; court: string; notes: string }>({ ...BLANK_CHARGE });
+    const [chargeSaving,      setChargeSaving]      = useState(false);
+    const [chargeErr,         setChargeErr]         = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1581,6 +1604,65 @@ const MattersPanel = () => {
             setTimeout(() => setOutcomeSaved(false), 2500);
         } catch { setOutcomeErr("Network error."); }
         finally { setOutcomeSaving(false); }
+    };
+
+    // ── Charges (Task #147) ───────────────────────────────────────────────────
+    const loadCharges = (matterId: string) => {
+        setChargesLoading(true);
+        fetch(`/matters/${matterId}/charges`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setMatterCharges(d.charges ?? []))
+            .finally(() => setChargesLoading(false));
+    };
+
+    const openChargeModal = (ch?: MatterCharge) => {
+        if (ch) {
+            setEditCharge(ch);
+            setChargeForm({
+                section_no: ch.section_no,
+                description: ch.description ?? "",
+                plea: ch.plea,
+                charge_framed: ch.charge_framed === 1,
+                charge_framed_date: ch.charge_framed_date ?? "",
+                court: ch.court ?? "",
+                notes: ch.notes ?? "",
+            });
+        } else {
+            setEditCharge(null);
+            setChargeForm({ ...BLANK_CHARGE });
+        }
+        setChargeErr(""); setShowChargeModal(true);
+    };
+
+    const saveCharge = async () => {
+        if (!detail) return;
+        if (!chargeForm.section_no.trim()) { setChargeErr("Section number is required."); return; }
+        setChargeSaving(true); setChargeErr("");
+        const url = editCharge
+            ? `/matters/${detail.matter_id}/charges/${editCharge.charge_id}`
+            : `/matters/${detail.matter_id}/charges`;
+        const method = editCharge ? "PATCH" : "POST";
+        const body = {
+            ...chargeForm,
+            charge_framed: chargeForm.charge_framed ? 1 : 0,
+            charge_framed_date: chargeForm.charge_framed_date || null,
+            court: chargeForm.court || null,
+            description: chargeForm.description || null,
+            notes: chargeForm.notes || null,
+        };
+        try {
+            const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const e = await r.json(); setChargeErr(e.error ?? "Save failed."); return; }
+            setShowChargeModal(false);
+            loadCharges(detail.matter_id);
+        } catch { setChargeErr("Network error."); }
+        finally { setChargeSaving(false); }
+    };
+
+    const deleteChargeUI = (chargeId: string) => {
+        if (!detail || !confirm("Delete this charge?")) return;
+        fetch(`/matters/${detail.matter_id}/charges/${chargeId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadCharges(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -2273,6 +2355,10 @@ const MattersPanel = () => {
                     <button className={`${styles.detailTabBtn}${detailTab === "outcome" ? " " + styles.detailTabBtnActive : ""}`}
                         onClick={() => { setDetailTab("outcome"); if (detail) loadOutcome(detail.matter_id); }}>
                         Outcome {matterOutcome && matterOutcome.outcome_type !== "Pending" ? `(${matterOutcome.outcome_type})` : ""}
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "charges" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("charges"); if (detail) loadCharges(detail.matter_id); }}>
+                        Charges ({matterCharges.length})
                     </button>
                 </div>
 
@@ -3089,6 +3175,104 @@ const MattersPanel = () => {
                         </table>
                     )}
                 </>)}
+
+                {/* ── Charges tab ── */}
+                {detailTab === "charges" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                            {matterCharges.length} section{matterCharges.length !== 1 ? "s" : ""} · {matterCharges.filter(c => c.charge_framed).length} framed
+                        </span>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openChargeModal()}>+ Add Section</button>
+                    </div>
+                    {chargesLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : matterCharges.length === 0 ? (
+                        <div className={styles.emptyHint}>No charges or sections added yet. Use this tab for criminal matters to track PPC, CNS, PECA, NAB, and other statutory sections.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th>Section</th>
+                                <th>Description</th>
+                                <th>Plea</th>
+                                <th>Framed</th>
+                                <th>Court</th>
+                                <th style={{ width: 80 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {matterCharges.map(ch => {
+                                    const pleaColour = ch.plea === "Guilty" ? "#dc2626" : ch.plea === "Not Guilty" ? "#16a34a" : ch.plea === "Absconder" ? "#7c3aed" : "var(--text-2)";
+                                    return (
+                                        <tr key={ch.charge_id}>
+                                            <td><strong style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{ch.section_no}</strong></td>
+                                            <td style={{ fontSize: "0.82rem", color: "var(--text-2)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.description || "—"}</td>
+                                            <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: pleaColour }}>{ch.plea}</span></td>
+                                            <td style={{ textAlign: "center" }}>
+                                                {ch.charge_framed
+                                                    ? <span style={{ color: "#16a34a", fontSize: "0.8rem" }}>✓ {ch.charge_framed_date || ""}</span>
+                                                    : <span style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>—</span>}
+                                            </td>
+                                            <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{ch.court || "—"}</td>
+                                            <td style={{ display: "flex", gap: 4 }}>
+                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openChargeModal(ch)}>Edit</button>
+                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteChargeUI(ch.charge_id)}>Del</button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                </>)}
+
+                {/* ── Charge add/edit modal ── */}
+                {showChargeModal && (
+                    <div className={styles.overlay} onClick={() => setShowChargeModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+                            <div className={styles.modalTitle}>{editCharge ? "Edit Charge" : "Add Charge / Section"}</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Section / Offence *</label>
+                                    <input className={styles.formInput} value={chargeForm.section_no} onChange={e => setChargeForm(f => ({ ...f, section_no: e.target.value }))} placeholder="e.g. 302 PPC, 9(c) CNS" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Plea</label>
+                                    <select className={styles.formInput} value={chargeForm.plea} onChange={e => setChargeForm(f => ({ ...f, plea: e.target.value }))}>
+                                        {PLEA_OPTIONS_UI.map(p => <option key={p}>{p}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Description</label>
+                                <input className={styles.formInput} value={chargeForm.description} onChange={e => setChargeForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Murder, Hurt, Possession of narcotics…" />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.75rem", alignItems: "end" }}>
+                                <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: 0 }}>
+                                    <input type="checkbox" id="charge-framed" checked={chargeForm.charge_framed} onChange={e => setChargeForm(f => ({ ...f, charge_framed: e.target.checked }))} />
+                                    <label htmlFor="charge-framed" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>Charge Framed</label>
+                                </div>
+                                {chargeForm.charge_framed && (
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Date Framed</label>
+                                        <input type="date" className={styles.formInput} value={chargeForm.charge_framed_date} onChange={e => setChargeForm(f => ({ ...f, charge_framed_date: e.target.value }))} />
+                                    </div>
+                                )}
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Court</label>
+                                <input className={styles.formInput} value={chargeForm.court} onChange={e => setChargeForm(f => ({ ...f, court: e.target.value }))} placeholder="Optional" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={2} value={chargeForm.notes} onChange={e => setChargeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                            </div>
+                            {chargeErr && <div className={styles.formError}>{chargeErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowChargeModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveCharge} disabled={chargeSaving}>{chargeSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Outcome tab ── */}
                 {detailTab === "outcome" && (

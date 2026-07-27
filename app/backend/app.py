@@ -394,6 +394,9 @@ from db import (
     update_matter_relief, delete_matter_relief,
     # Matter Outcome — Task #146
     OUTCOME_TYPES, get_matter_outcome, upsert_matter_outcome,
+    # Matter Charges — Task #147
+    PLEA_OPTIONS, get_matter_charges, create_matter_charge,
+    update_matter_charge, delete_matter_charge,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2807,6 +2810,66 @@ async def save_outcome(matter_id: str):
         actor=session.get("user_id") or SYSTEM,
     )
     return jsonify(outcome)
+
+
+# ─── Matter Charges — Task #147 ──────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/charges", methods=["GET"])
+async def list_matter_charges(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    charges = get_matter_charges(matter_id, session.get("org") or "")
+    return jsonify({"charges": charges, "plea_options": list(PLEA_OPTIONS)})
+
+
+@bp.route("/matters/<matter_id>/charges", methods=["POST"])
+async def add_matter_charge(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("section_no") or not str(data.get("section_no", "")).strip():
+        return jsonify({"error": "section_no required"}), 400
+    charge = create_matter_charge(
+        org_id=session.get("org") or "",
+        matter_id=matter_id,
+        section_no=data["section_no"].strip(),
+        description=data.get("description"),
+        plea=data.get("plea", "No Plea"),
+        charge_framed=int(bool(data.get("charge_framed", False))),
+        charge_framed_date=data.get("charge_framed_date") or None,
+        court=data.get("court") or None,
+        notes=data.get("notes") or None,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(charge), 201
+
+
+@bp.route("/matters/<matter_id>/charges/<charge_id>", methods=["PATCH"])
+async def edit_matter_charge(matter_id: str, charge_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    updated = update_matter_charge(
+        charge_id, session.get("org") or "",
+        actor=session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"section_no", "description", "plea", "charge_framed",
+                    "charge_framed_date", "court", "notes"}},
+    )
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/charges/<charge_id>", methods=["DELETE"])
+async def remove_matter_charge(matter_id: str, charge_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_charge(charge_id, session.get("org") or "",
+                         actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
 
 
 # ─── PROJECT EASE: Plan & Upgrade API ───────────────────────────────────────
