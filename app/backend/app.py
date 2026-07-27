@@ -377,6 +377,9 @@ from db import (
     # Document Requests — Task #140
     DOC_REQUEST_STATUSES, get_document_requests, create_document_request,
     update_document_request, delete_document_request,
+    # Witnesses — Task #141
+    WITNESS_TYPES, STATEMENT_STATUSES, get_witnesses, create_witness,
+    update_witness, delete_witness,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2448,6 +2451,68 @@ async def remove_doc_request(matter_id: str, request_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_document_request(request_id, session.get("org") or "",
                             actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Witnesses — Task #141 ───────────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/witnesses", methods=["GET"])
+async def list_witnesses(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    ws = get_witnesses(matter_id, session.get("org") or "")
+    return jsonify({"witnesses": ws, "witness_types": list(WITNESS_TYPES),
+                    "statement_statuses": list(STATEMENT_STATUSES)})
+
+
+@bp.route("/matters/<matter_id>/witnesses", methods=["POST"])
+async def add_witness(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    name = (data.get("witness_name") or "").strip()
+    if not name:
+        return jsonify({"error": "witness_name required"}), 400
+    w = create_witness(
+        org_id           = session.get("org") or "",
+        matter_id        = matter_id,
+        witness_name     = name,
+        witness_type     = data.get("witness_type", "Defence"),
+        contact_number   = data.get("contact_number") or None,
+        address          = data.get("address") or None,
+        statement_status = data.get("statement_status", "Not Taken"),
+        notes            = data.get("notes") or None,
+        actor            = session.get("user_id") or SYSTEM,
+    )
+    return jsonify(w), 201
+
+
+@bp.route("/matters/<matter_id>/witnesses/<witness_id>", methods=["PATCH"])
+async def edit_witness(matter_id: str, witness_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    w = update_witness(
+        witness_id = witness_id,
+        org_id     = session.get("org") or "",
+        actor      = session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"witness_name", "witness_type", "contact_number",
+                    "address", "statement_status", "notes"}},
+    )
+    return jsonify(w)
+
+
+@bp.route("/matters/<matter_id>/witnesses/<witness_id>", methods=["DELETE"])
+async def remove_witness(matter_id: str, witness_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_witness(witness_id, session.get("org") or "",
+                   actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 

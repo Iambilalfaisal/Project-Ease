@@ -150,6 +150,18 @@ interface TimeEntry {
     created_at:       string;
 }
 
+interface Witness {
+    witness_id:      string;
+    matter_id:       string;
+    witness_name:    string;
+    witness_type:    string;
+    contact_number:  string | null;
+    address:         string | null;
+    statement_status: string;
+    notes:           string | null;
+    created_at:      string;
+}
+
 interface DocRequest {
     request_id:     string;
     matter_id:      string;
@@ -833,7 +845,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -894,6 +906,17 @@ const MattersPanel = () => {
     const [docReqForm,       setDocReqForm]       = useState({ ...BLANK_DOC_REQ });
     const [docReqSaving,     setDocReqSaving]     = useState(false);
     const [docReqErr,        setDocReqErr]        = useState("");
+    // Witnesses — Task #141
+    const WITNESS_TYPES_UI    = ["Prosecution", "Defence", "Expert", "Character", "Other"];
+    const STATEMENT_STATUSES_UI = ["Not Taken", "Taken", "Filed", "Cross-Examined"];
+    const BLANK_WITNESS = { witness_name: "", witness_type: "Defence", contact_number: "", address: "", statement_status: "Not Taken", notes: "" };
+    const [witnesses,       setWitnesses]       = useState<Witness[]>([]);
+    const [witnessLoading,  setWitnessLoading]  = useState(false);
+    const [showWitnessModal, setShowWitnessModal] = useState(false);
+    const [editWitness,     setEditWitness]     = useState<Witness | null>(null);
+    const [witnessForm,     setWitnessForm]     = useState({ ...BLANK_WITNESS });
+    const [witnessSaving,   setWitnessSaving]   = useState(false);
+    const [witnessErr,      setWitnessErr]      = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1124,6 +1147,54 @@ const MattersPanel = () => {
             headers: { ...authHeaders(), "Content-Type": "application/json" },
             body: JSON.stringify({ status: "Received", received_date: today }),
         }).then(() => loadDocRequests(detail.matter_id));
+    };
+
+    // Witnesses — Task #141
+    const loadWitnesses = (matterId: string) => {
+        setWitnessLoading(true);
+        fetch(`/matters/${matterId}/witnesses`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setWitnesses(d.witnesses ?? []); setWitnessLoading(false); })
+            .catch(() => setWitnessLoading(false));
+    };
+
+    const openWitnessModal = (w?: Witness) => {
+        if (w) {
+            setEditWitness(w);
+            setWitnessForm({
+                witness_name:    w.witness_name,
+                witness_type:    w.witness_type,
+                contact_number:  w.contact_number ?? "",
+                address:         w.address ?? "",
+                statement_status: w.statement_status,
+                notes:           w.notes ?? "",
+            });
+        } else {
+            setEditWitness(null);
+            setWitnessForm({ ...BLANK_WITNESS });
+        }
+        setWitnessErr("");
+        setShowWitnessModal(true);
+    };
+
+    const saveWitness = () => {
+        if (!detail) return;
+        if (!witnessForm.witness_name.trim()) { setWitnessErr("Witness name is required."); return; }
+        setWitnessSaving(true);
+        const url    = editWitness ? `/matters/${detail.matter_id}/witnesses/${editWitness.witness_id}` : `/matters/${detail.matter_id}/witnesses`;
+        const method = editWitness ? "PATCH" : "POST";
+        const body   = { ...witnessForm, contact_number: witnessForm.contact_number || null, address: witnessForm.address || null, notes: witnessForm.notes || null };
+        fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) })
+            .then(r => r.json())
+            .then(() => { setShowWitnessModal(false); loadWitnesses(detail.matter_id); })
+            .catch(() => setWitnessErr("Save failed."))
+            .finally(() => setWitnessSaving(false));
+    };
+
+    const deleteWitnessUI = (witnessId: string) => {
+        if (!detail || !confirm("Delete this witness?")) return;
+        fetch(`/matters/${detail.matter_id}/witnesses/${witnessId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadWitnesses(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -1793,6 +1864,10 @@ const MattersPanel = () => {
                         onClick={() => { setDetailTab("docreqs"); if (detail) loadDocRequests(detail.matter_id); }}>
                         Doc Requests ({docRequests.filter(r => r.status === "Pending" || r.status === "Overdue").length} pending)
                     </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "witnesses" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("witnesses"); if (detail) loadWitnesses(detail.matter_id); }}>
+                        Witnesses ({witnesses.length})
+                    </button>
                 </div>
 
                 {/* ── Documents tab ── */}
@@ -2294,6 +2369,111 @@ const MattersPanel = () => {
                                     <div className={styles.modalActions}>
                                         <button className={styles.btnGhost} onClick={() => setShowDocReqModal(false)} disabled={docReqSaving}>Cancel</button>
                                         <button className={styles.btnPrimary} onClick={saveDocReq} disabled={docReqSaving}>{docReqSaving ? "Saving…" : editDocReq ? "Save Changes" : "Add Request"}</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {/* ── Witnesses tab ── Task #141 */}
+                {detailTab === "witnesses" && (
+                    <>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                                {witnesses.length} witness{witnesses.length !== 1 ? "es" : ""}
+                            </span>
+                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openWitnessModal()}>+ Add Witness</button>
+                        </div>
+
+                        {witnessLoading ? (
+                            <div className={styles.emptyHint}>Loading…</div>
+                        ) : witnesses.length === 0 ? (
+                            <div className={styles.emptyHint}>No witnesses recorded. Add prosecution, defence, and expert witnesses.</div>
+                        ) : (
+                            <div className={styles.tableWrap}>
+                                <table className={styles.table}>
+                                    <thead><tr>
+                                        <th>Name</th><th>Type</th><th>Contact</th><th>Statement</th><th>Notes</th><th>Actions</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {witnesses.map(w => (
+                                            <tr key={w.witness_id}>
+                                                <td><strong>{w.witness_name}</strong></td>
+                                                <td>
+                                                    <span className={styles.witnessTypeBadge} data-wtype={w.witness_type}>
+                                                        {w.witness_type}
+                                                    </span>
+                                                </td>
+                                                <td className={styles.muted}>{w.contact_number ?? "—"}</td>
+                                                <td>
+                                                    <span className={
+                                                        w.statement_status === "Filed"           ? styles.badgeGreen  :
+                                                        w.statement_status === "Cross-Examined"  ? styles.badgeBlue   :
+                                                        w.statement_status === "Taken"           ? styles.badgeAmber  : styles.badgeGray
+                                                    } style={{ fontSize: "0.7rem" }}>{w.statement_status}</span>
+                                                </td>
+                                                <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.notes ?? "—"}</td>
+                                                <td style={{ display: "flex", gap: "0.35rem" }}>
+                                                    <button className={styles.actionBtn} onClick={() => openWitnessModal(w)}>Edit</button>
+                                                    <button className={styles.actionBtnDanger} onClick={() => deleteWitnessUI(w.witness_id)}>Delete</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {/* Witness add/edit modal */}
+                        {showWitnessModal && (
+                            <div className={styles.overlay} onClick={() => setShowWitnessModal(false)}>
+                                <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+                                    <div className={styles.modalTitle}>{editWitness ? "Edit Witness" : "Add Witness"}</div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Full Name *</label>
+                                        <input className={styles.formInput} value={witnessForm.witness_name}
+                                            onChange={e => setWitnessForm(f => ({ ...f, witness_name: e.target.value }))}
+                                            placeholder="e.g. Muhammad Ali Shah" autoFocus />
+                                    </div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Witness Type</label>
+                                            <select className={styles.formSelect} value={witnessForm.witness_type}
+                                                onChange={e => setWitnessForm(f => ({ ...f, witness_type: e.target.value }))}>
+                                                {WITNESS_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Statement Status</label>
+                                            <select className={styles.formSelect} value={witnessForm.statement_status}
+                                                onChange={e => setWitnessForm(f => ({ ...f, statement_status: e.target.value }))}>
+                                                {STATEMENT_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Contact Number</label>
+                                            <input className={styles.formInput} value={witnessForm.contact_number}
+                                                onChange={e => setWitnessForm(f => ({ ...f, contact_number: e.target.value }))}
+                                                placeholder="e.g. 0300-1234567" />
+                                        </div>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Address</label>
+                                            <input className={styles.formInput} value={witnessForm.address}
+                                                onChange={e => setWitnessForm(f => ({ ...f, address: e.target.value }))}
+                                                placeholder="City / area" />
+                                        </div>
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Notes</label>
+                                        <input className={styles.formInput} value={witnessForm.notes}
+                                            onChange={e => setWitnessForm(f => ({ ...f, notes: e.target.value }))}
+                                            placeholder="Reliability, relationship to case, etc." />
+                                    </div>
+                                    {witnessErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{witnessErr}</div>}
+                                    <div className={styles.modalActions}>
+                                        <button className={styles.btnGhost} onClick={() => setShowWitnessModal(false)} disabled={witnessSaving}>Cancel</button>
+                                        <button className={styles.btnPrimary} onClick={saveWitness} disabled={witnessSaving}>{witnessSaving ? "Saving…" : editWitness ? "Save Changes" : "Add Witness"}</button>
                                     </div>
                                 </div>
                             </div>

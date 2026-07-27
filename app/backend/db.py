@@ -472,6 +472,42 @@ CREATE TABLE IF NOT EXISTS document_requests (
     modified_by   TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_doc_requests ON document_requests(matter_id, status);
+
+CREATE TABLE IF NOT EXISTS witnesses (
+    witness_id      TEXT    PRIMARY KEY,
+    org_id          TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id       TEXT    NOT NULL REFERENCES matters(matter_id),
+    witness_name    TEXT    NOT NULL,
+    witness_type    TEXT    NOT NULL DEFAULT 'Defence',
+    contact_number  TEXT,
+    address         TEXT,
+    statement_status TEXT   NOT NULL DEFAULT 'Not Taken',
+    notes           TEXT,
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by      TEXT    NOT NULL DEFAULT 'system',
+    modified_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by     TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_witnesses ON witnesses(matter_id, witness_type);
+
+CREATE TABLE IF NOT EXISTS matter_deadlines (
+    deadline_id  TEXT    PRIMARY KEY,
+    org_id       TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id    TEXT    NOT NULL REFERENCES matters(matter_id),
+    title        TEXT    NOT NULL,
+    due_date     TEXT    NOT NULL,
+    priority     TEXT    NOT NULL DEFAULT 'Medium',
+    completed    INTEGER NOT NULL DEFAULT 0,
+    completed_at TEXT,
+    notes        TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by   TEXT    NOT NULL DEFAULT 'system',
+    modified_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by  TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_matter_deadlines ON matter_deadlines(matter_id, due_date);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -3198,4 +3234,86 @@ def delete_document_request(request_id: str, org_id: str, actor: str = SYSTEM):
             "UPDATE document_requests SET is_active=0, modified_at=?, modified_by=? "
             "WHERE request_id=? AND org_id=?",
             (now, actor, request_id, org_id),
+        )
+
+
+# ── Witnesses — Task #141 ─────────────────────────────────────────────────────
+
+WITNESS_TYPES     = ("Prosecution", "Defence", "Expert", "Character", "Other")
+STATEMENT_STATUSES = ("Not Taken", "Taken", "Filed", "Cross-Examined")
+
+
+def get_witnesses(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM witnesses
+               WHERE matter_id=? AND org_id=? AND is_active=1
+               ORDER BY witness_type, witness_name""",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_witness(
+    org_id: str,
+    matter_id: str,
+    witness_name: str,
+    witness_type: str = "Defence",
+    contact_number: Optional[str] = None,
+    address: Optional[str] = None,
+    statement_status: str = "Not Taken",
+    notes: Optional[str] = None,
+    actor: str = SYSTEM,
+) -> dict:
+    witness_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO witnesses
+               (witness_id, org_id, matter_id, witness_name, witness_type,
+                contact_number, address, statement_status, notes,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (witness_id, org_id, matter_id, witness_name, witness_type,
+             contact_number, address, statement_status, notes,
+             now, actor, now, actor),
+        )
+        row = conn.execute(
+            "SELECT * FROM witnesses WHERE witness_id=?", (witness_id,)
+        ).fetchone()
+    return dict(row)
+
+
+def update_witness(witness_id: str, org_id: str, actor: str = SYSTEM, **fields) -> dict:
+    allowed = {"witness_name", "witness_type", "contact_number", "address",
+               "statement_status", "notes"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM witnesses WHERE witness_id=? AND org_id=?",
+                (witness_id, org_id),
+            ).fetchone()
+        return dict(row) if row else {}
+    now = _now()
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE witnesses SET {set_clause}, modified_at=?, modified_by=? "
+            f"WHERE witness_id=? AND org_id=?",
+            (*updates.values(), now, actor, witness_id, org_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM witnesses WHERE witness_id=?", (witness_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_witness(witness_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE witnesses SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE witness_id=? AND org_id=?",
+            (now, actor, witness_id, org_id),
         )

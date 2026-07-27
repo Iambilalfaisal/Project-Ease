@@ -2914,3 +2914,20 @@
 .priorityBadge[data-priority="High"]   { background: #fef3c7; color: #92400e; }
 .priorityBadge[data-priority="Normal"] { background: var(--bg-2); color: var(--text-2); }
 .priorityBadge[data-priority="Low"]    { background: #f1f5f9; color: #64748b; }
+
+/* ── Witnesses — Task #141 ─────────────────────────────────────────────────── */
+.witnessTypeBadge {
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: var(--bg-2);
+    color: var(--text-2);
+}
+.witnessTypeBadge[data-wtype="Prosecution"] { background: #fee2e2; color: #991b1b; }
+.witnessTypeBadge[data-wtype="Defence"]     { background: #dbeafe; color: #1d4ed8; }
+.witnessTypeBadge[data-wtype="Expert"]      { background: #d1fae5; color: #065f46; }
+.witnessTypeBadge[data-wtype="Character"]   { background: #ede9fe; color: #5b21b6; }
+.witnessTypeBadge[data-wtype="Other"]       { background: var(--bg-2); color: var(--text-2); }
