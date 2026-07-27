@@ -370,6 +370,8 @@ from db import (
     # Cause List — Task #137
     parse_cause_list_text, store_cause_list, get_cause_list_entries,
     link_cause_list_entry, delete_cause_list_entry, get_today_cause_list_matches,
+    # Matter Notes — Task #138
+    NOTE_TYPES, get_matter_notes, create_matter_note, update_matter_note, delete_matter_note,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2323,6 +2325,64 @@ async def remove_cause_list_entry(entry_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_cause_list_entry(entry_id, session.get("org") or "",
                             actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Matter Notes — Task #138 ────────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/notes", methods=["GET"])
+async def list_matter_notes(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    notes = get_matter_notes(matter_id, session.get("org") or "")
+    return jsonify({"notes": notes, "note_types": NOTE_TYPES})
+
+
+@bp.route("/matters/<matter_id>/notes", methods=["POST"])
+async def add_matter_note(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    note_text = (data.get("note_text") or "").strip()
+    if not note_text:
+        return jsonify({"error": "note_text required"}), 400
+    note = create_matter_note(
+        org_id    = session.get("org") or "",
+        matter_id = matter_id,
+        note_type = data.get("note_type", "Note"),
+        note_text = note_text,
+        note_date = data.get("note_date") or __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d"),
+        actor     = session.get("user_id") or SYSTEM,
+    )
+    return jsonify(note), 201
+
+
+@bp.route("/matters/<matter_id>/notes/<note_id>", methods=["PATCH"])
+async def edit_matter_note(matter_id: str, note_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    note = update_matter_note(
+        note_id   = note_id,
+        org_id    = session.get("org") or "",
+        note_type = data.get("note_type"),
+        note_text = data.get("note_text"),
+        note_date = data.get("note_date"),
+        actor     = session.get("user_id") or SYSTEM,
+    )
+    return jsonify(note)
+
+
+@bp.route("/matters/<matter_id>/notes/<note_id>", methods=["DELETE"])
+async def remove_matter_note(matter_id: str, note_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_note(note_id, session.get("org") or "",
+                       actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 

@@ -818,7 +818,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -859,6 +859,16 @@ const MattersPanel = () => {
     const [billing,        setBilling]        = useState(false);
     const [billDesc,       setBillDesc]       = useState("");
     const [showBillModal,  setShowBillModal]  = useState(false);
+    // Matter Notes — Task #138
+    const NOTE_TYPES_UI = ["Note", "Call", "Meeting", "Instruction", "Email", "WhatsApp", "Other"];
+    const BLANK_NOTE_FORM = { note_type: "Note", note_text: "", note_date: new Date().toISOString().slice(0, 10) };
+    const [matterNotes,    setMatterNotes]    = useState<{ note_id: string; note_type: string; note_text: string; note_date: string; author_name?: string; created_at: string }[]>([]);
+    const [notesLoading,   setNotesLoading]   = useState(false);
+    const [showNoteModal,  setShowNoteModal]  = useState(false);
+    const [editNote,       setEditNote]       = useState<{ note_id: string; note_type: string; note_text: string; note_date: string } | null>(null);
+    const [noteForm,       setNoteForm]       = useState({ ...BLANK_NOTE_FORM });
+    const [noteSaving,     setNoteSaving]     = useState(false);
+    const [noteErr,        setNoteErr]        = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -991,6 +1001,46 @@ const MattersPanel = () => {
             .then(r => r.json())
             .then(d => { setTimeEntries(d.entries ?? []); setTimeLoading(false); })
             .catch(() => setTimeLoading(false));
+    };
+
+    // Matter Notes — Task #138
+    const loadNotes = (matterId: string) => {
+        setNotesLoading(true);
+        fetch(`/matters/${matterId}/notes`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setMatterNotes(d.notes ?? []); setNotesLoading(false); })
+            .catch(() => setNotesLoading(false));
+    };
+
+    const openNoteModal = (note?: typeof matterNotes[0]) => {
+        if (note) {
+            setEditNote(note);
+            setNoteForm({ note_type: note.note_type, note_text: note.note_text, note_date: note.note_date });
+        } else {
+            setEditNote(null);
+            setNoteForm({ ...BLANK_NOTE_FORM });
+        }
+        setNoteErr("");
+        setShowNoteModal(true);
+    };
+
+    const saveNote = () => {
+        if (!detail) return;
+        if (!noteForm.note_text.trim()) { setNoteErr("Note text is required."); return; }
+        setNoteSaving(true);
+        const url    = editNote ? `/matters/${detail.matter_id}/notes/${editNote.note_id}` : `/matters/${detail.matter_id}/notes`;
+        const method = editNote ? "PATCH" : "POST";
+        fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(noteForm) })
+            .then(r => r.json())
+            .then(() => { setShowNoteModal(false); loadNotes(detail.matter_id); })
+            .catch(() => setNoteErr("Save failed."))
+            .finally(() => setNoteSaving(false));
+    };
+
+    const deleteNoteUI = (noteId: string) => {
+        if (!detail || !confirm("Delete this note?")) return;
+        fetch(`/matters/${detail.matter_id}/notes/${noteId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadNotes(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -1619,6 +1669,10 @@ const MattersPanel = () => {
                         onClick={() => { setDetailTab("time"); if (detail) loadTimeEntries(detail.matter_id); }}>
                         Time ({timeEntries.length})
                     </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "notes" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("notes"); if (detail) loadNotes(detail.matter_id); }}>
+                        Notes ({matterNotes.length})
+                    </button>
                 </div>
 
                 {/* ── Documents tab ── */}
@@ -1957,6 +2011,73 @@ const MattersPanel = () => {
                         </>
                     );
                 })()}
+
+                {/* ── Notes tab ── Task #138 */}
+                {detailTab === "notes" && (
+                    <>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{matterNotes.length} note{matterNotes.length !== 1 ? "s" : ""}</span>
+                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openNoteModal()}>+ Add Note</button>
+                        </div>
+
+                        {notesLoading ? (
+                            <div className={styles.emptyHint}>Loading…</div>
+                        ) : matterNotes.length === 0 ? (
+                            <div className={styles.emptyHint}>No notes yet. Log calls, meetings, client instructions, and more.</div>
+                        ) : (
+                            <div className={styles.notesFeed}>
+                                {matterNotes.map(n => (
+                                    <div key={n.note_id} className={styles.noteCard}>
+                                        <div className={styles.noteCardHeader}>
+                                            <span className={styles.noteTypeBadge} data-type={n.note_type}>{n.note_type}</span>
+                                            <span className={styles.muted} style={{ fontSize: "0.75rem" }}>{n.note_date}</span>
+                                            {n.author_name && <span className={styles.muted} style={{ fontSize: "0.75rem" }}>· {n.author_name}</span>}
+                                            <div style={{ marginLeft: "auto", display: "flex", gap: "0.35rem" }}>
+                                                <button className={styles.actionBtn} onClick={() => openNoteModal(n)}>Edit</button>
+                                                <button className={styles.actionBtnDanger} onClick={() => deleteNoteUI(n.note_id)}>Delete</button>
+                                            </div>
+                                        </div>
+                                        <div className={styles.noteCardBody}>{n.note_text}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Note add/edit modal */}
+                        {showNoteModal && (
+                            <div className={styles.overlay} onClick={() => setShowNoteModal(false)}>
+                                <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+                                    <div className={styles.modalTitle}>{editNote ? "Edit Note" : "Add Note"}</div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Type</label>
+                                            <select className={styles.formSelect} value={noteForm.note_type}
+                                                onChange={e => setNoteForm(f => ({ ...f, note_type: e.target.value }))}>
+                                                {NOTE_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Date</label>
+                                            <input type="date" className={styles.formInput} value={noteForm.note_date}
+                                                onChange={e => setNoteForm(f => ({ ...f, note_date: e.target.value }))} />
+                                        </div>
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Note *</label>
+                                        <textarea className={styles.formInput} rows={5} value={noteForm.note_text}
+                                            onChange={e => setNoteForm(f => ({ ...f, note_text: e.target.value }))}
+                                            placeholder="Enter note details…" autoFocus />
+                                    </div>
+                                    {noteErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{noteErr}</div>}
+                                    <div className={styles.modalActions}>
+                                        <button className={styles.btnGhost} onClick={() => setShowNoteModal(false)} disabled={noteSaving}>Cancel</button>
+                                        <button className={styles.btnPrimary} onClick={saveNote} disabled={noteSaving}>{noteSaving ? "Saving…" : editNote ? "Save Changes" : "Add Note"}</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
 
                 {/* ── Court Order add/edit modal ── */}
                 {showOrderModal && (

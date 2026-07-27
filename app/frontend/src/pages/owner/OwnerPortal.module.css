@@ -2851,3 +2851,50 @@
     flex-wrap: wrap;
 }
 .timeSummaryRow strong { color: var(--text-1); }
+
+/* ── Matter Notes — Task #138 ──────────────────────────────────────────────── */
+.notesFeed {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.noteCard {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+}
+
+.noteCardHeader {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.noteCardBody {
+    font-size: 0.88rem;
+    color: var(--text-1);
+    white-space: pre-wrap;
+    line-height: 1.55;
+}
+
+.noteTypeBadge {
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--bg-2);
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.noteTypeBadge[data-type="Call"]        { background: #dbeafe; color: #1d4ed8; }
+.noteTypeBadge[data-type="Meeting"]     { background: #d1fae5; color: #065f46; }
+.noteTypeBadge[data-type="Instruction"] { background: #fef3c7; color: #92400e; }
+.noteTypeBadge[data-type="Email"]       { background: #ede9fe; color: #5b21b6; }
+.noteTypeBadge[data-type="WhatsApp"]    { background: #dcfce7; color: #166534; }
+.noteTypeBadge[data-type="Note"]        { background: var(--bg-2); color: var(--text-2); }

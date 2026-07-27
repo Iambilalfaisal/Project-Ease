@@ -439,6 +439,21 @@ CREATE TABLE IF NOT EXISTS cause_list_entries (
     modified_by TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_cause_list_date ON cause_list_entries(org_id, list_date DESC);
+
+CREATE TABLE IF NOT EXISTS matter_notes (
+    note_id     TEXT    PRIMARY KEY,
+    org_id      TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id   TEXT    NOT NULL REFERENCES matters(matter_id),
+    note_type   TEXT    NOT NULL DEFAULT 'Note',
+    note_text   TEXT    NOT NULL,
+    note_date   TEXT    NOT NULL,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by  TEXT    NOT NULL DEFAULT 'system',
+    modified_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_matter_notes ON matter_notes(matter_id, note_date DESC);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -2997,3 +3012,80 @@ def get_today_cause_list_matches(org_id: str) -> list[dict]:
             (org_id, today),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Matter Notes ──────────────────────────────────────────────────────────────
+
+NOTE_TYPES = ["Note", "Call", "Meeting", "Instruction", "Email", "WhatsApp", "Other"]
+
+
+def get_matter_notes(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT n.*, u.name AS author_name
+               FROM matter_notes n
+               LEFT JOIN users u ON u.user_id = n.created_by
+               WHERE n.matter_id=? AND n.org_id=? AND n.is_active=1
+               ORDER BY n.note_date DESC, n.created_at DESC""",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_matter_note(
+    org_id: str,
+    matter_id: str,
+    note_type: str,
+    note_text: str,
+    note_date: str,
+    actor: str = SYSTEM,
+) -> dict:
+    note_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO matter_notes
+               (note_id, org_id, matter_id, note_type, note_text, note_date,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (note_id, org_id, matter_id, note_type, note_text, note_date,
+             now, actor, now, actor),
+        )
+        row = conn.execute(
+            "SELECT * FROM matter_notes WHERE note_id=?", (note_id,)
+        ).fetchone()
+    return dict(row)
+
+
+def update_matter_note(
+    note_id: str,
+    org_id: str,
+    note_type: str = None,
+    note_text: str = None,
+    note_date: str = None,
+    actor: str = SYSTEM,
+) -> dict:
+    now = _now()
+    allowed = {"note_type", "note_text", "note_date"}
+    updates = {k: v for k, v in {"note_type": note_type, "note_text": note_text, "note_date": note_date}.items() if v is not None}
+    if not updates:
+        with get_conn() as conn:
+            row = conn.execute("SELECT * FROM matter_notes WHERE note_id=? AND org_id=?", (note_id, org_id)).fetchone()
+        return dict(row) if row else {}
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_notes SET {set_clause}, modified_at=?, modified_by=? WHERE note_id=? AND org_id=?",
+            (*updates.values(), now, actor, note_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM matter_notes WHERE note_id=?", (note_id,)).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_matter_note(note_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_notes SET is_active=0, modified_at=?, modified_by=? WHERE note_id=? AND org_id=?",
+            (now, actor, note_id, org_id),
+        )
