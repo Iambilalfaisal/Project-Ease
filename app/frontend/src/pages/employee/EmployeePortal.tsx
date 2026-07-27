@@ -172,6 +172,20 @@ async function exportToWord(
     }
 }
 
+// ── Urdu / RTL helpers ────────────────────────────────────────────────────────
+
+/** True when the string contains at least one Urdu/Arabic script character. */
+function containsUrdu(text: string): boolean {
+    return /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/.test(text);
+}
+
+/** System-prompt injection for Urdu mode (uses >>> prefix for injected_prompt). */
+const URDU_PROMPT_OVERRIDE =
+    ">>>اردو میں جواب دیں۔ پاکستانی عدالتوں اور قانونی ضروریات کے لیے رسمی اردو زبان استعمال کریں۔ " +
+    "جوابات نستعلیق رسم الخط میں لکھیں۔";
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const ChatPanel = ({ orgName, categories }: { orgName: string; categories: PermittedCategory[] }) => {
     const [messages,      setMessages]      = useState<ChatMessage[]>([]);
     const [streamText,    setStreamText]    = useState("");
@@ -179,6 +193,7 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
     const [loading,       setLoading]       = useState(false);
     const [error,         setError]         = useState<string | null>(null);
     const [exportingIdx,  setExportingIdx]  = useState<number | null>(null);
+    const [lang,          setLang]          = useState<"en" | "ur">("en");
     const abortRef  = useRef<AbortController | null>(null);
     const anchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -213,6 +228,7 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                             semantic_ranker:  true,
                             top:              5,
                             suggest_followup_questions: false,
+                            ...(lang === "ur" ? { prompt_template: URDU_PROMPT_OVERRIDE } : {}),
                         }
                     },
                     session_state: null,
@@ -300,9 +316,11 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                             const prevUserMsg = msg.role === "assistant" && i > 0 && messages[i - 1].role === "user"
                                 ? messages[i - 1].content
                                 : "";
+                            const isUrduMsg = containsUrdu(msg.content);
                             return (
                                 <div key={i} className={`${styles.msgRow} ${msg.role === "user" ? styles.msgRowUser : styles.msgRowAssistant}`}>
-                                    <div className={`${styles.msgBubble} ${msg.role === "user" ? styles.msgBubbleUser : styles.msgBubbleAssistant}`}>
+                                    <div className={`${styles.msgBubble} ${msg.role === "user" ? styles.msgBubbleUser : styles.msgBubbleAssistant}${isUrduMsg ? " urduText" : ""}`}
+                                         dir={isUrduMsg ? "rtl" : undefined}>
                                         {msg.content}
                                     </div>
                                     {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
@@ -383,13 +401,31 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
             </div>
 
             <div className={styles.chatInputBar}>
+                {/* Language toggle */}
+                <div className={styles.langToggleRow}>
+                    <span className={styles.langToggleLabel}>Language:</span>
+                    <button
+                        className={lang === "en" ? styles.langBtnActive : styles.langBtn}
+                        onClick={() => setLang("en")}
+                    >EN</button>
+                    <button
+                        className={lang === "ur" ? styles.langBtnActive : styles.langBtn}
+                        onClick={() => setLang("ur")}
+                        title="اردو میں جواب حاصل کریں"
+                    >اردو</button>
+                    {lang === "ur" && (
+                        <span className={styles.urduHint}>AI اردو میں جواب دے گا</span>
+                    )}
+                </div>
+
                 <div className={styles.chatInputRow}>
                     <textarea
-                        className={styles.chatInput}
+                        className={`${styles.chatInput}${lang === "ur" ? " urduInput" : ""}`}
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={onKey}
-                        placeholder="Ask a question about your documents…"
+                        placeholder={lang === "ur" ? "اپنا سوال لکھیں…" : "Ask a question about your documents…"}
+                        dir={lang === "ur" ? "rtl" : undefined}
                         rows={1}
                         disabled={loading && !streamText}
                     />
@@ -397,7 +433,7 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                         <button className={styles.sendBtn} onClick={stop}>Stop</button>
                     ) : (
                         <button className={styles.sendBtn} onClick={() => send(input)} disabled={!input.trim()}>
-                            Ask
+                            {lang === "ur" ? "پوچھیں" : "Ask"}
                         </button>
                     )}
                 </div>

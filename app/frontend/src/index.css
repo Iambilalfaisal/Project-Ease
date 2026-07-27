@@ -83,6 +83,32 @@ body {
     height: 100%;
 }
 
+/* ── Urdu / RTL support (Task #34) ───────────────────────────────────────────
+   Apply .urduText to any element whose content is in Urdu/Nastaliq script.
+   Apply [dir="rtl"] or .rtlWrap to flip layout direction for a block.
+─────────────────────────────────────────────────────────────────────────────*/
+.urduText {
+    font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', Arial, sans-serif !important;
+    direction: rtl;
+    text-align: right;
+    line-height: 2.1;     /* Nastaliq needs more vertical space */
+    letter-spacing: 0;
+}
+
+.rtlWrap {
+    direction: rtl;
+    text-align: right;
+}
+
+/* Input/textarea in Urdu mode */
+textarea.urduInput,
+input.urduInput {
+    direction: rtl;
+    text-align: right;
+    font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', Arial, sans-serif;
+    line-height: 2;
+}
+
 @media (min-width: 480px) {
     html {
         font-size: 13px; /* Slightly larger font size for larger phones */
