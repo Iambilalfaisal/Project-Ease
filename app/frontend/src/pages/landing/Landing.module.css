@@ -1577,3 +1577,109 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Task #47 — Mobile Responsive Additions
+══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+    /* ── Nav ── */
+    .navLinks {
+        display: none;
+    }
+
+    .navActions {
+        gap: 0.4rem;
+    }
+
+    .btnWa {
+        display: none;
+    }
+
+    /* ── Hero ── */
+    .heroInner {
+        padding: 0 1.25rem;
+    }
+
+    .heroTitle {
+        font-size: clamp(1.8rem, 8vw, 2.6rem);
+        line-height: 1.2;
+    }
+
+    .heroSub {
+        font-size: 1rem;
+    }
+
+    .heroCtas {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.65rem;
+    }
+
+    .heroCtas > * {
+        text-align: center;
+    }
+
+    .trustBadges {
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        justify-content: center;
+    }
+
+    /* ── Sections ── */
+    .sectionTitle {
+        font-size: 1.6rem;
+    }
+
+    .sectionInner {
+        padding: 0 1.25rem;
+    }
+
+    /* ── Features ── */
+    .featuresGrid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── Industry cards ── */
+    .industryGrid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── Pricing ── */
+    .pricingGrid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    /* ── Security ── */
+    .securityLayout {
+        flex-direction: column;
+    }
+
+    /* ── Modal full-screen on mobile ── */
+    .overlay {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .modal {
+        max-width: 100% !important;
+        width: 100%;
+        border-radius: 22px 22px 0 0;
+        max-height: 92dvh;
+        overflow-y: auto;
+        padding: 1.75rem 1.25rem 2rem;
+    }
+
+    /* ── Contact form ── */
+    .contactGrid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── Footer ── */
+    .footerInner {
+        flex-direction: column;
+        gap: 0.75rem;
+        text-align: center;
+    }
+}

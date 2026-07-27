@@ -4496,6 +4496,7 @@ const OwnerPortal = () => {
     const [maxDocs,  setMaxDocs]  = useState(20);
     const [maxUsers, setMaxUsers] = useState(5);
     const [loading,  setLoading]  = useState(true);
+    const [navOpen,  setNavOpen]  = useState(false);  // mobile sidebar toggle
 
     const raw  = sessionStorage.getItem("pe_user");
     const user = raw ? JSON.parse(raw) as { name: string; email: string; role: string; org: string } : { name: "Owner", email: "", role: "org_owner", org: "" };
@@ -4568,10 +4569,23 @@ const OwnerPortal = () => {
         window.location.hash = "/";
     };
 
+    const navClick = (id: Panel) => { setPanel(id); setNavOpen(false); };
+
     return (
         <div className={styles.shell}>
+            {/* Mobile top bar */}
+            <div className={styles.mobileTopBar}>
+                <button className={styles.hamburger} onClick={() => setNavOpen(v => !v)} aria-label="Menu">
+                    <span /><span /><span />
+                </button>
+                <span className={styles.mobileLogoText}>Project<span className={styles.logoAccent}> Ease</span></span>
+            </div>
+
+            {/* Mobile overlay */}
+            {navOpen && <div className={styles.navOverlay} onClick={() => setNavOpen(false)} />}
+
             {/* Sidebar */}
-            <aside className={styles.sidebar}>
+            <aside className={`${styles.sidebar} ${navOpen ? styles.sidebarOpen : ""}`}>
                 <div className={styles.sidebarLogo}>
                     Project<span className={styles.logoAccent}> Ease</span>
                 </div>
@@ -4586,7 +4600,7 @@ const OwnerPortal = () => {
                         <button
                             key={id}
                             className={`${styles.navItem} ${panel === id ? styles.navItemActive : ""}`}
-                            onClick={() => setPanel(id)}
+                            onClick={() => navClick(id)}
                         >
                             <span className={styles.navIconBox}>{icon}</span>
                             {label}

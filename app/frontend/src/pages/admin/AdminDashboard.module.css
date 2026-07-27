@@ -664,3 +664,28 @@
     .sidebarFooter { padding: 0.75rem 0.5rem; }
     .sidebarUserBox { display: none; }
 }
+
+/* Task #47 — extra mobile polish */
+@media (max-width: 480px) {
+    .shell { height: auto; min-height: 100dvh; }
+    .sidebar {
+        width: 100%;
+        flex-direction: row;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
+        padding: 0.5rem 0.5rem;
+    }
+    .sidebar .navItem { white-space: nowrap; font-size: 0.78rem; padding: 0.4rem 0.6rem; }
+    .sidebar .navItem span:not(.navIcon) { display: inline; }
+    .sidebarLogo { display: none; }
+    .sidebarFooter { display: none; }
+    .main { overflow: auto; height: auto; }
+    .tableWrap { overflow-x: auto; }
+    table { min-width: 480px; }
+    .overlay { align-items: flex-end; padding: 0; }
+    .modal { max-width: 100% !important; width: 100%; border-radius: 16px 16px 0 0; max-height: 90dvh; overflow-y: auto; }
+    .panelHeader { padding: 1rem 1rem 0; }
+    .panelBody { padding: 1rem; }
+}

@@ -717,3 +717,83 @@
     font-family: 'Noto Nastaliq Urdu', sans-serif;
     direction: rtl;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Task #47 — Mobile Responsive Styles
+══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+    .shell {
+        flex-direction: column;
+        height: 100dvh;
+        overflow: hidden;
+    }
+
+    /* Sidebar becomes a top tab bar */
+    .sidebar {
+        width: 100%;
+        min-width: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        height: auto;
+        flex-shrink: 0;
+        padding: 0.5rem 0.75rem;
+        gap: 0.35rem;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Nav buttons become compact chips */
+    .navItem,
+    .navItemActive {
+        white-space: nowrap;
+        font-size: 0.8rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 100px;
+        min-width: auto;
+        flex-shrink: 0;
+    }
+
+    .navIcon { display: none; }
+
+    /* Logo / org name compact */
+    .orgHeader {
+        display: none;
+    }
+
+    /* Chat takes remaining height */
+    .chatPanel {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Input row stacks on narrow screens */
+    .inputRow {
+        flex-wrap: nowrap;
+        gap: 0.4rem;
+    }
+
+    .chatInput {
+        font-size: 0.9rem;
+    }
+
+    /* Source list expands full width */
+    .sourceList {
+        max-height: 150px;
+    }
+
+    /* Message bubbles use more width */
+    .msgBubble {
+        max-width: 95%;
+    }
+
+    /* Export buttons wrap */
+    .exportRow {
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+}

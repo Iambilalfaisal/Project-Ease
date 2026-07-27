@@ -2370,3 +2370,209 @@
     font-size: 0.72rem;
     color: var(--text-3);
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Task #47 — Mobile / Tablet Responsive Styles
+   Breakpoints: ≤768px = mobile, ≤1024px = tablet
+══════════════════════════════════════════════════════════════════ */
+
+/* ── Mobile top bar (hidden on desktop) ───────────────────────── */
+.mobileTopBar {
+    display: none;
+}
+
+.hamburger {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.hamburger span {
+    display: block;
+    width: 22px;
+    height: 2px;
+    background: var(--text-1);
+    border-radius: 2px;
+    transition: all 0.2s;
+}
+
+.mobileLogoText {
+    font-family: var(--serif, Georgia, serif);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-1);
+}
+
+.navOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 99;
+}
+
+@media (max-width: 768px) {
+    /* ── Shell ── */
+    .shell {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+    }
+
+    /* ── Mobile top bar ── */
+    .mobileTopBar {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.6rem 1rem;
+        background: var(--bg-1);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        flex-shrink: 0;
+    }
+
+    /* ── Sidebar (slide-in drawer) ── */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -260px;
+        bottom: 0;
+        width: 240px;
+        z-index: 110;
+        transition: left 0.25s ease;
+        overflow-y: auto;
+    }
+
+    .sidebarOpen {
+        left: 0;
+    }
+
+    .navOverlay {
+        display: block;
+    }
+
+    /* ── Main area ── */
+    .main {
+        flex: 1;
+        overflow: auto;
+        height: auto;
+    }
+
+    .panelHeader {
+        padding: 1rem 1rem 0;
+    }
+
+    .panelBody {
+        padding: 1rem;
+    }
+
+    .panelContent {
+        max-width: 100%;
+    }
+
+    /* ── Tables → horizontal scroll ── */
+    .tableWrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+        min-width: 540px;
+    }
+
+    /* ── Toolbar stacks ── */
+    .panelToolbar {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    /* ── Modals full-width ── */
+    .overlay {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .modal {
+        max-width: 100% !important;
+        width: 100%;
+        border-radius: 16px 16px 0 0;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    /* ── Overview grid → single column ── */
+    .statsGrid {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+    }
+
+    .quickActions {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    /* ── Subscription plan cards → single column ── */
+    .planGrid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── Detail info grid ── */
+    .detailInfoGrid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── Calendar ── */
+    .calGrid {
+        grid-template-columns: repeat(7, 1fr);
+        font-size: 0.72rem;
+    }
+
+    .calCell {
+        padding: 0.25rem 0.1rem;
+        min-height: 48px;
+    }
+
+    /* ── Template grid ── */
+    .templateGrid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── Fee / invoice grids ── */
+    .invoiceGrid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── Limit banner ── */
+    .limitBanner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    /* ── Portal token list ── */
+    .portalTokenRow {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+}
+
+@media (max-width: 1024px) and (min-width: 769px) {
+    /* ── Tablet: narrower sidebar ── */
+    .sidebar {
+        width: 200px;
+    }
+
+    .statsGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .planGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

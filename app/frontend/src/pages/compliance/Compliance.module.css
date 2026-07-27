@@ -398,3 +398,74 @@
     transition: color 0.15s;
 }
 .footerLink:hover { color: var(--gold); }
+
+/* ══════════════════════════════════════════════════════════════════
+   Task #47 — Mobile Responsive Styles
+══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+    .nav {
+        padding: 0 1rem;
+        gap: 0.5rem;
+    }
+
+    .navLinks {
+        display: none;
+    }
+
+    .hero {
+        padding: 3rem 1.25rem 2.25rem;
+    }
+
+    .heroTitle {
+        font-size: 1.75rem;
+        line-height: 1.2;
+    }
+
+    .badgeRow {
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    .section {
+        padding: 2.5rem 1.25rem;
+    }
+
+    .sectionTitle {
+        font-size: 1.35rem;
+    }
+
+    .regionGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .pdpaGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .certGrid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .isolationList {
+        padding: 1rem 1.25rem;
+    }
+
+    .contactBox {
+        flex-direction: column;
+        gap: 0.75rem;
+        padding: 1.25rem;
+    }
+
+    .footer {
+        padding: 1.25rem 1rem;
+        flex-direction: column;
+        gap: 0.5rem;
+        text-align: center;
+    }
+
+    .footerLinks {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}
