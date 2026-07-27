@@ -490,6 +490,17 @@ def _run_migrations(conn: sqlite3.Connection):
         except sqlite3.OperationalError:
             pass
 
+    # Limitation Tracker — Task #132
+    for _col, _def in [
+        ("limitation_type",       "TEXT"),
+        ("cause_of_action_date",  "TEXT"),
+        ("limitation_date",       "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE matters ADD COLUMN {_col} {_def}")
+        except sqlite3.OperationalError:
+            pass
+
 
 def init_db():
     """Create tables if they don't exist, apply migrations, then seed dev data."""
@@ -1364,7 +1375,11 @@ def create_matter(
     status: str = "Active", court_name: Optional[str] = None,
     case_number: Optional[str] = None, filing_date: Optional[str] = None,
     opposing_party: Optional[str] = None, team_id: Optional[str] = None,
-    notes: Optional[str] = None, actor: str = SYSTEM,
+    notes: Optional[str] = None,
+    limitation_type: Optional[str] = None,
+    cause_of_action_date: Optional[str] = None,
+    limitation_date: Optional[str] = None,
+    actor: str = SYSTEM,
 ) -> dict:
     matter_id = secrets.token_hex(10)
     now = _now()
@@ -1373,10 +1388,12 @@ def create_matter(
             """INSERT INTO matters
                (matter_id, org_id, client_id, title, matter_type, status,
                 court_name, case_number, filing_date, opposing_party, team_id, notes,
+                limitation_type, cause_of_action_date, limitation_date,
                 created_at, created_by, modified_at, modified_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (matter_id, org_id, client_id, title, matter_type, status,
              court_name, case_number, filing_date, opposing_party, team_id, notes,
+             limitation_type, cause_of_action_date, limitation_date,
              now, actor, now, actor),
         )
     return {"matter_id": matter_id, "org_id": org_id, "client_id": client_id,
@@ -1385,7 +1402,8 @@ def create_matter(
 
 def update_matter(matter_id: str, org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
     allowed = {"title", "matter_type", "status", "court_name", "case_number",
-               "filing_date", "opposing_party", "team_id", "notes", "client_id"}
+               "filing_date", "opposing_party", "team_id", "notes", "client_id",
+               "limitation_type", "cause_of_action_date", "limitation_date"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return get_matter_with_docs(matter_id, org_id)
@@ -2526,6 +2544,66 @@ def delete_adverse_party(party_id: str, org_id: str, actor: str = SYSTEM):
             "UPDATE adverse_parties SET is_active=0, modified_at=?, modified_by=? WHERE party_id=? AND org_id=?",
             (now, actor, party_id, org_id),
         )
+
+
+# ── Limitation Tracker (Task #132) ───────────────────────────────────────────
+
+# Limitation periods in days (Limitation Act 1908, Pakistan)
+LIMITATION_PERIODS: dict[str, Optional[int]] = {
+    "Contract / Money Recovery":  3 * 365,
+    "Immovable Property (Title)": 12 * 365,
+    "Mortgage Enforcement":       30 * 365,
+    "Tort / Personal Injury":     1 * 365,
+    "Service / Employment":       3 * 365,
+    "Execution of Decree":        3 * 365,
+    "Appeal — High Court":        90,
+    "Appeal — Supreme Court":     30,
+    "Revision":                   90,
+    "Constitutional Petition":    None,   # no fixed period; courts apply laches
+}
+
+
+def compute_limitation_date(
+    limitation_type: str, cause_of_action_date: str
+) -> Optional[str]:
+    """Return the limitation deadline as YYYY-MM-DD, or None if no fixed period."""
+    days = LIMITATION_PERIODS.get(limitation_type)
+    if days is None:
+        return None
+    try:
+        coa = datetime.datetime.strptime(cause_of_action_date, "%Y-%m-%d").date()
+        deadline = coa + datetime.timedelta(days=days)
+        return deadline.strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+
+
+def get_matters_with_approaching_limitation(org_id: str, within_days: int = 60) -> list[dict]:
+    """Return active matters whose limitation_date falls within the next `within_days` days."""
+    today = datetime.date.today()
+    cutoff = (today + datetime.timedelta(days=within_days)).strftime("%Y-%m-%d")
+    today_str = today.strftime("%Y-%m-%d")
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT m.matter_id, m.title, m.case_number, m.limitation_date,
+                      m.limitation_type, c.name AS client_name
+               FROM matters m
+               LEFT JOIN clients c ON c.client_id = m.client_id
+               WHERE m.org_id=? AND m.is_active=1
+                 AND m.limitation_date IS NOT NULL
+                 AND m.limitation_date <= ?
+               ORDER BY m.limitation_date""",
+            (org_id, cutoff),
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        ldate = d.get("limitation_date") or ""
+        d["days_remaining"] = (
+            datetime.datetime.strptime(ldate, "%Y-%m-%d").date() - today
+        ).days if ldate else None
+        result.append(d)
+    return result
 
 
 def get_platform_stats() -> dict:

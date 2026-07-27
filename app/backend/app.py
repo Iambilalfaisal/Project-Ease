@@ -363,6 +363,8 @@ from db import (
     get_court_orders, create_court_order, update_court_order, delete_court_order,
     # Adverse Parties — Task #131
     get_adverse_parties, create_adverse_party, update_adverse_party, delete_adverse_party,
+    # Limitation Tracker — Task #132
+    LIMITATION_PERIODS, compute_limitation_date, get_matters_with_approaching_limitation,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -1927,6 +1929,11 @@ async def add_matter():
     matter_type = (data.get("matter_type")  or "").strip()
     if not client_id or not title or not matter_type:
         return jsonify({"error": "Client, title, and matter type are required"}), 400
+    lim_type = data.get("limitation_type") or None
+    coa_date = data.get("cause_of_action_date") or None
+    lim_date = data.get("limitation_date") or (
+        compute_limitation_date(lim_type, coa_date) if lim_type and coa_date else None
+    )
     matter = create_matter(
         org_id=session.get("org") or "",
         client_id=client_id,
@@ -1939,6 +1946,9 @@ async def add_matter():
         opposing_party=data.get("opposing_party") or None,
         team_id=data.get("team_id") or None,
         notes=data.get("notes") or None,
+        limitation_type=lim_type,
+        cause_of_action_date=coa_date,
+        limitation_date=lim_date,
         actor=session.get("user_id") or SYSTEM,
     )
     _audit(session, "matter_create",
@@ -1965,9 +1975,16 @@ async def edit_matter(matter_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     data = await request.get_json(silent=True) or {}
     # Normalize empty strings to None for nullable fields
-    for k in ("court_name", "case_number", "filing_date", "opposing_party", "team_id", "notes"):
+    for k in ("court_name", "case_number", "filing_date", "opposing_party", "team_id", "notes",
+              "limitation_type", "cause_of_action_date", "limitation_date"):
         if k in data and data[k] == "":
             data[k] = None
+    # Auto-compute limitation_date if type + coa changed but date not explicitly provided
+    if ("limitation_type" in data or "cause_of_action_date" in data) and "limitation_date" not in data:
+        lim_type = data.get("limitation_type")
+        coa_date = data.get("cause_of_action_date")
+        if lim_type and coa_date:
+            data["limitation_date"] = compute_limitation_date(lim_type, coa_date)
     updated = update_matter(
         matter_id, session.get("org") or "",
         actor=session.get("user_id") or SYSTEM,
@@ -2077,6 +2094,18 @@ async def remove_court_order(matter_id: str, order_id: str):
     delete_court_order(order_id, session.get("org") or "",
                        actor=session.get("user_id") or SYSTEM)
     return jsonify({"success": True})
+
+
+# ─── Limitation Alerts (Task #132) ──────────────────────────────────────────
+
+@bp.route("/matters/limitation-alerts", methods=["GET"])
+async def limitation_alerts():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    within = int(request.args.get("within_days", 60))
+    alerts = get_matters_with_approaching_limitation(session.get("org") or "", within_days=within)
+    return jsonify({"alerts": alerts, "limitation_types": list(LIMITATION_PERIODS.keys())})
 
 
 # ─── Adverse Parties (Task #131) ─────────────────────────────────────────────

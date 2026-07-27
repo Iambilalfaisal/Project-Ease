@@ -79,10 +79,13 @@ interface Matter {
     opposing_party?: string;
     team_id?:        string;
     team_name?:      string;
-    notes?:          string;
-    created_at:      string;
-    doc_count?:      number;
-    documents?:      MatterDoc[];
+    notes?:               string;
+    limitation_type?:     string;
+    cause_of_action_date?: string;
+    limitation_date?:     string;
+    created_at:           string;
+    doc_count?:           number;
+    documents?:           MatterDoc[];
 }
 
 interface ClientToken {
@@ -701,13 +704,56 @@ const ClientsPanel = () => {
 
 type MatterStatus = "Active" | "Pending" | "Closed" | "Settled" | "Withdrawn";
 
+const LIMITATION_TYPES = [
+    "Contract / Money Recovery",
+    "Immovable Property (Title)",
+    "Mortgage Enforcement",
+    "Tort / Personal Injury",
+    "Service / Employment",
+    "Execution of Decree",
+    "Appeal — High Court",
+    "Appeal — Supreme Court",
+    "Revision",
+    "Constitutional Petition",
+];
+
+// Pre-computed periods in days matching backend LIMITATION_PERIODS
+const LIMITATION_DAYS: Record<string, number | null> = {
+    "Contract / Money Recovery":  3 * 365,
+    "Immovable Property (Title)": 12 * 365,
+    "Mortgage Enforcement":       30 * 365,
+    "Tort / Personal Injury":     365,
+    "Service / Employment":       3 * 365,
+    "Execution of Decree":        3 * 365,
+    "Appeal — High Court":        90,
+    "Appeal — Supreme Court":     30,
+    "Revision":                   90,
+    "Constitutional Petition":    null,
+};
+
+function computeLimitationDate(limType: string, coaDate: string): string {
+    const days = LIMITATION_DAYS[limType];
+    if (!days || !coaDate) return "";
+    const d = new Date(coaDate);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+}
+
+function limitationDaysRemaining(limitationDate: string): number {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const lim = new Date(limitationDate); lim.setHours(0, 0, 0, 0);
+    return Math.round((lim.getTime() - today.getTime()) / 86400000);
+}
+
 const BLANK_MATTER: {
     client_id: string; title: string; matter_type: string; status: MatterStatus;
     court_name: string; case_number: string; filing_date: string; opposing_party: string;
     team_id: string; notes: string;
+    limitation_type: string; cause_of_action_date: string; limitation_date: string;
 } = {
     client_id: "", title: "", matter_type: MATTER_TYPES[0], status: "Active",
     court_name: "", case_number: "", filing_date: "", opposing_party: "", team_id: "", notes: "",
+    limitation_type: "", cause_of_action_date: "", limitation_date: "",
 };
 
 const MattersPanel = () => {
@@ -758,20 +804,24 @@ const MattersPanel = () => {
     const [partyForm,        setPartyForm]        = useState({ ...BLANK_PARTY });
     const [partySaving,      setPartySaving]      = useState(false);
     const [partyErr,         setPartyErr]         = useState("");
+    // Limitation alerts — Task #132
+    const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
 
     const allCourts = [...DEFAULT_COURTS, ...customCourts.map(c => c.name)];
 
     const loadAll = () => {
         Promise.all([
-            fetch("/matters",      { headers: authHeaders() }).then(r => r.json()),
-            fetch("/clients",      { headers: authHeaders() }).then(r => r.json()),
-            fetch("/matter-teams", { headers: authHeaders() }).then(r => r.json()),
-            fetch("/courts",       { headers: authHeaders() }).then(r => r.json()),
-        ]).then(([md, cd, td, co]) => {
+            fetch("/matters",                    { headers: authHeaders() }).then(r => r.json()),
+            fetch("/clients",                    { headers: authHeaders() }).then(r => r.json()),
+            fetch("/matter-teams",               { headers: authHeaders() }).then(r => r.json()),
+            fetch("/courts",                     { headers: authHeaders() }).then(r => r.json()),
+            fetch("/matters/limitation-alerts",  { headers: authHeaders() }).then(r => r.json()).catch(() => ({ alerts: [] })),
+        ]).then(([md, cd, td, co, la]) => {
             setMatters(md.matters ?? []);
             setClients(cd.clients ?? []);
             setMatterTeams(td.teams ?? []);
             setCustomCourts(co.custom ?? []);
+            setLimAlerts(la.alerts ?? []);
             setLoading(false);
         }).catch(() => setLoading(false));
     };
@@ -1138,6 +1188,40 @@ const MattersPanel = () => {
                     <label className={styles.formLabel}>Notes</label>
                     <input className={styles.formInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Internal notes…" />
                 </div>
+                {/* Limitation fields */}
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
+                    <label className={styles.formLabel} style={{ color: "var(--gold)", fontWeight: 700 }}>⚠ Limitation (Limitation Act 1908)</label>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Suit / Appeal Type</label>
+                    <select className={styles.formSelect} value={form.limitation_type} onChange={e => {
+                        const lt = e.target.value;
+                        const newLimDate = lt && form.cause_of_action_date ? computeLimitationDate(lt, form.cause_of_action_date) : "";
+                        setForm({ ...form, limitation_type: lt, limitation_date: newLimDate });
+                    }}>
+                        <option value="">Not set</option>
+                        {LIMITATION_TYPES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Cause of Action Date</label>
+                    <input type="date" className={styles.formInput} value={form.cause_of_action_date} onChange={e => {
+                        const coa = e.target.value;
+                        const newLimDate = form.limitation_type && coa ? computeLimitationDate(form.limitation_type, coa) : form.limitation_date;
+                        setForm({ ...form, cause_of_action_date: coa, limitation_date: newLimDate });
+                    }} />
+                </div>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Limitation Deadline <span className={styles.muted} style={{ fontWeight: 400 }}>(auto-computed or override)</span></label>
+                    <input type="date" className={styles.formInput} value={form.limitation_date} onChange={e => setForm({ ...form, limitation_date: e.target.value })}
+                        style={form.limitation_date && limitationDaysRemaining(form.limitation_date) <= 30 ? { borderColor: "#c94040" } : {}} />
+                    {form.limitation_date && (() => {
+                        const d = limitationDaysRemaining(form.limitation_date);
+                        return <div style={{ fontSize: "0.78rem", marginTop: "0.3rem", color: d < 0 ? "#c94040" : d <= 30 ? "#c97c2a" : "var(--text-3)" }}>
+                            {d < 0 ? `⚠ Limitation expired ${Math.abs(d)} days ago` : d === 0 ? "⚠ Limitation expires TODAY" : `${d} days remaining`}
+                        </div>;
+                    })()}
+                </div>
             </div>
             <div className={styles.modalActions}>
                 <button className={styles.btnGhost} onClick={onCancel}>Cancel</button>
@@ -1162,6 +1246,9 @@ const MattersPanel = () => {
                                     court_name: detail.court_name ?? "", case_number: detail.case_number ?? "",
                                     filing_date: detail.filing_date ?? "", opposing_party: detail.opposing_party ?? "",
                                     team_id: detail.team_id ?? "", notes: detail.notes ?? "",
+                                    limitation_type: detail.limitation_type ?? "",
+                                    cause_of_action_date: detail.cause_of_action_date ?? "",
+                                    limitation_date: detail.limitation_date ?? "",
                                 });
                                 setFormErr(null); setEditDetail(true);
                             }}>Edit</button>
@@ -1192,6 +1279,21 @@ const MattersPanel = () => {
                             {detail.filing_date   && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Filed</span><span>{detail.filing_date}</span></div>}
                             {detail.opposing_party && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Opposing Party</span><span>{detail.opposing_party}</span></div>}
                             {detail.notes         && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
+                            {detail.limitation_date && (() => {
+                                const d = limitationDaysRemaining(detail.limitation_date!);
+                                return (
+                                    <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}>
+                                        <span className={styles.detailInfoLabel}>Limitation Deadline</span>
+                                        <span>
+                                            {detail.limitation_date}
+                                            {detail.limitation_type && <span className={styles.muted}> ({detail.limitation_type})</span>}
+                                            <span className={d < 0 ? styles.limBadgeCritical : d <= 30 ? styles.limBadgeCritical : d <= 60 ? styles.limBadgeWarn : styles.badgeGreen} style={{ marginLeft: "0.5rem", fontSize: "0.72rem" }}>
+                                                {d < 0 ? `EXPIRED ${Math.abs(d)}d ago` : d === 0 ? "EXPIRES TODAY" : `${d} days left`}
+                                            </span>
+                                        </span>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 )}
@@ -1592,6 +1694,29 @@ const MattersPanel = () => {
                 )}
             </div>
 
+            {/* Limitation alerts banner */}
+            {limAlerts.length > 0 && (
+                <div className={styles.limAlertBanner}>
+                    <strong>⚠ Limitation Approaching</strong>
+                    <div className={styles.limAlertList}>
+                        {limAlerts.map(a => {
+                            const critical = a.days_remaining <= 30;
+                            return (
+                                <div key={a.matter_id} className={critical ? styles.limAlertItemCritical : styles.limAlertItem}>
+                                    <button className={styles.linkBtn} onClick={() => { const m = matters.find(x => x.matter_id === a.matter_id); if (m) openDetail(m); }}>
+                                        {a.title}
+                                    </button>
+                                    <span className={styles.muted}> · {a.client_name}</span>
+                                    <span className={critical ? styles.limBadgeCritical : styles.limBadgeWarn}>
+                                        {a.days_remaining < 0 ? `EXPIRED ${Math.abs(a.days_remaining)}d ago` : a.days_remaining === 0 ? "EXPIRES TODAY" : `${a.days_remaining}d left`}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {loading ? (
                 <div className={styles.emptyHint}>Loading…</div>
             ) : filtered.length === 0 ? (
@@ -1605,9 +1730,18 @@ const MattersPanel = () => {
                             <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
                         </tr></thead>
                         <tbody>
-                            {filtered.map(m => (
+                            {filtered.map(m => {
+                                const limDays = m.limitation_date ? limitationDaysRemaining(m.limitation_date) : null;
+                                return (
                                 <tr key={m.matter_id}>
-                                    <td><button className={styles.linkBtn} onClick={() => openDetail(m)}>{m.title}</button></td>
+                                    <td>
+                                        <button className={styles.linkBtn} onClick={() => openDetail(m)}>{m.title}</button>
+                                        {limDays !== null && limDays <= 60 && (
+                                            <span className={limDays <= 30 ? styles.limBadgeCritical : styles.limBadgeWarn} style={{ marginLeft: "0.4rem" }}>
+                                                {limDays < 0 ? "LIM EXPIRED" : limDays === 0 ? "LIM TODAY" : `LIM ${limDays}d`}
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className={styles.muted}>{m.client_name}</td>
                                     <td className={styles.muted}>{m.matter_type}</td>
                                     <td><span className={(styles as any)[STATUS_BADGE[m.status] ?? "badgeGray"]}>{m.status}</span></td>
@@ -1622,7 +1756,8 @@ const MattersPanel = () => {
                                         </button>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

@@ -2742,3 +2742,60 @@
   gap: 0.35rem;
   margin-top: 0.4rem;
 }
+
+/* ── Limitation Tracker (Task #132) ─────────────────────────────────────── */
+.limAlertBanner {
+  background: #fff8ed;
+  border: 1px solid #e8a030;
+  border-left: 4px solid #c94040;
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.limAlertList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.limAlertItem {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.limAlertItemCritical {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.limBadgeCritical {
+  display: inline-block;
+  background: #fde8e8;
+  color: #c94040;
+  border: 1px solid #f0b0b0;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.limBadgeWarn {
+  display: inline-block;
+  background: #fff3e0;
+  color: #c97c2a;
+  border: 1px solid #f0c87a;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
