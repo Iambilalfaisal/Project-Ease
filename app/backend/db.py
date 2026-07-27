@@ -1383,11 +1383,13 @@ def get_matters(org_id: str, client_id: Optional[str] = None) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             f"""SELECT m.*, c.name AS client_name, t.name AS team_name,
-                       COUNT(DISTINCT CASE WHEN d.is_active=1 THEN d.doc_id END) AS doc_count
+                       COUNT(DISTINCT CASE WHEN d.is_active=1 THEN d.doc_id END) AS doc_count,
+                       COUNT(DISTINCT CASE WHEN co.outcome='Adjourned' AND co.is_active=1 THEN co.order_id END) AS adjournment_count
                 FROM matters m
                 LEFT JOIN clients c ON c.client_id = m.client_id
                 LEFT JOIN matter_teams t ON t.team_id = m.team_id
                 LEFT JOIN documents d ON d.matter_id = m.matter_id
+                LEFT JOIN court_orders co ON co.matter_id = m.matter_id
                 WHERE {where}
                 GROUP BY m.matter_id
                 ORDER BY m.created_at DESC""",
@@ -1466,7 +1468,10 @@ def delete_matter(matter_id: str, org_id: str, actor: str = SYSTEM):
 def get_matter_with_docs(matter_id: str, org_id: str) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT m.*, c.name AS client_name, t.name AS team_name
+            """SELECT m.*, c.name AS client_name, t.name AS team_name,
+                      (SELECT COUNT(*) FROM court_orders co
+                       WHERE co.matter_id=m.matter_id AND co.outcome='Adjourned' AND co.is_active=1
+                      ) AS adjournment_count
                FROM matters m
                LEFT JOIN clients c ON c.client_id = m.client_id
                LEFT JOIN matter_teams t ON t.team_id = m.team_id

@@ -84,6 +84,7 @@ interface Matter {
     cause_of_action_date?: string;
     limitation_date?:      string;
     vakalatnama_status?:   string;
+    adjournment_count?:    number;
     created_at:            string;
     doc_count?:            number;
     documents?:            MatterDoc[];
@@ -1471,6 +1472,18 @@ const MattersPanel = () => {
                                     ))}
                                 </span>
                             </div>
+                            <div className={styles.detailInfoItem}>
+                                <span className={styles.detailInfoLabel}>Adjournments</span>
+                                <span>
+                                    <span className={
+                                        (detail.adjournment_count ?? 0) >= 10 ? styles.limBadgeCritical :
+                                        (detail.adjournment_count ?? 0) >= 5  ? styles.badgeAmber : styles.badgeGray
+                                    } style={{ fontSize: "0.78rem" }}>
+                                        {detail.adjournment_count ?? 0} adjournment{(detail.adjournment_count ?? 0) !== 1 ? "s" : ""}
+                                    </span>
+                                    <span className={styles.muted} style={{ fontSize: "0.75rem", marginLeft: "0.4rem" }}>(from Court Orders log)</span>
+                                </span>
+                            </div>
                             {detail.limitation_date && (() => {
                                 const d = limitationDaysRemaining(detail.limitation_date!);
                                 return (
@@ -1701,7 +1714,18 @@ const MattersPanel = () => {
                 {/* ── Court Orders tab ── */}
                 {detailTab === "orders" && (<>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{orders.length} order{orders.length !== 1 ? "s" : ""} recorded</span>
+                        <div style={{ display: "flex", gap: "1rem", alignItems: "center", fontSize: "0.82rem", color: "var(--text-2)" }}>
+                            <span>{orders.length} order{orders.length !== 1 ? "s" : ""}</span>
+                            {(() => {
+                                const adj = orders.filter(o => o.outcome === "Adjourned").length;
+                                return adj > 0 ? (
+                                    <span className={adj >= 10 ? styles.limBadgeCritical : adj >= 5 ? styles.badgeAmber : styles.badgeGray}
+                                        style={{ fontSize: "0.72rem" }}>
+                                        {adj} adjournment{adj !== 1 ? "s" : ""}
+                                    </span>
+                                ) : null;
+                            })()}
+                        </div>
                         <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openOrderModal()}>+ Add Order</button>
                     </div>
                     {ordersLoading ? (
@@ -2088,7 +2112,7 @@ const MattersPanel = () => {
                 <div className={styles.tableWrap}>
                     <table className={styles.table}>
                         <thead><tr>
-                            <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Vakalatnama</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
+                            <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Vakalatnama</th><th>Adj.</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
                         </tr></thead>
                         <tbody>
                             {filtered.map(m => {
@@ -2113,6 +2137,16 @@ const MattersPanel = () => {
                                         } style={{ fontSize: "0.7rem" }}>
                                             {m.vakalatnama_status ?? "Pending"}
                                         </span>
+                                    </td>
+                                    <td>
+                                        {(m.adjournment_count ?? 0) > 0 ? (
+                                            <span className={
+                                                (m.adjournment_count ?? 0) >= 10 ? styles.limBadgeCritical :
+                                                (m.adjournment_count ?? 0) >= 5  ? styles.badgeAmber : styles.badgeGray
+                                            } style={{ fontSize: "0.7rem" }}>
+                                                {m.adjournment_count}
+                                            </span>
+                                        ) : <span className={styles.muted}>0</span>}
                                     </td>
                                     <td className={styles.muted}>{m.court_name ?? "—"}</td>
                                     <td className={styles.muted}>{m.case_number ?? "—"}</td>
