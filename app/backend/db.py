@@ -508,6 +508,24 @@ CREATE TABLE IF NOT EXISTS matter_deadlines (
     modified_by  TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_matter_deadlines ON matter_deadlines(matter_id, due_date);
+
+CREATE TABLE IF NOT EXISTS matter_expenses (
+    expense_id   TEXT    PRIMARY KEY,
+    org_id       TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id    TEXT    NOT NULL REFERENCES matters(matter_id),
+    description  TEXT    NOT NULL,
+    amount_pkr   REAL    NOT NULL DEFAULT 0,
+    expense_date TEXT    NOT NULL,
+    category     TEXT    NOT NULL DEFAULT 'Misc',
+    billable     INTEGER NOT NULL DEFAULT 1,
+    receipt_ref  TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by   TEXT    NOT NULL DEFAULT 'system',
+    modified_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by  TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_matter_expenses ON matter_expenses(matter_id, expense_date);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -3399,4 +3417,84 @@ def delete_matter_deadline(deadline_id: str, org_id: str, actor: str = SYSTEM):
             "UPDATE matter_deadlines SET is_active=0, modified_at=?, modified_by=? "
             "WHERE deadline_id=? AND org_id=?",
             (now, actor, deadline_id, org_id),
+        )
+
+
+# ── Matter Expenses (Task #143) ───────────────────────────────────────────────
+
+EXPENSE_CATEGORIES = ("Court Fees", "Filing", "Travel", "Printing", "Misc")
+
+
+def get_matter_expenses(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM matter_expenses WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY expense_date DESC",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_matter_expense(
+    org_id: str,
+    matter_id: str,
+    description: str,
+    amount_pkr: float,
+    expense_date: str,
+    category: str = "Misc",
+    billable: int = 1,
+    receipt_ref: str | None = None,
+    actor: str = SYSTEM,
+) -> dict:
+    expense_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO matter_expenses (expense_id, org_id, matter_id, description, "
+            "amount_pkr, expense_date, category, billable, receipt_ref, "
+            "created_at, created_by, modified_at, modified_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (expense_id, org_id, matter_id, description, amount_pkr, expense_date,
+             category, billable, receipt_ref, now, actor, now, actor),
+        )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_expenses WHERE expense_id=?", (expense_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_matter_expense(
+    expense_id: str,
+    org_id: str,
+    actor: str = SYSTEM,
+    **kwargs,
+) -> dict:
+    allowed = {"description", "amount_pkr", "expense_date", "category", "billable", "receipt_ref"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return {}
+    now = _now()
+    fields["modified_at"] = now
+    fields["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in fields)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_expenses SET {set_clause} WHERE expense_id=? AND org_id=?",
+            (*fields.values(), expense_id, org_id),
+        )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_expenses WHERE expense_id=?", (expense_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_matter_expense(expense_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_expenses SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE expense_id=? AND org_id=?",
+            (now, actor, expense_id, org_id),
         )

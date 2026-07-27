@@ -383,6 +383,9 @@ from db import (
     # Matter Deadlines — Task #142
     DEADLINE_PRIORITIES, get_matter_deadlines, create_matter_deadline,
     update_matter_deadline, delete_matter_deadline,
+    # Matter Expenses — Task #143
+    EXPENSE_CATEGORIES, get_matter_expenses, create_matter_expense,
+    update_matter_expense, delete_matter_expense,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2577,6 +2580,68 @@ async def remove_matter_deadline(matter_id: str, deadline_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_matter_deadline(deadline_id, session.get("org") or "",
                            actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Matter Expenses — Task #143 ─────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/expenses", methods=["GET"])
+async def list_matter_expenses(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    expenses = get_matter_expenses(matter_id, session.get("org") or "")
+    return jsonify({"expenses": expenses, "categories": list(EXPENSE_CATEGORIES)})
+
+
+@bp.route("/matters/<matter_id>/expenses", methods=["POST"])
+async def add_matter_expense(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("description") or not str(data.get("description", "")).strip():
+        return jsonify({"error": "description required"}), 400
+    if data.get("amount_pkr") is None:
+        return jsonify({"error": "amount_pkr required"}), 400
+    if not data.get("expense_date"):
+        return jsonify({"error": "expense_date required"}), 400
+    expense = create_matter_expense(
+        org_id=session.get("org") or "",
+        matter_id=matter_id,
+        description=data["description"].strip(),
+        amount_pkr=float(data["amount_pkr"]),
+        expense_date=data["expense_date"],
+        category=data.get("category", "Misc"),
+        billable=int(bool(data.get("billable", True))),
+        receipt_ref=data.get("receipt_ref"),
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(expense), 201
+
+
+@bp.route("/matters/<matter_id>/expenses/<expense_id>", methods=["PATCH"])
+async def edit_matter_expense(matter_id: str, expense_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    updated = update_matter_expense(
+        expense_id, session.get("org") or "",
+        actor=session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"description", "amount_pkr", "expense_date", "category", "billable", "receipt_ref"}},
+    )
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/expenses/<expense_id>", methods=["DELETE"])
+async def remove_matter_expense(matter_id: str, expense_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_expense(expense_id, session.get("org") or "",
+                          actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 

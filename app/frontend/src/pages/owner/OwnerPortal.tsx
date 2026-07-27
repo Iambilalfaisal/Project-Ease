@@ -162,6 +162,18 @@ interface MatterDeadline {
     created_at:   string;
 }
 
+interface MatterExpense {
+    expense_id:   string;
+    matter_id:    string;
+    description:  string;
+    amount_pkr:   number;
+    expense_date: string;
+    category:     string;
+    billable:     number;
+    receipt_ref:  string | null;
+    created_at:   string;
+}
+
 interface Witness {
     witness_id:      string;
     matter_id:       string;
@@ -857,7 +869,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -939,6 +951,16 @@ const MattersPanel = () => {
     const [deadlineForm,       setDeadlineForm]       = useState({ ...BLANK_DEADLINE });
     const [deadlineSaving,     setDeadlineSaving]     = useState(false);
     const [deadlineErr,        setDeadlineErr]        = useState("");
+    // Expenses — Task #143
+    const EXPENSE_CATEGORIES_UI = ["Court Fees", "Filing", "Travel", "Printing", "Misc"];
+    const BLANK_EXPENSE = { description: "", amount_pkr: "", expense_date: new Date().toISOString().slice(0, 10), category: "Misc", billable: true, receipt_ref: "" };
+    const [matterExpenses,    setMatterExpenses]    = useState<MatterExpense[]>([]);
+    const [expensesLoading,   setExpensesLoading]   = useState(false);
+    const [showExpenseModal,  setShowExpenseModal]  = useState(false);
+    const [editExpense,       setEditExpense]       = useState<MatterExpense | null>(null);
+    const [expenseForm,       setExpenseForm]       = useState<{ description: string; amount_pkr: string; expense_date: string; category: string; billable: boolean; receipt_ref: string }>({ ...BLANK_EXPENSE });
+    const [expenseSaving,     setExpenseSaving]     = useState(false);
+    const [expenseErr,        setExpenseErr]        = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1271,6 +1293,60 @@ const MattersPanel = () => {
             headers: { ...authHeaders(), "Content-Type": "application/json" },
             body: JSON.stringify({ completed }),
         }).then(() => loadDeadlines(detail.matter_id));
+    };
+
+    // ── Expenses (Task #143) ───────────────────────────────────────────────────
+    const loadExpenses = (matterId: string) => {
+        setExpensesLoading(true);
+        fetch(`/matters/${matterId}/expenses`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setMatterExpenses(d.expenses ?? []))
+            .finally(() => setExpensesLoading(false));
+    };
+
+    const openExpenseModal = (exp?: MatterExpense) => {
+        if (exp) {
+            setEditExpense(exp);
+            setExpenseForm({
+                description: exp.description,
+                amount_pkr: String(exp.amount_pkr),
+                expense_date: exp.expense_date,
+                category: exp.category,
+                billable: exp.billable === 1,
+                receipt_ref: exp.receipt_ref ?? "",
+            });
+        } else {
+            setEditExpense(null);
+            setExpenseForm({ ...BLANK_EXPENSE });
+        }
+        setExpenseErr(""); setShowExpenseModal(true);
+    };
+
+    const saveExpense = async () => {
+        if (!detail) return;
+        if (!expenseForm.description.trim()) { setExpenseErr("Description is required."); return; }
+        const amt = parseFloat(expenseForm.amount_pkr);
+        if (isNaN(amt) || amt < 0) { setExpenseErr("Enter a valid amount."); return; }
+        if (!expenseForm.expense_date) { setExpenseErr("Date is required."); return; }
+        setExpenseSaving(true); setExpenseErr("");
+        const url = editExpense
+            ? `/matters/${detail.matter_id}/expenses/${editExpense.expense_id}`
+            : `/matters/${detail.matter_id}/expenses`;
+        const method = editExpense ? "PATCH" : "POST";
+        const body = { ...expenseForm, amount_pkr: amt, billable: expenseForm.billable ? 1 : 0 };
+        try {
+            const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const e = await r.json(); setExpenseErr(e.error ?? "Save failed."); return; }
+            setShowExpenseModal(false);
+            loadExpenses(detail.matter_id);
+        } catch { setExpenseErr("Network error."); }
+        finally { setExpenseSaving(false); }
+    };
+
+    const deleteExpenseUI = (expenseId: string) => {
+        if (!detail || !confirm("Delete this expense?")) return;
+        fetch(`/matters/${detail.matter_id}/expenses/${expenseId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadExpenses(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -1948,6 +2024,10 @@ const MattersPanel = () => {
                         onClick={() => { setDetailTab("deadlines"); if (detail) loadDeadlines(detail.matter_id); }}>
                         Deadlines ({matterDeadlines.filter(d => !d.completed).length} open)
                     </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "expenses" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("expenses"); if (detail) loadExpenses(detail.matter_id); }}>
+                        Expenses (PKR {matterExpenses.reduce((s, e) => s + e.amount_pkr, 0).toLocaleString()})
+                    </button>
                 </div>
 
                 {/* ── Documents tab ── */}
@@ -2608,6 +2688,105 @@ const MattersPanel = () => {
                         </table>
                     )}
                 </>)}
+
+                {/* ── Expenses tab ── */}
+                {detailTab === "expenses" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                            {matterExpenses.length} expense{matterExpenses.length !== 1 ? "s" : ""} · Total: PKR {matterExpenses.reduce((s, e) => s + e.amount_pkr, 0).toLocaleString()}
+                            {matterExpenses.some(e => e.billable) && (
+                                <> · Billable: PKR {matterExpenses.filter(e => e.billable).reduce((s, e) => s + e.amount_pkr, 0).toLocaleString()}</>
+                            )}
+                        </span>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openExpenseModal()}>+ Add Expense</button>
+                    </div>
+                    {expensesLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : matterExpenses.length === 0 ? (
+                        <div className={styles.emptyHint}>No expenses recorded yet. Track disbursements like court fees, filing charges, and travel costs here.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Category</th>
+                                <th style={{ textAlign: "right" }}>Amount (PKR)</th>
+                                <th>Billable</th>
+                                <th>Receipt</th>
+                                <th style={{ width: 80 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {matterExpenses.map(exp => (
+                                    <tr key={exp.expense_id}>
+                                        <td style={{ whiteSpace: "nowrap" }}>{exp.expense_date}</td>
+                                        <td>{exp.description}</td>
+                                        <td><span style={{ fontSize: "0.75rem", background: "var(--bg-2)", padding: "2px 6px", borderRadius: "var(--radius)" }}>{exp.category}</span></td>
+                                        <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{exp.amount_pkr.toLocaleString()}</td>
+                                        <td style={{ textAlign: "center" }}>{exp.billable ? "✓" : "—"}</td>
+                                        <td style={{ fontSize: "0.75rem", color: "var(--text-2)" }}>{exp.receipt_ref || "—"}</td>
+                                        <td style={{ display: "flex", gap: 4 }}>
+                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openExpenseModal(exp)}>Edit</button>
+                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteExpenseUI(exp.expense_id)}>Del</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colSpan={3} style={{ fontWeight: 600, fontSize: "0.85rem" }}>Total</td>
+                                    <td style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                                        {matterExpenses.reduce((s, e) => s + e.amount_pkr, 0).toLocaleString()}
+                                    </td>
+                                    <td colSpan={3}></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    )}
+                </>)}
+
+                {/* ── Expense add/edit modal ── */}
+                {showExpenseModal && (
+                    <div className={styles.overlay} onClick={() => setShowExpenseModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+                            <div className={styles.modalTitle}>{editExpense ? "Edit Expense" : "Add Expense"}</div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Description *</label>
+                                <input className={styles.formInput} value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. High Court filing fee" />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Amount (PKR) *</label>
+                                    <input type="number" min="0" className={styles.formInput} value={expenseForm.amount_pkr} onChange={e => setExpenseForm(f => ({ ...f, amount_pkr: e.target.value }))} placeholder="0" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Date *</label>
+                                    <input type="date" className={styles.formInput} value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} />
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Category</label>
+                                    <select className={styles.formInput} value={expenseForm.category} onChange={e => setExpenseForm(f => ({ ...f, category: e.target.value }))}>
+                                        {EXPENSE_CATEGORIES_UI.map(c => <option key={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Receipt Ref</label>
+                                    <input className={styles.formInput} value={expenseForm.receipt_ref} onChange={e => setExpenseForm(f => ({ ...f, receipt_ref: e.target.value }))} placeholder="Optional" />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <input type="checkbox" id="exp-billable" checked={expenseForm.billable} onChange={e => setExpenseForm(f => ({ ...f, billable: e.target.checked }))} />
+                                <label htmlFor="exp-billable" style={{ fontSize: "0.85rem" }}>Billable to client</label>
+                            </div>
+                            {expenseErr && <div className={styles.formError}>{expenseErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowExpenseModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveExpense} disabled={expenseSaving}>{expenseSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Deadline add/edit modal ── */}
                 {showDeadlineModal && (
