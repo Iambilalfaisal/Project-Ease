@@ -174,6 +174,19 @@ interface MatterExpense {
     created_at:   string;
 }
 
+interface MatterCorrespondence {
+    corr_id:      string;
+    matter_id:    string;
+    corr_date:    string;
+    direction:    string;
+    corr_type:    string;
+    subject:      string;
+    party:        string | null;
+    reference_no: string | null;
+    notes:        string | null;
+    created_at:   string;
+}
+
 interface Witness {
     witness_id:      string;
     matter_id:       string;
@@ -869,7 +882,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -961,6 +974,17 @@ const MattersPanel = () => {
     const [expenseForm,       setExpenseForm]       = useState<{ description: string; amount_pkr: string; expense_date: string; category: string; billable: boolean; receipt_ref: string }>({ ...BLANK_EXPENSE });
     const [expenseSaving,     setExpenseSaving]     = useState(false);
     const [expenseErr,        setExpenseErr]        = useState("");
+    // Correspondence — Task #144
+    const CORR_DIRECTIONS_UI = ["Sent", "Received"];
+    const CORR_TYPES_UI = ["Letter", "Email", "Notice", "Legal Notice", "Application", "Other"];
+    const BLANK_CORR = { subject: "", corr_date: new Date().toISOString().slice(0, 10), direction: "Sent", corr_type: "Letter", party: "", reference_no: "", notes: "" };
+    const [correspondence,    setCorrespondence]    = useState<MatterCorrespondence[]>([]);
+    const [corrLoading,       setCorrLoading]       = useState(false);
+    const [showCorrModal,     setShowCorrModal]     = useState(false);
+    const [editCorr,          setEditCorr]          = useState<MatterCorrespondence | null>(null);
+    const [corrForm,          setCorrForm]          = useState({ ...BLANK_CORR });
+    const [corrSaving,        setCorrSaving]        = useState(false);
+    const [corrErr,           setCorrErr]           = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1347,6 +1371,59 @@ const MattersPanel = () => {
         if (!detail || !confirm("Delete this expense?")) return;
         fetch(`/matters/${detail.matter_id}/expenses/${expenseId}`, { method: "DELETE", headers: authHeaders() })
             .then(() => loadExpenses(detail.matter_id));
+    };
+
+    // ── Correspondence (Task #144) ────────────────────────────────────────────
+    const loadCorrespondence = (matterId: string) => {
+        setCorrLoading(true);
+        fetch(`/matters/${matterId}/correspondence`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setCorrespondence(d.correspondence ?? []))
+            .finally(() => setCorrLoading(false));
+    };
+
+    const openCorrModal = (item?: MatterCorrespondence) => {
+        if (item) {
+            setEditCorr(item);
+            setCorrForm({
+                subject: item.subject,
+                corr_date: item.corr_date,
+                direction: item.direction,
+                corr_type: item.corr_type,
+                party: item.party ?? "",
+                reference_no: item.reference_no ?? "",
+                notes: item.notes ?? "",
+            });
+        } else {
+            setEditCorr(null);
+            setCorrForm({ ...BLANK_CORR });
+        }
+        setCorrErr(""); setShowCorrModal(true);
+    };
+
+    const saveCorr = async () => {
+        if (!detail) return;
+        if (!corrForm.subject.trim()) { setCorrErr("Subject is required."); return; }
+        if (!corrForm.corr_date) { setCorrErr("Date is required."); return; }
+        setCorrSaving(true); setCorrErr("");
+        const url = editCorr
+            ? `/matters/${detail.matter_id}/correspondence/${editCorr.corr_id}`
+            : `/matters/${detail.matter_id}/correspondence`;
+        const method = editCorr ? "PATCH" : "POST";
+        const body = { ...corrForm, party: corrForm.party || null, reference_no: corrForm.reference_no || null, notes: corrForm.notes || null };
+        try {
+            const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const e = await r.json(); setCorrErr(e.error ?? "Save failed."); return; }
+            setShowCorrModal(false);
+            loadCorrespondence(detail.matter_id);
+        } catch { setCorrErr("Network error."); }
+        finally { setCorrSaving(false); }
+    };
+
+    const deleteCorrUI = (corrId: string) => {
+        if (!detail || !confirm("Delete this correspondence record?")) return;
+        fetch(`/matters/${detail.matter_id}/correspondence/${corrId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadCorrespondence(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -2027,6 +2104,10 @@ const MattersPanel = () => {
                     <button className={`${styles.detailTabBtn}${detailTab === "expenses" ? " " + styles.detailTabBtnActive : ""}`}
                         onClick={() => { setDetailTab("expenses"); if (detail) loadExpenses(detail.matter_id); }}>
                         Expenses (PKR {matterExpenses.reduce((s, e) => s + e.amount_pkr, 0).toLocaleString()})
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "correspondence" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("correspondence"); if (detail) loadCorrespondence(detail.matter_id); }}>
+                        Correspondence ({correspondence.length})
                     </button>
                 </div>
 
@@ -2743,6 +2824,105 @@ const MattersPanel = () => {
                         </table>
                     )}
                 </>)}
+
+                {/* ── Correspondence tab ── */}
+                {detailTab === "correspondence" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                            {correspondence.filter(c => c.direction === "Sent").length} sent · {correspondence.filter(c => c.direction === "Received").length} received
+                        </span>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openCorrModal()}>+ Add Entry</button>
+                    </div>
+                    {corrLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : correspondence.length === 0 ? (
+                        <div className={styles.emptyHint}>No correspondence recorded yet. Log letters, emails, and notices sent or received.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th>Date</th>
+                                <th>Dir.</th>
+                                <th>Type</th>
+                                <th>Subject</th>
+                                <th>Party</th>
+                                <th>Ref #</th>
+                                <th style={{ width: 80 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {correspondence.map(c => (
+                                    <tr key={c.corr_id}>
+                                        <td style={{ whiteSpace: "nowrap" }}>{c.corr_date}</td>
+                                        <td>
+                                            <span style={{
+                                                fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", borderRadius: "var(--radius)",
+                                                background: c.direction === "Sent" ? "rgba(var(--gold-rgb,212,160,23),0.15)" : "rgba(59,130,246,0.12)",
+                                                color: c.direction === "Sent" ? "var(--gold)" : "#3b82f6",
+                                            }}>{c.direction}</span>
+                                        </td>
+                                        <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>{c.corr_type}</td>
+                                        <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.subject}>{c.subject}</td>
+                                        <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>{c.party || "—"}</td>
+                                        <td style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>{c.reference_no || "—"}</td>
+                                        <td style={{ display: "flex", gap: 4 }}>
+                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCorrModal(c)}>Edit</button>
+                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCorrUI(c.corr_id)}>Del</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </>)}
+
+                {/* ── Correspondence add/edit modal ── */}
+                {showCorrModal && (
+                    <div className={styles.overlay} onClick={() => setShowCorrModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+                            <div className={styles.modalTitle}>{editCorr ? "Edit Correspondence" : "Add Correspondence"}</div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Subject *</label>
+                                <input className={styles.formInput} value={corrForm.subject} onChange={e => setCorrForm(f => ({ ...f, subject: e.target.value }))} placeholder="e.g. Notice of Hearing — 15 Aug 2026" />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Date *</label>
+                                    <input type="date" className={styles.formInput} value={corrForm.corr_date} onChange={e => setCorrForm(f => ({ ...f, corr_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Direction</label>
+                                    <select className={styles.formInput} value={corrForm.direction} onChange={e => setCorrForm(f => ({ ...f, direction: e.target.value }))}>
+                                        {CORR_DIRECTIONS_UI.map(d => <option key={d}>{d}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Type</label>
+                                    <select className={styles.formInput} value={corrForm.corr_type} onChange={e => setCorrForm(f => ({ ...f, corr_type: e.target.value }))}>
+                                        {CORR_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Party</label>
+                                    <input className={styles.formInput} value={corrForm.party} onChange={e => setCorrForm(f => ({ ...f, party: e.target.value }))} placeholder="From / To party name" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Reference #</label>
+                                    <input className={styles.formInput} value={corrForm.reference_no} onChange={e => setCorrForm(f => ({ ...f, reference_no: e.target.value }))} placeholder="Optional ref number" />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={3} value={corrForm.notes} onChange={e => setCorrForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional summary or follow-up actions…" />
+                            </div>
+                            {corrErr && <div className={styles.formError}>{corrErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowCorrModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveCorr} disabled={corrSaving}>{corrSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Expense add/edit modal ── */}
                 {showExpenseModal && (

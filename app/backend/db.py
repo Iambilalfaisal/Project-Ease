@@ -526,6 +526,25 @@ CREATE TABLE IF NOT EXISTS matter_expenses (
     modified_by  TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_matter_expenses ON matter_expenses(matter_id, expense_date);
+
+CREATE TABLE IF NOT EXISTS matter_correspondence (
+    corr_id      TEXT    PRIMARY KEY,
+    org_id       TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id    TEXT    NOT NULL REFERENCES matters(matter_id),
+    corr_date    TEXT    NOT NULL,
+    direction    TEXT    NOT NULL DEFAULT 'Sent',
+    corr_type    TEXT    NOT NULL DEFAULT 'Letter',
+    subject      TEXT    NOT NULL,
+    party        TEXT,
+    reference_no TEXT,
+    notes        TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by   TEXT    NOT NULL DEFAULT 'system',
+    modified_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by  TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_matter_correspondence ON matter_correspondence(matter_id, corr_date);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -3497,4 +3516,86 @@ def delete_matter_expense(expense_id: str, org_id: str, actor: str = SYSTEM):
             "UPDATE matter_expenses SET is_active=0, modified_at=?, modified_by=? "
             "WHERE expense_id=? AND org_id=?",
             (now, actor, expense_id, org_id),
+        )
+
+
+# ── Matter Correspondence (Task #144) ────────────────────────────────────────
+
+CORR_DIRECTIONS = ("Sent", "Received")
+CORR_TYPES = ("Letter", "Email", "Notice", "Legal Notice", "Application", "Other")
+
+
+def get_matter_correspondence(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM matter_correspondence WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY corr_date DESC",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_matter_correspondence(
+    org_id: str,
+    matter_id: str,
+    corr_date: str,
+    subject: str,
+    direction: str = "Sent",
+    corr_type: str = "Letter",
+    party: str | None = None,
+    reference_no: str | None = None,
+    notes: str | None = None,
+    actor: str = SYSTEM,
+) -> dict:
+    corr_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO matter_correspondence (corr_id, org_id, matter_id, corr_date, "
+            "direction, corr_type, subject, party, reference_no, notes, "
+            "created_at, created_by, modified_at, modified_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (corr_id, org_id, matter_id, corr_date, direction, corr_type,
+             subject, party, reference_no, notes, now, actor, now, actor),
+        )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_correspondence WHERE corr_id=?", (corr_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_matter_correspondence(
+    corr_id: str,
+    org_id: str,
+    actor: str = SYSTEM,
+    **kwargs,
+) -> dict:
+    allowed = {"corr_date", "direction", "corr_type", "subject", "party", "reference_no", "notes"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return {}
+    now = _now()
+    fields["modified_at"] = now
+    fields["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in fields)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_correspondence SET {set_clause} WHERE corr_id=? AND org_id=?",
+            (*fields.values(), corr_id, org_id),
+        )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_correspondence WHERE corr_id=?", (corr_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_matter_correspondence(corr_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_correspondence SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE corr_id=? AND org_id=?",
+            (now, actor, corr_id, org_id),
         )

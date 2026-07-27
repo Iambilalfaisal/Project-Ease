@@ -386,6 +386,9 @@ from db import (
     # Matter Expenses — Task #143
     EXPENSE_CATEGORIES, get_matter_expenses, create_matter_expense,
     update_matter_expense, delete_matter_expense,
+    # Matter Correspondence — Task #144
+    CORR_DIRECTIONS, CORR_TYPES, get_matter_correspondence, create_matter_correspondence,
+    update_matter_correspondence, delete_matter_correspondence,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2642,6 +2645,67 @@ async def remove_matter_expense(matter_id: str, expense_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_matter_expense(expense_id, session.get("org") or "",
                           actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Matter Correspondence — Task #144 ───────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/correspondence", methods=["GET"])
+async def list_matter_correspondence(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    items = get_matter_correspondence(matter_id, session.get("org") or "")
+    return jsonify({"correspondence": items, "directions": list(CORR_DIRECTIONS), "types": list(CORR_TYPES)})
+
+
+@bp.route("/matters/<matter_id>/correspondence", methods=["POST"])
+async def add_matter_correspondence(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("subject") or not str(data.get("subject", "")).strip():
+        return jsonify({"error": "subject required"}), 400
+    if not data.get("corr_date"):
+        return jsonify({"error": "corr_date required"}), 400
+    item = create_matter_correspondence(
+        org_id=session.get("org") or "",
+        matter_id=matter_id,
+        corr_date=data["corr_date"],
+        subject=data["subject"].strip(),
+        direction=data.get("direction", "Sent"),
+        corr_type=data.get("corr_type", "Letter"),
+        party=data.get("party"),
+        reference_no=data.get("reference_no"),
+        notes=data.get("notes"),
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(item), 201
+
+
+@bp.route("/matters/<matter_id>/correspondence/<corr_id>", methods=["PATCH"])
+async def edit_matter_correspondence(matter_id: str, corr_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    updated = update_matter_correspondence(
+        corr_id, session.get("org") or "",
+        actor=session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"corr_date", "direction", "corr_type", "subject", "party", "reference_no", "notes"}},
+    )
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/correspondence/<corr_id>", methods=["DELETE"])
+async def remove_matter_correspondence(matter_id: str, corr_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_correspondence(corr_id, session.get("org") or "",
+                                 actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 
