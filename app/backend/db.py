@@ -10,6 +10,7 @@ Audit columns on every table:
 """
 
 import re
+import uuid
 import sqlite3
 import secrets
 import hashlib
