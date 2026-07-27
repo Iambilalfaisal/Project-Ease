@@ -420,6 +420,8 @@ from db import (
     # Intelligence Notes — Task #158
     get_opposing_counsel, create_opposing_counsel, update_opposing_counsel, delete_opposing_counsel,
     get_judge_notes, create_judge_note, update_judge_note, delete_judge_note,
+    # Feature Flags — Task #162
+    FEATURE_KEYS, FEATURE_LABELS, get_org_flags, set_org_flags, get_all_org_flags,
 )
 # Note: Conflict check (Task #150) reuses get_clients + get_matters already imported above.
 
@@ -3849,6 +3851,41 @@ async def get_diary(date_str: str):
     hearings = get_hearings(org_id, from_date=date_str, to_date=date_str)
     deadlines = get_deadlines(org_id, from_date=date_str, to_date=date_str)
     return jsonify({"date": date_str, "hearings": hearings, "deadlines": deadlines})
+
+
+# ── Feature Flags — Task #162 ─────────────────────────────────────────────────
+
+@bp.route("/org-flags", methods=["GET"])
+async def read_org_flags():
+    """Owner/employee reads their own org's feature flags."""
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    flags = get_org_flags(session.get("org") or "")
+    return jsonify({"flags": flags, "feature_labels": FEATURE_LABELS})
+
+
+@bp.route("/admin/org-flags", methods=["GET"])
+async def admin_list_org_flags_route():
+    """Admin reads feature flags for every active org."""
+    session = _get_session()
+    if not session or session.get("role") != "admin":
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"orgs": get_all_org_flags(), "feature_keys": list(FEATURE_KEYS), "feature_labels": FEATURE_LABELS})
+
+
+@bp.route("/admin/org-flags/<org_id>", methods=["PUT"])
+async def admin_set_org_flags_route(org_id: str):
+    """Admin sets feature flags for a specific org."""
+    session = _get_session()
+    if not session or session.get("role") != "admin":
+        return jsonify({"error": "Unauthorized"}), 401
+    body  = await request.get_json() or {}
+    flags = body.get("flags", {})
+    actor = session.get("user_id") or SYSTEM
+    result = set_org_flags(org_id, flags, actor=actor)
+    _audit(session, "feature_flags_update", resource_type="org", resource_name=org_id)
+    return jsonify({"flags": result})
 
 
 @bp.route("/deadlines", methods=["GET"])

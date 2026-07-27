@@ -8674,6 +8674,18 @@ const ThemeToggle = () => {
     return <button className={styles.themeToggle} onClick={handle}>{theme === "dark" ? "Light Mode" : "Dark Mode"}</button>;
 };
 
+// ── Disabled Feature Placeholder — Task #162 ─────────────────────────────────
+const DisabledFeature = ({ name }: { name: string }) => (
+    <div className={styles.panel} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 320, gap: 14, textAlign: "center" }}>
+        <div style={{ fontSize: 40 }}>🔒</div>
+        <div style={{ fontWeight: 700, fontSize: 16, color: "var(--text-1)" }}>{name} is disabled</div>
+        <div style={{ color: "var(--text-3)", fontSize: 13, maxWidth: 360 }}>
+            This feature has been turned off for your organisation by the platform administrator.<br />
+            Contact support to have it re-enabled.
+        </div>
+    </div>
+);
+
 // ── Daily Diary Panel — Task #161 ────────────────────────────────────────────
 interface DiaryHearing {
     hearing_id: string; title: string; hearing_time?: string;
@@ -8872,6 +8884,7 @@ const DiaryPanel = () => {
 
 const OwnerPortal = () => {
     const [panel,    setPanel]    = useState<Panel>("overview");
+    const [flags,    setFlags]    = useState<Record<string, boolean>>({});  // Task #162 feature flags
     const [docs,     setDocs]     = useState<DocFile[]>([]);
     const [team,     setTeam]     = useState<TeamMember[]>([]);
     const [usage,    setUsage]    = useState<Usage>({ total_docs: 0, total_bytes: 0 });
@@ -8890,10 +8903,11 @@ const OwnerPortal = () => {
     useEffect(() => {
         const load = async () => {
             try {
-                const [docsRes, teamRes, orgRes] = await Promise.all([
+                const [docsRes, teamRes, orgRes, flagsRes] = await Promise.all([
                     fetch("/documents", { headers: authHeaders() }),
                     fetch("/team",      { headers: authHeaders() }),
                     fetch("/org",       { headers: authHeaders() }),
+                    fetch("/org-flags", { headers: authHeaders() }),
                 ]);
 
                 if (docsRes.ok) {
@@ -8933,6 +8947,11 @@ const OwnerPortal = () => {
                     setMaxDocs(o.max_docs ?? 20);
                     setMaxUsers(o.max_users ?? 5);
                 }
+
+                if (flagsRes.ok) {
+                    const f = await flagsRes.json();
+                    setFlags(f.flags ?? {});
+                }
             } catch { /* silent — fallback to empty state */ }
             setLoading(false);
         };
@@ -8954,7 +8973,21 @@ const OwnerPortal = () => {
         window.location.hash = "/";
     };
 
-    const navClick = (id: Panel) => { setPanel(id); setNavOpen(false); };
+    /** Returns true if a feature is enabled for this org (default true if flags not yet loaded) */
+    const feat = (key: string) => flags[key] !== false;
+
+    // Panels always visible regardless of flags
+    const ALWAYS_ON: Panel[] = ["overview", "subscription", "settings"];
+    // Filter nav by flags — always-on panels are never hidden
+    const visibleNav = NAV.filter(({ id }) =>
+        ALWAYS_ON.includes(id as Panel) || feat(id)
+    );
+
+    const navClick = (id: Panel) => {
+        // If navigating to a disabled panel, redirect to overview
+        if (!ALWAYS_ON.includes(id) && !feat(id)) { setPanel("overview"); setNavOpen(false); return; }
+        setPanel(id); setNavOpen(false);
+    };
 
     return (
         <div className={styles.shell}>
@@ -8981,7 +9014,7 @@ const OwnerPortal = () => {
                 </div>
 
                 <nav className={styles.nav}>
-                    {NAV.map(({ id, icon, label }) => (
+                    {visibleNav.map(({ id, icon, label }) => (
                         <button
                             key={id}
                             className={`${styles.navItem} ${panel === id ? styles.navItemActive : ""}`}
@@ -9032,18 +9065,18 @@ const OwnerPortal = () => {
                     ) : (
                         <>
                             {panel === "overview"      && <OverviewPanel orgName={orgName} docs={docs} team={team} usage={usage} />}
-                            {panel === "documents"     && <DocumentsPanel docs={docs} setDocs={setDocs} usage={usage} plan={plan} onUpgrade={() => setPanel("subscription")} />}
-                            {panel === "clients"       && <ClientsPanel />}
-                            {panel === "matters"       && <MattersPanel />}
-                            {panel === "calendar"      && <CalendarPanel />}
-                            {panel === "invoices"      && <InvoicesPanel />}
-                            {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} maxUsers={maxUsers} onUpgrade={() => setPanel("subscription")} />}
-                            {panel === "drafting"      && <DraftingPanel />}
-                            {panel === "diary"         && <DiaryPanel />}
-                            {panel === "causelist"     && <CauseListPanel />}
-                            {panel === "vakalat"       && <VakalatnamaPanel />}
-                            {panel === "intelligence"  && <IntelligencePanel />}
-                            {panel === "audit"         && <AuditPanel />}
+                            {panel === "documents"     && (feat("documents")    ? <DocumentsPanel docs={docs} setDocs={setDocs} usage={usage} plan={plan} onUpgrade={() => setPanel("subscription")} /> : <DisabledFeature name="Document Library" />)}
+                            {panel === "clients"       && (feat("clients")      ? <ClientsPanel />      : <DisabledFeature name="Client Management" />)}
+                            {panel === "matters"       && (feat("matters")      ? <MattersPanel />      : <DisabledFeature name="Matter Management" />)}
+                            {panel === "calendar"      && (feat("calendar")     ? <CalendarPanel />     : <DisabledFeature name="Court Calendar" />)}
+                            {panel === "invoices"      && (feat("invoices")     ? <InvoicesPanel />     : <DisabledFeature name="Invoices & Fees" />)}
+                            {panel === "team"          && (feat("team")         ? <TeamPanel team={team} setTeam={setTeam} maxUsers={maxUsers} onUpgrade={() => setPanel("subscription")} /> : <DisabledFeature name="Team Members" />)}
+                            {panel === "drafting"      && (feat("drafting")     ? <DraftingPanel />     : <DisabledFeature name="Document Drafting" />)}
+                            {panel === "diary"         && (feat("diary")        ? <DiaryPanel />        : <DisabledFeature name="Daily Diary" />)}
+                            {panel === "causelist"     && (feat("causelist")    ? <CauseListPanel />    : <DisabledFeature name="Cause List" />)}
+                            {panel === "vakalat"       && (feat("vakalat")      ? <VakalatnamaPanel />  : <DisabledFeature name="Vakalatnama Register" />)}
+                            {panel === "intelligence"  && (feat("intelligence") ? <IntelligencePanel /> : <DisabledFeature name="Counsel Intelligence" />)}
+                            {panel === "audit"         && (feat("audit")        ? <AuditPanel />        : <DisabledFeature name="Audit Log" />)}
                             {panel === "subscription"  && (
                                 <SubscriptionPanel
                                     plan={plan}

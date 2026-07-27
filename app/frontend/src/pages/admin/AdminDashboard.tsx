@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "orgs" | "registrations" | "upgrades" | "case_law" | "evals" | "audit" | "settings";
+type Panel = "overview" | "orgs" | "registrations" | "upgrades" | "features" | "case_law" | "evals" | "audit" | "settings";
 
 interface Org {
     org_id:      string;
@@ -1168,6 +1168,189 @@ function fmtBytesAdmin(b: number): string {
     return `${b} B`;
 }
 
+// ── Feature Access Panel — Task #162 ─────────────────────────────────────────
+interface OrgFlagRow { org_id: string; name: string; flags: Record<string, boolean>; }
+
+const FeatureAccessPanel = () => {
+    const [rows,    setRows]    = useState<OrgFlagRow[]>([]);
+    const [keys,    setKeys]    = useState<string[]>([]);
+    const [labels,  setLabels]  = useState<Record<string, string>>({});
+    const [loading, setLoading] = useState(true);
+    const [saving,  setSaving]  = useState<string | null>(null);   // org_id being saved
+    const [search,  setSearch]  = useState("");
+    const [err,     setErr]     = useState<string | null>(null);
+
+    const api = (path: string, opts?: RequestInit) =>
+        fetch(path, { ...opts, headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}`, "Content-Type": "application/json", ...(opts?.headers || {}) } });
+
+    const load = async () => {
+        setLoading(true); setErr(null);
+        try {
+            const r = await api("/admin/org-flags");
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const d = await r.json();
+            setRows(d.orgs || []);
+            setKeys(d.feature_keys || []);
+            setLabels(d.feature_labels || {});
+        } catch (e: any) { setErr(e.message); }
+        finally { setLoading(false); }
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const toggle = async (org_id: string, feature: string, current: boolean) => {
+        // Optimistic update
+        setRows(prev => prev.map(r =>
+            r.org_id === org_id ? { ...r, flags: { ...r.flags, [feature]: !current } } : r
+        ));
+        setSaving(org_id);
+        try {
+            const row = rows.find(r => r.org_id === org_id);
+            const newFlags = { ...(row?.flags || {}), [feature]: !current };
+            const res = await api(`/admin/org-flags/${org_id}`, {
+                method: "PUT", body: JSON.stringify({ flags: newFlags })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const d = await res.json();
+            setRows(prev => prev.map(r => r.org_id === org_id ? { ...r, flags: d.flags } : r));
+        } catch (e: any) {
+            setErr(e.message);
+            // revert on failure
+            setRows(prev => prev.map(r =>
+                r.org_id === org_id ? { ...r, flags: { ...(r.flags || {}), [feature]: current } } : r
+            ));
+        } finally { setSaving(null); }
+    };
+
+    const enableAll  = async (org_id: string) => {
+        const all: Record<string, boolean> = {};
+        keys.forEach(k => all[k] = true);
+        setSaving(org_id);
+        try {
+            const res = await api(`/admin/org-flags/${org_id}`, { method: "PUT", body: JSON.stringify({ flags: all }) });
+            const d = await res.json();
+            setRows(prev => prev.map(r => r.org_id === org_id ? { ...r, flags: d.flags } : r));
+        } finally { setSaving(null); }
+    };
+
+    const disableAll = async (org_id: string) => {
+        const none: Record<string, boolean> = {};
+        keys.forEach(k => none[k] = false);
+        setSaving(org_id);
+        try {
+            const res = await api(`/admin/org-flags/${org_id}`, { method: "PUT", body: JSON.stringify({ flags: none }) });
+            const d = await res.json();
+            setRows(prev => prev.map(r => r.org_id === org_id ? { ...r, flags: d.flags } : r));
+        } finally { setSaving(null); }
+    };
+
+    const filtered = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+
+    // Group features into categories for display
+    const featureGroups: { label: string; keys: string[] }[] = [
+        { label: "Core",        keys: ["documents", "clients", "matters"] },
+        { label: "Calendar",    keys: ["calendar", "diary", "causelist"] },
+        { label: "Finance",     keys: ["invoices", "wht_invoicing"] },
+        { label: "Operations",  keys: ["team", "drafting", "vakalat"] },
+        { label: "Intelligence",keys: ["intelligence", "lhc_lookup"] },
+        { label: "Integrations",keys: ["client_portal", "whatsapp"] },
+        { label: "System",      keys: ["audit"] },
+    ];
+
+    if (loading) return <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-3)" }}>Loading feature flags…</div>;
+
+    return (
+        <div style={{ padding: "1.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+                <h2 style={{ margin: 0, fontSize: 18, color: "var(--text-1)" }}>Feature Access Control</h2>
+                <span style={{ fontSize: 13, color: "var(--text-3)" }}>Toggle features on/off per organisation. Changes take effect immediately.</span>
+                <input
+                    placeholder="Search organisations…"
+                    value={search} onChange={e => setSearch(e.target.value)}
+                    style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-1)", color: "var(--text-1)", fontSize: 13, width: 220 }}
+                />
+            </div>
+            {err && <div style={{ color: "#e53e3e", marginBottom: 12, fontSize: 13 }}>Error: {err}</div>}
+
+            {filtered.length === 0 && <div style={{ color: "var(--text-3)", textAlign: "center", padding: "3rem" }}>No organisations found.</div>}
+
+            {filtered.map(org => {
+                const isSaving = saving === org.org_id;
+                const enabledCount = keys.filter(k => org.flags[k] !== false).length;
+                return (
+                    <div key={org.org_id} style={{
+                        background: "var(--bg-1)", border: "1px solid var(--border)",
+                        borderRadius: 10, marginBottom: 16, overflow: "hidden"
+                    }}>
+                        {/* Org header */}
+                        <div style={{
+                            display: "flex", alignItems: "center", gap: 10, padding: "12px 16px",
+                            borderBottom: "1px solid var(--border)", background: "var(--bg-0)"
+                        }}>
+                            <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text-1)" }}>{org.name}</span>
+                            <span style={{ fontSize: 12, color: "var(--text-3)", marginRight: "auto" }}>
+                                {enabledCount}/{keys.length} features enabled
+                            </span>
+                            {isSaving && <span style={{ fontSize: 12, color: "var(--gold)" }}>Saving…</span>}
+                            <button
+                                onClick={() => enableAll(org.org_id)}
+                                disabled={isSaving}
+                                style={{ fontSize: 12, padding: "3px 10px", borderRadius: 5, border: "1px solid #38a169", background: "transparent", color: "#38a169", cursor: "pointer" }}
+                            >Enable All</button>
+                            <button
+                                onClick={() => disableAll(org.org_id)}
+                                disabled={isSaving}
+                                style={{ fontSize: 12, padding: "3px 10px", borderRadius: 5, border: "1px solid #e53e3e", background: "transparent", color: "#e53e3e", cursor: "pointer" }}
+                            >Disable All</button>
+                        </div>
+
+                        {/* Feature groups */}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 1, background: "var(--border)" }}>
+                            {featureGroups.map(group => (
+                                <div key={group.label} style={{ background: "var(--bg-1)", padding: "12px 16px" }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                                        {group.label}
+                                    </div>
+                                    {group.keys.map(fk => {
+                                        const enabled = org.flags[fk] !== false;
+                                        return (
+                                            <label key={fk} style={{
+                                                display: "flex", alignItems: "center", justifyContent: "space-between",
+                                                padding: "5px 0", cursor: "pointer", gap: 8
+                                            }}>
+                                                <span style={{ fontSize: 13, color: enabled ? "var(--text-1)" : "var(--text-3)" }}>
+                                                    {labels[fk] || fk}
+                                                </span>
+                                                {/* Toggle switch */}
+                                                <span
+                                                    onClick={() => !isSaving && toggle(org.org_id, fk, enabled)}
+                                                    style={{
+                                                        display: "inline-flex", alignItems: "center",
+                                                        width: 40, height: 22, borderRadius: 11,
+                                                        background: enabled ? "var(--gold)" : "var(--border)",
+                                                        position: "relative", cursor: isSaving ? "not-allowed" : "pointer",
+                                                        transition: "background 0.2s", flexShrink: 0
+                                                    }}
+                                                >
+                                                    <span style={{
+                                                        position: "absolute", width: 16, height: 16, borderRadius: "50%",
+                                                        background: "#fff", left: enabled ? 21 : 3,
+                                                        transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
+                                                    }} />
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
 const AdminCaseLawPanel = () => {
     const [docs,       setDocs]       = useState<CaseLawDoc[]>([]);
     const [loading,    setLoading]    = useState(true);
@@ -1383,6 +1566,7 @@ const NAV_ITEMS: { id: Panel; icon: string; label: string }[] = [
     { id: "orgs",           icon: "🏢", label: "Organizations"   },
     { id: "registrations",  icon: "📝", label: "Registrations"   },
     { id: "upgrades",       icon: "⬆️", label: "Upgrade Requests"},
+    { id: "features",       icon: "🔧", label: "Feature Access"  },
     { id: "case_law",       icon: "⚖️", label: "Case Law Library"},
     { id: "evals",          icon: "✅", label: "Eval Quality"    },
     { id: "audit",          icon: "🔍", label: "Audit Log"       },
@@ -1394,6 +1578,7 @@ const PANEL_TITLES: Record<Panel, string> = {
     orgs:          "Organizations",
     registrations: "Pending Registrations",
     upgrades:      "Upgrade Requests",
+    features:      "Feature Access Control",
     case_law:      "Case Law Library",
     evals:         "Eval Quality",
     audit:         "Platform Audit Log",
@@ -1405,6 +1590,7 @@ const PANEL_SUBS: Record<Panel, string> = {
     orgs:          "Manage tenants, plans, and access",
     registrations: "Pending sign-ups awaiting approval",
     upgrades:      "Review bank transfer proofs and approve or reject plan upgrades",
+    features:      "Enable or disable specific features per organisation — changes take effect immediately",
     case_law:      "Upload PLD, SCMR, MLD and CLC volumes — visible to all users during AI search",
     evals:         "AI answer quality scores recorded per query",
     audit:         "All logins, searches, and actions across every organization",
@@ -1489,6 +1675,7 @@ const AdminDashboard = () => {
                             {panel === "orgs"           && <OrgsPanel orgs={orgs} setOrgs={setOrgs} />}
                             {panel === "registrations"  && <RegistrationsPanel />}
                             {panel === "upgrades"       && <AdminUpgradesPanel />}
+                            {panel === "features"       && <FeatureAccessPanel />}
                             {panel === "case_law"       && <AdminCaseLawPanel />}
                             {panel === "evals"          && <EvalsPanel />}
                             {panel === "audit"          && <AdminAuditPanel orgs={orgs.map(o => ({ org_id: o.org_id, name: o.name }))} />}

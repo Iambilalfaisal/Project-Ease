@@ -768,6 +768,16 @@ CREATE TABLE IF NOT EXISTS judge_notes (
     modified_by  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_judge_notes_org ON judge_notes(org_id);
+
+-- ── Feature flags per org (Task #162) ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS org_feature_flags (
+    org_id      TEXT NOT NULL REFERENCES organizations(org_id),
+    feature     TEXT NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    modified_at TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by TEXT NOT NULL DEFAULT 'system',
+    PRIMARY KEY (org_id, feature)
+);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -4660,3 +4670,85 @@ def delete_judge_note(judge_id: str, org_id: str, actor: str = SYSTEM) -> None:
             "UPDATE judge_notes SET is_active=0, modified_at=?, modified_by=? WHERE judge_id=? AND org_id=?",
             (now, actor, judge_id, org_id),
         )
+
+
+# ── Feature Flags (Task #162) ─────────────────────────────────────────────────
+
+FEATURE_KEYS: tuple[str, ...] = (
+    "documents",     # Document Library
+    "clients",       # Client Management
+    "matters",       # Matter Management
+    "calendar",      # Court Calendar
+    "diary",         # Daily Diary
+    "invoices",      # Invoices & Fees
+    "team",          # Team Members
+    "drafting",      # Document Drafting
+    "causelist",     # Cause List
+    "vakalat",       # Vakalatnama Register
+    "intelligence",  # Counsel & Judge Intelligence
+    "audit",         # Audit Log
+    "client_portal", # Client Portal sharing
+    "whatsapp",      # WhatsApp reminders
+    "lhc_lookup",    # LHC Case Status lookup
+    "wht_invoicing", # WHT tax invoicing (§153)
+)
+
+FEATURE_LABELS: dict[str, str] = {
+    "documents":     "Document Library",
+    "clients":       "Client Management",
+    "matters":       "Matter Management",
+    "calendar":      "Court Calendar",
+    "diary":         "Daily Diary",
+    "invoices":      "Invoices & Fees",
+    "team":          "Team Members",
+    "drafting":      "Document Drafting",
+    "causelist":     "Cause List",
+    "vakalat":       "Vakalatnama Register",
+    "intelligence":  "Counsel Intelligence",
+    "audit":         "Audit Log",
+    "client_portal": "Client Portal",
+    "whatsapp":      "WhatsApp",
+    "lhc_lookup":    "LHC Lookup",
+    "wht_invoicing": "WHT Invoicing",
+}
+
+
+def get_org_flags(org_id: str) -> dict[str, bool]:
+    """Return feature flags for an org. Defaults to True (all enabled) for any missing key."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT feature, enabled FROM org_feature_flags WHERE org_id=?", (org_id,)
+        ).fetchall()
+    stored = {r["feature"]: bool(r["enabled"]) for r in rows}
+    return {k: stored.get(k, True) for k in FEATURE_KEYS}
+
+
+def set_org_flags(org_id: str, flags: dict, actor: str = SYSTEM) -> dict[str, bool]:
+    """Upsert feature flags for an org. Unknown keys are silently ignored."""
+    now = _now()
+    with get_conn() as conn:
+        for feature, enabled in flags.items():
+            if feature not in FEATURE_KEYS:
+                continue
+            conn.execute(
+                """INSERT INTO org_feature_flags(org_id, feature, enabled, modified_at, modified_by)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(org_id, feature) DO UPDATE SET
+                       enabled=excluded.enabled,
+                       modified_at=excluded.modified_at,
+                       modified_by=excluded.modified_by""",
+                (org_id, feature, 1 if enabled else 0, now, actor),
+            )
+    return get_org_flags(org_id)
+
+
+def get_all_org_flags() -> list[dict]:
+    """Return flags for every active org — used by admin feature-access panel."""
+    with get_conn() as conn:
+        orgs = conn.execute(
+            "SELECT org_id, name FROM organizations WHERE is_active=1 ORDER BY name"
+        ).fetchall()
+    return [
+        {"org_id": o["org_id"], "name": o["name"], "flags": get_org_flags(o["org_id"])}
+        for o in orgs
+    ]
