@@ -2225,3 +2225,34 @@
 }
 .deleteConfirmBtn:hover:not(:disabled) { opacity: 0.85; }
 .deleteConfirmBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Seat / Doc limit banners (Task #36) ─────────────────────────────────── */
+
+.limitBanner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: rgba(224, 82, 82, 0.08);
+    border: 1px solid rgba(224, 82, 82, 0.3);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    color: #e05252;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.limitUpgradeBtn {
+    background: var(--gold);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+}
+.limitUpgradeBtn:hover { opacity: 0.85; }

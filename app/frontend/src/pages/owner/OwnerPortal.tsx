@@ -1412,19 +1412,21 @@ interface QueueItem {
 
 const MAX_FILE_MB = 50;
 
-const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
+const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
     docs: DocFile[];
     setDocs: React.Dispatch<React.SetStateAction<DocFile[]>>;
     usage: Usage;
     plan: string;
+    onUpgrade: () => void;
 }) => {
     const fileRef = useRef<HTMLInputElement>(null);
-    const [dragging,      setDragging]      = useState(false);
-    const [uploadError,   setUploadError]   = useState<string | null>(null);
-    const [categories,    setCategories]    = useState<Category[]>([]);
-    const [filterCat,     setFilterCat]     = useState<string>("all");
-    const [confirmDelete, setConfirmDelete] = useState<DocFile | null>(null);
-    const [deleting,      setDeleting]      = useState<string | null>(null);
+    const [dragging,         setDragging]         = useState(false);
+    const [uploadError,      setUploadError]      = useState<string | null>(null);
+    const [docLimitReached,  setDocLimitReached]  = useState(false);
+    const [categories,       setCategories]       = useState<Category[]>([]);
+    const [filterCat,        setFilterCat]        = useState<string>("all");
+    const [confirmDelete,    setConfirmDelete]    = useState<DocFile | null>(null);
+    const [deleting,         setDeleting]         = useState<string | null>(null);
 
     // Category modal state
     const [showCatModal, setShowCatModal] = useState(false);
@@ -1499,10 +1501,18 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
 
             if (!res.ok) {
                 setDocs(prev => prev.filter(d => d.doc_id !== tmpId));
-                setQueue(prev => prev.map(q => q.id === item.id
-                    ? { ...q, status: "error", error: data.error ?? "Upload failed." }
-                    : q
-                ));
+                if (data.limit_reached === "docs") {
+                    setDocLimitReached(true);
+                    setQueue(prev => prev.map(q => q.id === item.id
+                        ? { ...q, status: "error", error: "Document limit reached — upgrade your plan." }
+                        : q
+                    ));
+                } else {
+                    setQueue(prev => prev.map(q => q.id === item.id
+                        ? { ...q, status: "error", error: data.error ?? "Upload failed." }
+                        : q
+                    ));
+                }
             } else {
                 const doc = data.doc as { doc_id: string };
                 setDocs(prev => prev.map(d =>
@@ -1584,6 +1594,16 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
 
     return (
         <div className={styles.panelContent}>
+            {/* Doc limit upgrade banner */}
+            {docLimitReached && (
+                <div className={styles.limitBanner}>
+                    <span>
+                        🔒 Document limit reached ({usage.total_docs} / {limit} docs on your current plan).
+                    </span>
+                    <button className={styles.limitUpgradeBtn} onClick={onUpgrade}>Upgrade Plan →</button>
+                </div>
+            )}
+
             {/* Toolbar */}
             <div className={styles.panelToolbar}>
                 <span className={styles.resultCount}>{docs.length} document{docs.length !== 1 ? "s" : ""}</span>
@@ -1626,7 +1646,13 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan }: {
                         />
                     </div>
                     {usagePct >= 80 && (
-                        <div className={styles.usageWarnText}>⚠ Approaching your plan limit. Consider upgrading.</div>
+                        <div className={styles.usageWarnText}>
+                            ⚠ Approaching your plan limit.{" "}
+                            <button
+                                style={{ background: "none", border: "none", color: "var(--gold)", cursor: "pointer", padding: 0, fontSize: "inherit", fontWeight: 600 }}
+                                onClick={onUpgrade}
+                            >Upgrade plan →</button>
+                        </div>
                     )}
                 </div>
             )}
@@ -1988,16 +2014,21 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
 
 // ── Team Panel ────────────────────────────────────────────────────────────────
 
-const TeamPanel = ({ team, setTeam }: {
+const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
     team: TeamMember[];
     setTeam: React.Dispatch<React.SetStateAction<TeamMember[]>>;
+    maxUsers: number;
+    onUpgrade: () => void;
 }) => {
-    const [showModal,   setShowModal]   = useState(false);
-    const [form,        setForm]        = useState({ name: "", email: "", role: "employee" });
-    const [inviteError, setInviteError] = useState<string | null>(null);
-    const [tempCreds,   setTempCreds]   = useState<{ email: string; password: string } | null>(null);
-    const [removing,    setRemoving]    = useState<string | null>(null);
-    const [permMember,  setPermMember]  = useState<TeamMember | null>(null);
+    const [showModal,    setShowModal]    = useState(false);
+    const [form,         setForm]         = useState({ name: "", email: "", role: "employee" });
+    const [inviteError,  setInviteError]  = useState<string | null>(null);
+    const [limitReached, setLimitReached] = useState(false);
+    const [tempCreds,    setTempCreds]    = useState<{ email: string; password: string } | null>(null);
+    const [removing,     setRemoving]     = useState<string | null>(null);
+    const [permMember,   setPermMember]   = useState<TeamMember | null>(null);
+
+    const atLimit = maxUsers > 0 && team.length >= maxUsers;
 
     const invite = async () => {
         if (!form.name.trim() || !form.email.trim()) { setInviteError("Name and email are required."); return; }
@@ -2008,7 +2039,10 @@ const TeamPanel = ({ team, setTeam }: {
                 body: JSON.stringify(form),
             });
             const data = await res.json();
-            if (!res.ok) { setInviteError(data.error ?? "Failed to invite."); return; }
+            if (!res.ok) {
+                if (data.limit_reached === "users") { setLimitReached(true); setShowModal(false); return; }
+                setInviteError(data.error ?? "Failed to invite."); return;
+            }
             setTeam(prev => [...prev, {
                 user_id: data.user_id,
                 name: data.name,
@@ -2036,9 +2070,25 @@ const TeamPanel = ({ team, setTeam }: {
 
     return (
         <div className={styles.panelContent}>
+            {/* Seat limit upgrade banner */}
+            {(limitReached || atLimit) && (
+                <div className={styles.limitBanner}>
+                    <span>
+                        🔒 You've reached your seat limit ({team.length} / {maxUsers} users on your current plan).
+                    </span>
+                    <button className={styles.limitUpgradeBtn} onClick={onUpgrade}>Upgrade Plan →</button>
+                </div>
+            )}
+
             <div className={styles.panelToolbar}>
-                <span className={styles.resultCount}>{team.length} member{team.length !== 1 ? "s" : ""}</span>
-                <button className={styles.btnPrimary} onClick={() => { setShowModal(true); setInviteError(null); }}>
+                <span className={styles.resultCount}>
+                    {team.length} / {maxUsers > 0 ? maxUsers : "∞"} seats used
+                </span>
+                <button
+                    className={styles.btnPrimary}
+                    onClick={() => { if (atLimit) { setLimitReached(true); return; } setShowModal(true); setInviteError(null); }}
+                    title={atLimit ? "Seat limit reached — upgrade to add more members" : undefined}
+                >
                     + Invite Member
                 </button>
             </div>
@@ -4409,12 +4459,12 @@ const OwnerPortal = () => {
                     ) : (
                         <>
                             {panel === "overview"      && <OverviewPanel orgName={orgName} docs={docs} team={team} usage={usage} />}
-                            {panel === "documents"     && <DocumentsPanel docs={docs} setDocs={setDocs} usage={usage} plan={plan} />}
+                            {panel === "documents"     && <DocumentsPanel docs={docs} setDocs={setDocs} usage={usage} plan={plan} onUpgrade={() => setPanel("subscription")} />}
                             {panel === "clients"       && <ClientsPanel />}
                             {panel === "matters"       && <MattersPanel />}
                             {panel === "calendar"      && <CalendarPanel />}
                             {panel === "invoices"      && <InvoicesPanel />}
-                            {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} />}
+                            {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} maxUsers={maxUsers} onUpgrade={() => setPanel("subscription")} />}
                             {panel === "drafting"      && <DraftingPanel />}
                             {panel === "audit"         && <AuditPanel />}
                             {panel === "subscription"  && (
