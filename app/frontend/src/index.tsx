@@ -18,6 +18,7 @@ import OwnerPortal from "./pages/owner/OwnerPortal";
 import EmployeePortal from "./pages/employee/EmployeePortal";
 import SettingsPage from "./pages/settings/SettingsPage";
 import Landing from "./pages/landing/Landing";
+import Compliance from "./pages/compliance/Compliance";
 import LayoutWrapper from "./layoutWrapper";
 import i18next from "./i18n/config";
 import { msalConfig, useLogin } from "./authConfig";
@@ -43,6 +44,10 @@ const router = createHashRouter([
         // PROJECT EASE: landing page is the entry point — marketing + auth forms
         path: "/",
         element: <Landing />
+    },
+    {
+        path: "/compliance",
+        element: <Compliance />
     },
     {
         path: "/admin",

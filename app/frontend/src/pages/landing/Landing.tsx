@@ -634,6 +634,9 @@ const Landing = () => {
                 <span className={styles.footerLogo}>Project Ease</span>
                 <span className={styles.footerCopy}>© 2026 Project Ease. All rights reserved.</span>
                 <div className={styles.footerRight}>
+                    <a href="/#/compliance" className={styles.footerContact} style={{ marginRight: "1.25rem" }}>
+                        Compliance & Security
+                    </a>
                     <a href="mailto:hasan.nasir.acmeone@gmail.com" className={styles.footerContact}>
                         hasan.nasir.acmeone@gmail.com
                     </a>
