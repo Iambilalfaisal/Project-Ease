@@ -187,6 +187,19 @@ interface MatterCorrespondence {
     created_at:   string;
 }
 
+interface MatterChallan {
+    challan_id:        string;
+    matter_id:         string;
+    challan_date:      string | null;
+    challan_type:      string;
+    submitted_in_time: number;
+    witnesses_count:   number;
+    challan_court:     string | null;
+    status:            string;
+    notes:             string | null;
+    created_at:        string;
+}
+
 interface MatterFir {
     fir_id:                   string;
     matter_id:                string;
@@ -940,7 +953,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome" | "charges" | "fir">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome" | "charges" | "fir" | "challan">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -1073,6 +1086,17 @@ const MattersPanel = () => {
     const [chargeForm,        setChargeForm]        = useState<{ section_no: string; description: string; plea: string; charge_framed: boolean; charge_framed_date: string; court: string; notes: string }>({ ...BLANK_CHARGE });
     const [chargeSaving,      setChargeSaving]      = useState(false);
     const [chargeErr,         setChargeErr]         = useState("");
+    // Challan — Task #149
+    const CHALLAN_TYPES_UI   = ["Complete", "Incomplete", "Supplementary"];
+    const CHALLAN_STATUSES_UI = ["Pending", "Submitted", "Returned", "Accepted"];
+    const BLANK_CHALLAN = { challan_date: "", challan_type: "Complete", submitted_in_time: true, witnesses_count: 0, challan_court: "", status: "Pending", notes: "" };
+    const [matterChallanList, setMatterChallanList] = useState<MatterChallan[]>([]);
+    const [challanLoading,    setChallanLoading]    = useState(false);
+    const [showChallanModal,  setShowChallanModal]  = useState(false);
+    const [editChallan,       setEditChallan]       = useState<MatterChallan | null>(null);
+    const [challanForm,       setChallanForm]       = useState<{ challan_date: string; challan_type: string; submitted_in_time: boolean; witnesses_count: number; challan_court: string; status: string; notes: string }>({ ...BLANK_CHALLAN });
+    const [challanSaving,     setChallanSaving]     = useState(false);
+    const [challanErr,        setChallanErr]        = useState("");
     // FIR — Task #148
     const BLANK_FIR = { fir_number: "", police_station: "", district: "", io_name: "", complainant: "", arrest_date: "", sections_at_fir: "", sections_after_challan: "", fir_date: "", notes: "" };
     const [matterFirList,   setMatterFirList]   = useState<MatterFir[]>([]);
@@ -1728,6 +1752,42 @@ const MattersPanel = () => {
         if (!detail || !confirm("Delete this FIR record?")) return;
         fetch(`/matters/${detail.matter_id}/fir/${firId}`, { method: "DELETE", headers: authHeaders() })
             .then(() => loadFir(detail.matter_id));
+    };
+
+    // ── Challan functions — Task #149 ──────────────────────────────────────
+    const BLANK_CHALLAN_FN = { challan_date: "", challan_type: "Complete", submitted_in_time: true, witnesses_count: 0, challan_court: "", status: "Pending", notes: "" };
+    const loadChallan = (matterId: string) => {
+        setChallanLoading(true);
+        fetch(`/matters/${matterId}/challan`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setMatterChallanList(d.challan || []); setChallanLoading(false); })
+            .catch(() => setChallanLoading(false));
+    };
+    const openChallanModal = (c?: MatterChallan) => {
+        setEditChallan(c || null);
+        setChallanErr("");
+        setChallanForm(c ? {
+            challan_date: c.challan_date || "", challan_type: c.challan_type,
+            submitted_in_time: !!c.submitted_in_time, witnesses_count: c.witnesses_count,
+            challan_court: c.challan_court || "", status: c.status, notes: c.notes || "",
+        } : { ...BLANK_CHALLAN_FN });
+        setShowChallanModal(true);
+    };
+    const saveChallan = async () => {
+        if (!detail) return;
+        setChallanSaving(true); setChallanErr("");
+        const url = editChallan ? `/matters/${detail.matter_id}/challan/${editChallan.challan_id}` : `/matters/${detail.matter_id}/challan`;
+        const method = editChallan ? "PATCH" : "POST";
+        const body = { ...challanForm, submitted_in_time: challanForm.submitted_in_time ? 1 : 0 };
+        const res = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        setChallanSaving(false);
+        if (res.ok) { setShowChallanModal(false); loadChallan(detail.matter_id); }
+        else { const d = await res.json(); setChallanErr(d.error || "Save failed"); }
+    };
+    const deleteChallanUI = (challanId: string) => {
+        if (!detail || !confirm("Delete this challan record?")) return;
+        fetch(`/matters/${detail.matter_id}/challan/${challanId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadChallan(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -2428,6 +2488,10 @@ const MattersPanel = () => {
                     <button className={`${styles.detailTabBtn}${detailTab === "fir" ? " " + styles.detailTabBtnActive : ""}`}
                         onClick={() => { setDetailTab("fir"); if (detail) loadFir(detail.matter_id); }}>
                         FIR ({matterFirList.length})
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "challan" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("challan"); if (detail) loadChallan(detail.matter_id); }}>
+                        Challan ({matterChallanList.length})
                     </button>
                 </div>
 
@@ -3244,6 +3308,104 @@ const MattersPanel = () => {
                         </table>
                     )}
                 </>)}
+
+                {/* ── Challan tab ── */}
+                {detailTab === "challan" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Charge sheet / challan submissions</span>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openChallanModal()}>+ Add Challan</button>
+                    </div>
+                    {challanLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : matterChallanList.length === 0 ? (
+                        <div className={styles.emptyHint}>No challan records yet. Track when police submits the charge sheet, whether it was submitted in time, and how many witnesses were included.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>In Time</th>
+                                <th>Witnesses</th>
+                                <th>Court</th>
+                                <th>Status</th>
+                                <th style={{ width: 80 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {matterChallanList.map(c => {
+                                    const statusColour = c.status === "Accepted" ? "#16a34a" : c.status === "Returned" ? "#dc2626" : c.status === "Submitted" ? "#2563eb" : "var(--text-2)";
+                                    return (
+                                        <tr key={c.challan_id}>
+                                            <td style={{ fontSize: "0.82rem" }}>{c.challan_date || "—"}</td>
+                                            <td style={{ fontSize: "0.82rem" }}>{c.challan_type}</td>
+                                            <td style={{ textAlign: "center" }}>
+                                                {c.submitted_in_time
+                                                    ? <span style={{ color: "#16a34a", fontWeight: 700, fontSize: "0.8rem" }}>✓ Yes</span>
+                                                    : <span style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.8rem" }}>✗ No</span>}
+                                            </td>
+                                            <td style={{ textAlign: "center", fontSize: "0.82rem" }}>{c.witnesses_count}</td>
+                                            <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{c.challan_court || "—"}</td>
+                                            <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: statusColour }}>{c.status}</span></td>
+                                            <td style={{ display: "flex", gap: 4 }}>
+                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openChallanModal(c)}>Edit</button>
+                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteChallanUI(c.challan_id)}>Del</button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                </>)}
+
+                {/* ── Challan modal ── */}
+                {showChallanModal && (
+                    <div className={styles.overlay} onClick={() => setShowChallanModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+                            <div className={styles.modalTitle}>{editChallan ? "Edit Challan" : "Add Challan"}</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Challan Date</label>
+                                    <input type="date" className={styles.formInput} value={challanForm.challan_date} onChange={e => setChallanForm(f => ({ ...f, challan_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Type</label>
+                                    <select className={styles.formInput} value={challanForm.challan_type} onChange={e => setChallanForm(f => ({ ...f, challan_type: e.target.value }))}>
+                                        {CHALLAN_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: "0.75rem", alignItems: "center" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                    <input type="checkbox" id="ch-in-time" checked={challanForm.submitted_in_time} onChange={e => setChallanForm(f => ({ ...f, submitted_in_time: e.target.checked }))} />
+                                    <label htmlFor="ch-in-time" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>Submitted in Time</label>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Witnesses</label>
+                                    <input type="number" className={styles.formInput} min={0} value={challanForm.witnesses_count} onChange={e => setChallanForm(f => ({ ...f, witnesses_count: parseInt(e.target.value) || 0 }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Status</label>
+                                    <select className={styles.formInput} value={challanForm.status} onChange={e => setChallanForm(f => ({ ...f, status: e.target.value }))}>
+                                        {CHALLAN_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Court</label>
+                                <input className={styles.formInput} value={challanForm.challan_court} onChange={e => setChallanForm(f => ({ ...f, challan_court: e.target.value }))} placeholder="Optional" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={2} value={challanForm.notes} onChange={e => setChallanForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                            </div>
+                            {challanErr && <div className={styles.formError}>{challanErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowChallanModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveChallan} disabled={challanSaving}>{challanSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ── FIR tab ── */}
                 {detailTab === "fir" && (<>

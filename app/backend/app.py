@@ -399,7 +399,11 @@ from db import (
     update_matter_charge, delete_matter_charge,
     # Matter FIR — Task #148
     get_matter_fir, create_matter_fir, update_matter_fir, delete_matter_fir,
+    # Matter Challan — Task #149
+    CHALLAN_TYPES, CHALLAN_STATUSES,
+    get_matter_challan, create_matter_challan, update_matter_challan, delete_matter_challan,
 )
+# Note: Conflict check (Task #150) reuses get_clients + get_matters already imported above.
 
 # Initialise DB (creates tables + seeds dev data) at import time
 init_db()
@@ -2920,6 +2924,51 @@ async def remove_matter_fir(matter_id: str, fir_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_matter_fir(fir_id, session.get("org") or "",
                       actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Matter Challan — Task #149 ───────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/challan", methods=["GET"])
+async def list_matter_challan(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    records = get_matter_challan(matter_id, session.get("org") or "")
+    return jsonify({"challan": records, "challan_types": list(CHALLAN_TYPES), "challan_statuses": list(CHALLAN_STATUSES)})
+
+
+@bp.route("/matters/<matter_id>/challan", methods=["POST"])
+async def add_matter_challan(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    record = create_matter_challan(
+        matter_id=matter_id, org_id=session.get("org") or "",
+        data=data, actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(record), 201
+
+
+@bp.route("/matters/<matter_id>/challan/<challan_id>", methods=["PATCH"])
+async def edit_matter_challan(matter_id: str, challan_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    updated = update_matter_challan(challan_id, session.get("org") or "", data,
+                                    actor=session.get("user_id") or SYSTEM)
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/challan/<challan_id>", methods=["DELETE"])
+async def remove_matter_challan(matter_id: str, challan_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_challan(challan_id, session.get("org") or "",
+                          actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 
