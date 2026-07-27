@@ -521,6 +521,12 @@ def _run_migrations(conn: sqlite3.Connection):
         except sqlite3.OperationalError:
             pass
 
+    # Vakalatnama Status — Task #134
+    try:
+        conn.execute("ALTER TABLE matters ADD COLUMN vakalatnama_status TEXT NOT NULL DEFAULT 'Pending'")
+    except sqlite3.OperationalError:
+        pass
+
 
 def init_db():
     """Create tables if they don't exist, apply migrations, then seed dev data."""
@@ -1390,6 +1396,8 @@ def get_matters(org_id: str, client_id: Optional[str] = None) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+VAKALATNAMA_STATUSES = ("Not Required", "Pending", "Filed")
+
 def create_matter(
     org_id: str, client_id: str, title: str, matter_type: str,
     status: str = "Active", court_name: Optional[str] = None,
@@ -1399,6 +1407,7 @@ def create_matter(
     limitation_type: Optional[str] = None,
     cause_of_action_date: Optional[str] = None,
     limitation_date: Optional[str] = None,
+    vakalatnama_status: str = "Pending",
     actor: str = SYSTEM,
 ) -> dict:
     matter_id = secrets.token_hex(10)
@@ -1409,11 +1418,13 @@ def create_matter(
                (matter_id, org_id, client_id, title, matter_type, status,
                 court_name, case_number, filing_date, opposing_party, team_id, notes,
                 limitation_type, cause_of_action_date, limitation_date,
+                vakalatnama_status,
                 created_at, created_by, modified_at, modified_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (matter_id, org_id, client_id, title, matter_type, status,
              court_name, case_number, filing_date, opposing_party, team_id, notes,
              limitation_type, cause_of_action_date, limitation_date,
+             vakalatnama_status,
              now, actor, now, actor),
         )
     return {"matter_id": matter_id, "org_id": org_id, "client_id": client_id,
@@ -1423,7 +1434,8 @@ def create_matter(
 def update_matter(matter_id: str, org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
     allowed = {"title", "matter_type", "status", "court_name", "case_number",
                "filing_date", "opposing_party", "team_id", "notes", "client_id",
-               "limitation_type", "cause_of_action_date", "limitation_date"}
+               "limitation_type", "cause_of_action_date", "limitation_date",
+               "vakalatnama_status"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return get_matter_with_docs(matter_id, org_id)

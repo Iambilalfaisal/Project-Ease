@@ -1951,6 +1951,7 @@ async def add_matter():
         limitation_type=lim_type,
         cause_of_action_date=coa_date,
         limitation_date=lim_date,
+        vakalatnama_status=data.get("vakalatnama_status", "Pending"),
         actor=session.get("user_id") or SYSTEM,
     )
     _audit(session, "matter_create",

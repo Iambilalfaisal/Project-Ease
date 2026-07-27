@@ -80,12 +80,13 @@ interface Matter {
     team_id?:        string;
     team_name?:      string;
     notes?:               string;
-    limitation_type?:     string;
+    limitation_type?:      string;
     cause_of_action_date?: string;
-    limitation_date?:     string;
-    created_at:           string;
-    doc_count?:           number;
-    documents?:           MatterDoc[];
+    limitation_date?:      string;
+    vakalatnama_status?:   string;
+    created_at:            string;
+    doc_count?:            number;
+    documents?:            MatterDoc[];
 }
 
 interface ClientToken {
@@ -759,15 +760,19 @@ function limitationDaysRemaining(limitationDate: string): number {
     return Math.round((lim.getTime() - today.getTime()) / 86400000);
 }
 
+const VAKALATNAMA_STATUSES = ["Not Required", "Pending", "Filed"] as const;
+
 const BLANK_MATTER: {
     client_id: string; title: string; matter_type: string; status: MatterStatus;
     court_name: string; case_number: string; filing_date: string; opposing_party: string;
     team_id: string; notes: string;
     limitation_type: string; cause_of_action_date: string; limitation_date: string;
+    vakalatnama_status: string;
 } = {
     client_id: "", title: "", matter_type: MATTER_TYPES[0], status: "Active",
     court_name: "", case_number: "", filing_date: "", opposing_party: "", team_id: "", notes: "",
     limitation_type: "", cause_of_action_date: "", limitation_date: "",
+    vakalatnama_status: "Pending",
 };
 
 const MattersPanel = () => {
@@ -1340,6 +1345,12 @@ const MattersPanel = () => {
                     <label className={styles.formLabel}>Notes</label>
                     <input className={styles.formInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Internal notes…" />
                 </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Vakalatnama Status</label>
+                    <select className={styles.formSelect} value={form.vakalatnama_status} onChange={e => setForm({ ...form, vakalatnama_status: e.target.value })}>
+                        {VAKALATNAMA_STATUSES.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                </div>
                 {/* Limitation fields */}
                 <div className={styles.formGroup} style={{ gridColumn: "1/-1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
                     <label className={styles.formLabel} style={{ color: "var(--gold)", fontWeight: 700 }}>⚠ Limitation (Limitation Act 1908)</label>
@@ -1401,6 +1412,7 @@ const MattersPanel = () => {
                                     limitation_type: detail.limitation_type ?? "",
                                     cause_of_action_date: detail.cause_of_action_date ?? "",
                                     limitation_date: detail.limitation_date ?? "",
+                                    vakalatnama_status: detail.vakalatnama_status ?? "Pending",
                                 });
                                 setFormErr(null); setEditDetail(true);
                             }}>Edit</button>
@@ -1431,6 +1443,34 @@ const MattersPanel = () => {
                             {detail.filing_date   && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Filed</span><span>{detail.filing_date}</span></div>}
                             {detail.opposing_party && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Opposing Party</span><span>{detail.opposing_party}</span></div>}
                             {detail.notes         && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
+                            <div className={styles.detailInfoItem}>
+                                <span className={styles.detailInfoLabel}>Vakalatnama</span>
+                                <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                    <span className={
+                                        detail.vakalatnama_status === "Filed"        ? styles.badgeGreen :
+                                        detail.vakalatnama_status === "Not Required" ? styles.badgeGray  : styles.badgeAmber
+                                    } style={{ fontSize: "0.72rem" }}>
+                                        {detail.vakalatnama_status ?? "Pending"}
+                                    </span>
+                                    {VAKALATNAMA_STATUSES.filter(s => s !== (detail.vakalatnama_status ?? "Pending")).map(s => (
+                                        <button key={s} className={styles.btnGhost} style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem" }}
+                                            onClick={async () => {
+                                                const r = await fetch(`/matters/${detail.matter_id}`, {
+                                                    method: "PATCH",
+                                                    headers: { ...authHeaders(), "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ vakalatnama_status: s }),
+                                                });
+                                                if (r.ok) {
+                                                    const updated = await r.json();
+                                                    setDetail(updated);
+                                                    setMatters(prev => prev.map(m => m.matter_id === updated.matter_id ? { ...m, vakalatnama_status: updated.vakalatnama_status } : m));
+                                                }
+                                            }}>
+                                            → {s}
+                                        </button>
+                                    ))}
+                                </span>
+                            </div>
                             {detail.limitation_date && (() => {
                                 const d = limitationDaysRemaining(detail.limitation_date!);
                                 return (
@@ -2048,7 +2088,7 @@ const MattersPanel = () => {
                 <div className={styles.tableWrap}>
                     <table className={styles.table}>
                         <thead><tr>
-                            <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
+                            <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Vakalatnama</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
                         </tr></thead>
                         <tbody>
                             {filtered.map(m => {
@@ -2066,6 +2106,14 @@ const MattersPanel = () => {
                                     <td className={styles.muted}>{m.client_name}</td>
                                     <td className={styles.muted}>{m.matter_type}</td>
                                     <td><span className={(styles as any)[STATUS_BADGE[m.status] ?? "badgeGray"]}>{m.status}</span></td>
+                                    <td>
+                                        <span className={
+                                            m.vakalatnama_status === "Filed"        ? styles.badgeGreen :
+                                            m.vakalatnama_status === "Not Required" ? styles.badgeGray  : styles.badgeAmber
+                                        } style={{ fontSize: "0.7rem" }}>
+                                            {m.vakalatnama_status ?? "Pending"}
+                                        </span>
+                                    </td>
                                     <td className={styles.muted}>{m.court_name ?? "—"}</td>
                                     <td className={styles.muted}>{m.case_number ?? "—"}</td>
                                     <td className={styles.muted}>{m.team_name ?? "—"}</td>
