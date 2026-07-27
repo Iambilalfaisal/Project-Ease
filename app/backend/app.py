@@ -374,6 +374,9 @@ from db import (
     NOTE_TYPES, get_matter_notes, create_matter_note, update_matter_note, delete_matter_note,
     # Matter Priority — Task #139
     MATTER_PRIORITIES,
+    # Document Requests — Task #140
+    DOC_REQUEST_STATUSES, get_document_requests, create_document_request,
+    update_document_request, delete_document_request,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2387,6 +2390,64 @@ async def remove_matter_note(matter_id: str, note_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_matter_note(note_id, session.get("org") or "",
                        actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Document Requests — Task #140 ──────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/doc-requests", methods=["GET"])
+async def list_doc_requests(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    reqs = get_document_requests(matter_id, session.get("org") or "")
+    return jsonify({"requests": reqs, "statuses": list(DOC_REQUEST_STATUSES)})
+
+
+@bp.route("/matters/<matter_id>/doc-requests", methods=["POST"])
+async def add_doc_request(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data     = await request.get_json(silent=True) or {}
+    doc_name = (data.get("doc_name") or "").strip()
+    if not doc_name:
+        return jsonify({"error": "doc_name required"}), 400
+    req = create_document_request(
+        org_id         = session.get("org") or "",
+        matter_id      = matter_id,
+        doc_name       = doc_name,
+        requested_date = data.get("requested_date") or __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d"),
+        due_date       = data.get("due_date") or None,
+        notes          = data.get("notes") or None,
+        actor          = session.get("user_id") or SYSTEM,
+    )
+    return jsonify(req), 201
+
+
+@bp.route("/matters/<matter_id>/doc-requests/<request_id>", methods=["PATCH"])
+async def edit_doc_request(matter_id: str, request_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    req  = update_document_request(
+        request_id = request_id,
+        org_id     = session.get("org") or "",
+        actor      = session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"doc_name", "requested_date", "due_date", "status", "notes", "received_date"}},
+    )
+    return jsonify(req)
+
+
+@bp.route("/matters/<matter_id>/doc-requests/<request_id>", methods=["DELETE"])
+async def remove_doc_request(matter_id: str, request_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_document_request(request_id, session.get("org") or "",
+                            actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 

@@ -150,6 +150,18 @@ interface TimeEntry {
     created_at:       string;
 }
 
+interface DocRequest {
+    request_id:     string;
+    matter_id:      string;
+    doc_name:       string;
+    requested_date: string;
+    due_date:       string | null;
+    status:         string;
+    notes:          string | null;
+    received_date:  string | null;
+    created_at:     string;
+}
+
 interface AdverseParty {
     party_id:     string;
     matter_id:    string;
@@ -821,7 +833,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -872,6 +884,16 @@ const MattersPanel = () => {
     const [noteForm,       setNoteForm]       = useState({ ...BLANK_NOTE_FORM });
     const [noteSaving,     setNoteSaving]     = useState(false);
     const [noteErr,        setNoteErr]        = useState("");
+    // Document Requests — Task #140
+    const DOC_REQUEST_STATUSES_UI = ["Pending", "Received", "Waived", "Overdue"];
+    const BLANK_DOC_REQ = { doc_name: "", requested_date: new Date().toISOString().slice(0, 10), due_date: "", notes: "", status: "Pending", received_date: "" };
+    const [docRequests,      setDocRequests]      = useState<DocRequest[]>([]);
+    const [docReqLoading,    setDocReqLoading]    = useState(false);
+    const [showDocReqModal,  setShowDocReqModal]  = useState(false);
+    const [editDocReq,       setEditDocReq]       = useState<DocRequest | null>(null);
+    const [docReqForm,       setDocReqForm]       = useState({ ...BLANK_DOC_REQ });
+    const [docReqSaving,     setDocReqSaving]     = useState(false);
+    const [docReqErr,        setDocReqErr]        = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1044,6 +1066,64 @@ const MattersPanel = () => {
         if (!detail || !confirm("Delete this note?")) return;
         fetch(`/matters/${detail.matter_id}/notes/${noteId}`, { method: "DELETE", headers: authHeaders() })
             .then(() => loadNotes(detail.matter_id));
+    };
+
+    // Document Requests — Task #140
+    const loadDocRequests = (matterId: string) => {
+        setDocReqLoading(true);
+        fetch(`/matters/${matterId}/doc-requests`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setDocRequests(d.requests ?? []); setDocReqLoading(false); })
+            .catch(() => setDocReqLoading(false));
+    };
+
+    const openDocReqModal = (req?: DocRequest) => {
+        if (req) {
+            setEditDocReq(req);
+            setDocReqForm({
+                doc_name:       req.doc_name,
+                requested_date: req.requested_date,
+                due_date:       req.due_date ?? "",
+                notes:          req.notes ?? "",
+                status:         req.status,
+                received_date:  req.received_date ?? "",
+            });
+        } else {
+            setEditDocReq(null);
+            setDocReqForm({ ...BLANK_DOC_REQ });
+        }
+        setDocReqErr("");
+        setShowDocReqModal(true);
+    };
+
+    const saveDocReq = () => {
+        if (!detail) return;
+        if (!docReqForm.doc_name.trim()) { setDocReqErr("Document name is required."); return; }
+        setDocReqSaving(true);
+        const url    = editDocReq ? `/matters/${detail.matter_id}/doc-requests/${editDocReq.request_id}` : `/matters/${detail.matter_id}/doc-requests`;
+        const method = editDocReq ? "PATCH" : "POST";
+        const body   = { ...docReqForm, due_date: docReqForm.due_date || null, received_date: docReqForm.received_date || null, notes: docReqForm.notes || null };
+        fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) })
+            .then(r => r.json())
+            .then(() => { setShowDocReqModal(false); loadDocRequests(detail.matter_id); })
+            .catch(() => setDocReqErr("Save failed."))
+            .finally(() => setDocReqSaving(false));
+    };
+
+    const deleteDocReqUI = (reqId: string) => {
+        if (!detail || !confirm("Delete this request?")) return;
+        fetch(`/matters/${detail.matter_id}/doc-requests/${reqId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadDocRequests(detail.matter_id));
+    };
+
+    const markDocReqReceived = (req: DocRequest) => {
+        if (!detail) return;
+        const today = new Date().toISOString().slice(0, 10);
+        fetch(`/matters/${detail.matter_id}/doc-requests/${req.request_id}`, {
+            method: "PATCH",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "Received", received_date: today }),
+        }).then(() => loadDocRequests(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -1709,6 +1789,10 @@ const MattersPanel = () => {
                         onClick={() => { setDetailTab("notes"); if (detail) loadNotes(detail.matter_id); }}>
                         Notes ({matterNotes.length})
                     </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "docreqs" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("docreqs"); if (detail) loadDocRequests(detail.matter_id); }}>
+                        Doc Requests ({docRequests.filter(r => r.status === "Pending" || r.status === "Overdue").length} pending)
+                    </button>
                 </div>
 
                 {/* ── Documents tab ── */}
@@ -2108,6 +2192,108 @@ const MattersPanel = () => {
                                     <div className={styles.modalActions}>
                                         <button className={styles.btnGhost} onClick={() => setShowNoteModal(false)} disabled={noteSaving}>Cancel</button>
                                         <button className={styles.btnPrimary} onClick={saveNote} disabled={noteSaving}>{noteSaving ? "Saving…" : editNote ? "Save Changes" : "Add Note"}</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {/* ── Document Requests tab ── Task #140 */}
+                {detailTab === "docreqs" && (
+                    <>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                                {docRequests.length} request{docRequests.length !== 1 ? "s" : ""} &nbsp;·&nbsp;
+                                {docRequests.filter(r => r.status === "Received").length} received
+                            </span>
+                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openDocReqModal()}>+ Add Request</button>
+                        </div>
+
+                        {docReqLoading ? (
+                            <div className={styles.emptyHint}>Loading…</div>
+                        ) : docRequests.length === 0 ? (
+                            <div className={styles.emptyHint}>No document requests yet. Track what you've asked from the client.</div>
+                        ) : (
+                            <div className={styles.tableWrap}>
+                                <table className={styles.table}>
+                                    <thead><tr>
+                                        <th>Document</th><th>Requested</th><th>Due</th><th>Status</th><th>Received</th><th>Notes</th><th>Actions</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {docRequests.map(r => (
+                                            <tr key={r.request_id}>
+                                                <td><strong>{r.doc_name}</strong></td>
+                                                <td className={styles.muted}>{r.requested_date}</td>
+                                                <td className={styles.muted}>{r.due_date ?? "—"}</td>
+                                                <td>
+                                                    <span className={
+                                                        r.status === "Received" ? styles.badgeGreen :
+                                                        r.status === "Overdue"  ? styles.limBadgeCritical :
+                                                        r.status === "Waived"   ? styles.badgeGray : styles.badgeAmber
+                                                    } style={{ fontSize: "0.7rem" }}>{r.status}</span>
+                                                </td>
+                                                <td className={styles.muted}>{r.received_date ?? "—"}</td>
+                                                <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.notes ?? "—"}</td>
+                                                <td style={{ display: "flex", gap: "0.35rem" }}>
+                                                    {r.status === "Pending" && (
+                                                        <button className={styles.actionBtn} style={{ fontSize: "0.72rem" }} onClick={() => markDocReqReceived(r)}>✓ Received</button>
+                                                    )}
+                                                    <button className={styles.actionBtn} onClick={() => openDocReqModal(r)}>Edit</button>
+                                                    <button className={styles.actionBtnDanger} onClick={() => deleteDocReqUI(r.request_id)}>Delete</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {/* Doc request modal */}
+                        {showDocReqModal && (
+                            <div className={styles.overlay} onClick={() => setShowDocReqModal(false)}>
+                                <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+                                    <div className={styles.modalTitle}>{editDocReq ? "Edit Document Request" : "Add Document Request"}</div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Document Name *</label>
+                                        <input className={styles.formInput} value={docReqForm.doc_name}
+                                            onChange={e => setDocReqForm(f => ({ ...f, doc_name: e.target.value }))}
+                                            placeholder="e.g. CNIC copy, Property title deed, Prior judgments" autoFocus />
+                                    </div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Requested Date</label>
+                                            <input type="date" className={styles.formInput} value={docReqForm.requested_date}
+                                                onChange={e => setDocReqForm(f => ({ ...f, requested_date: e.target.value }))} />
+                                        </div>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Due Date</label>
+                                            <input type="date" className={styles.formInput} value={docReqForm.due_date}
+                                                onChange={e => setDocReqForm(f => ({ ...f, due_date: e.target.value }))} />
+                                        </div>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Status</label>
+                                            <select className={styles.formSelect} value={docReqForm.status}
+                                                onChange={e => setDocReqForm(f => ({ ...f, status: e.target.value }))}>
+                                                {DOC_REQUEST_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Received Date</label>
+                                            <input type="date" className={styles.formInput} value={docReqForm.received_date}
+                                                onChange={e => setDocReqForm(f => ({ ...f, received_date: e.target.value }))} />
+                                        </div>
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Notes</label>
+                                        <input className={styles.formInput} value={docReqForm.notes}
+                                            onChange={e => setDocReqForm(f => ({ ...f, notes: e.target.value }))}
+                                            placeholder="Optional — e.g. remind client on Monday" />
+                                    </div>
+                                    {docReqErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{docReqErr}</div>}
+                                    <div className={styles.modalActions}>
+                                        <button className={styles.btnGhost} onClick={() => setShowDocReqModal(false)} disabled={docReqSaving}>Cancel</button>
+                                        <button className={styles.btnPrimary} onClick={saveDocReq} disabled={docReqSaving}>{docReqSaving ? "Saving…" : editDocReq ? "Save Changes" : "Add Request"}</button>
                                     </div>
                                 </div>
                             </div>

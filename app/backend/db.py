@@ -454,6 +454,24 @@ CREATE TABLE IF NOT EXISTS matter_notes (
     modified_by TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_matter_notes ON matter_notes(matter_id, note_date DESC);
+
+CREATE TABLE IF NOT EXISTS document_requests (
+    request_id    TEXT    PRIMARY KEY,
+    org_id        TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id     TEXT    NOT NULL REFERENCES matters(matter_id),
+    doc_name      TEXT    NOT NULL,
+    requested_date TEXT   NOT NULL,
+    due_date      TEXT,
+    status        TEXT    NOT NULL DEFAULT 'Pending',
+    notes         TEXT,
+    received_date TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by    TEXT    NOT NULL DEFAULT 'system',
+    modified_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by   TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_doc_requests ON document_requests(matter_id, status);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -3096,4 +3114,88 @@ def delete_matter_note(note_id: str, org_id: str, actor: str = SYSTEM):
         conn.execute(
             "UPDATE matter_notes SET is_active=0, modified_at=?, modified_by=? WHERE note_id=? AND org_id=?",
             (now, actor, note_id, org_id),
+        )
+
+
+# ── Document Requests — Task #140 ─────────────────────────────────────────────
+
+DOC_REQUEST_STATUSES = ("Pending", "Received", "Waived", "Overdue")
+
+
+def get_document_requests(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM document_requests
+               WHERE matter_id=? AND org_id=? AND is_active=1
+               ORDER BY
+                   CASE status WHEN 'Pending' THEN 0 WHEN 'Overdue' THEN 1
+                               WHEN 'Received' THEN 2 ELSE 3 END,
+                   due_date ASC NULLS LAST""",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_document_request(
+    org_id: str,
+    matter_id: str,
+    doc_name: str,
+    requested_date: str,
+    due_date: Optional[str] = None,
+    notes: Optional[str] = None,
+    actor: str = SYSTEM,
+) -> dict:
+    request_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO document_requests
+               (request_id, org_id, matter_id, doc_name, requested_date, due_date,
+                status, notes, created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (request_id, org_id, matter_id, doc_name, requested_date, due_date,
+             "Pending", notes, now, actor, now, actor),
+        )
+        row = conn.execute(
+            "SELECT * FROM document_requests WHERE request_id=?", (request_id,)
+        ).fetchone()
+    return dict(row)
+
+
+def update_document_request(
+    request_id: str,
+    org_id: str,
+    actor: str = SYSTEM,
+    **fields,
+) -> dict:
+    allowed = {"doc_name", "requested_date", "due_date", "status", "notes", "received_date"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM document_requests WHERE request_id=? AND org_id=?",
+                (request_id, org_id),
+            ).fetchone()
+        return dict(row) if row else {}
+    now = _now()
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE document_requests SET {set_clause}, modified_at=?, modified_by=? "
+            f"WHERE request_id=? AND org_id=?",
+            (*updates.values(), now, actor, request_id, org_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM document_requests WHERE request_id=?", (request_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_document_request(request_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE document_requests SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE request_id=? AND org_id=?",
+            (now, actor, request_id, org_id),
         )
