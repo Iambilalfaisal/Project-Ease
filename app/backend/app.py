@@ -354,6 +354,9 @@ from db import (
     # Templates & Drafting — Task #38
     list_templates, create_template, get_template, update_template, delete_template,
     TEMPLATE_TYPES,
+    # Client Portal — Task #39
+    create_client_token, get_client_token_by_id, get_client_token_by_value,
+    list_client_tokens, revoke_client_token,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2898,6 +2901,169 @@ async def draft_document():
     resp.headers["Content-Type"]        = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
+
+
+# ─── Client Portal ────────────────────────────────────────────────────────────
+
+@bp.route("/client-tokens", methods=["GET"])
+async def client_tokens_list():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id    = session["organization_id"]
+    client_id = request.args.get("client_id")
+    rows      = list_client_tokens(org_id, client_id if client_id else None)
+    return jsonify(rows)
+
+
+@bp.route("/client-tokens", methods=["POST"])
+async def client_tokens_create():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session["organization_id"]
+    actor  = session["user_id"]
+    body   = await request.get_json(force=True) or {}
+
+    client_id  = (body.get("client_id") or "").strip()
+    matter_id  = (body.get("matter_id") or "").strip() or None
+    label      = (body.get("label") or "").strip() or None
+    expires_at = (body.get("expires_at") or "").strip() or None
+
+    if not client_id:
+        return jsonify({"error": "client_id is required"}), 400
+
+    # Verify client belongs to org
+    clients = get_clients(org_id)
+    if not any(c["client_id"] == client_id for c in clients):
+        return jsonify({"error": "Client not found"}), 404
+
+    row = create_client_token(org_id, client_id, actor,
+                              matter_id=matter_id, label=label, expires_at=expires_at)
+    log_event(org_id=org_id, user_id=actor, event_type="client_token_created",
+              resource_type="client_token", resource_id=row["token_id"],
+              resource_name=row.get("client_name", ""))
+    return jsonify(row), 201
+
+
+@bp.route("/client-tokens/<token_id>", methods=["DELETE"])
+async def client_tokens_revoke(token_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session["organization_id"]
+    actor  = session["user_id"]
+
+    existing = get_client_token_by_id(token_id)
+    if not existing or existing["org_id"] != org_id:
+        return jsonify({"error": "Not found"}), 404
+
+    revoke_client_token(token_id, actor)
+    log_event(org_id=org_id, user_id=actor, event_type="client_token_revoked",
+              resource_type="client_token", resource_id=token_id,
+              resource_name=existing.get("client_name", ""))
+    return jsonify({"ok": True})
+
+
+# ── Unauthenticated portal endpoints (token in query param) ──────────────────
+
+@bp.route("/portal/me", methods=["GET"])
+async def portal_me():
+    """Client fetches their own info using a secret token (no login required)."""
+    token = request.args.get("token", "").strip()
+    if not token:
+        return jsonify({"error": "token is required"}), 400
+    row = get_client_token_by_value(token)
+    if not row:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    return jsonify({
+        "client_name":   row["client_name"],
+        "client_email":  row.get("client_email"),
+        "client_phone":  row.get("client_phone"),
+        "matter_title":  row.get("matter_title"),
+        "matter_type":   row.get("matter_type"),
+        "case_number":   row.get("case_number"),
+        "court_name":    row.get("court_name"),
+        "matter_status": row.get("matter_status"),
+        "org_name":      row["org_name"],
+        "label":         row.get("label"),
+    })
+
+
+@bp.route("/portal/documents", methods=["GET"])
+async def portal_documents():
+    """Client fetches documents shared with them via a token."""
+    token = request.args.get("token", "").strip()
+    if not token:
+        return jsonify({"error": "token is required"}), 400
+    row = get_client_token_by_value(token)
+    if not row:
+        return jsonify({"error": "Invalid or expired token"}), 401
+
+    org_id    = row["org_id"]
+    matter_id = row.get("matter_id")
+
+    # Return documents linked to this matter (or all org docs if no matter scoped)
+    if matter_id:
+        matter = get_matter_with_docs(matter_id)
+        docs   = matter.get("documents", []) if matter else []
+    else:
+        # No matter scope — return nothing (security: don't expose all org docs)
+        docs = []
+
+    return jsonify([{
+        "doc_id":        d["doc_id"],
+        "name":          d.get("filename", d.get("name", "")),
+        "size_bytes":    d.get("size_bytes", 0),
+        "status":        d.get("status", "ready"),
+        "uploaded_at":   d.get("uploaded_at", d.get("created_at", "")),
+        "category_name": d.get("category_name", ""),
+    } for d in docs if d.get("status") == "ready"])
+
+
+@bp.route("/portal/documents/<doc_id>/download", methods=["GET"])
+async def portal_document_download(doc_id: str):
+    """Client downloads a specific document (token-authenticated)."""
+    token = request.args.get("token", "").strip()
+    if not token:
+        return jsonify({"error": "token is required"}), 400
+    row = get_client_token_by_value(token)
+    if not row:
+        return jsonify({"error": "Invalid or expired token"}), 401
+
+    org_id    = row["org_id"]
+    matter_id = row.get("matter_id")
+
+    if not matter_id:
+        return jsonify({"error": "No documents available"}), 403
+
+    # Verify the doc belongs to this matter
+    matter = get_matter_with_docs(matter_id)
+    if not matter:
+        return jsonify({"error": "Matter not found"}), 404
+    doc_ids = [d["doc_id"] for d in (matter.get("documents") or [])]
+    if doc_id not in doc_ids:
+        return jsonify({"error": "Document not found or not shared"}), 403
+
+    # Stream from Azure Blob Storage
+    if not current_app.config.get("AZURE_CONFIGURED"):
+        return jsonify({"error": "Azure not configured"}), 503
+
+    try:
+        blob_manager: BlobManager = current_app.config[CONFIG_GLOBAL_BLOB_MANAGER]
+        # Find doc name from matter docs
+        doc_entry = next((d for d in matter["documents"] if d["doc_id"] == doc_id), None)
+        filename  = doc_entry.get("filename", doc_id) if doc_entry else doc_id
+        stream    = await blob_manager.download_blob(filename)
+        content   = await stream.readall()
+        mime, _   = mimetypes.guess_type(filename)
+        resp = await make_response(content)
+        resp.headers["Content-Type"]        = mime or "application/octet-stream"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+    except Exception as exc:
+        logging.getLogger(__name__).error("Portal download error: %s", exc)
+        return jsonify({"error": "Download failed"}), 500
 
 
 @bp.before_app_serving

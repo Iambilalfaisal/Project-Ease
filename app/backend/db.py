@@ -334,6 +334,23 @@ CREATE TABLE IF NOT EXISTS templates (
     modified_by   TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_templates_org ON templates(org_id, template_type);
+
+CREATE TABLE IF NOT EXISTS client_tokens (
+    token_id    TEXT PRIMARY KEY,
+    token       TEXT NOT NULL UNIQUE,
+    org_id      TEXT NOT NULL REFERENCES organizations(org_id),
+    client_id   TEXT NOT NULL REFERENCES clients(client_id),
+    matter_id   TEXT REFERENCES matters(matter_id),
+    label       TEXT,                                  -- human-readable note, e.g. "Contract Docs – Jan 2026"
+    expires_at  TEXT,                                  -- ISO datetime or NULL for no expiry
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by  TEXT    NOT NULL DEFAULT 'system',
+    modified_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_client_tokens_org ON client_tokens(org_id, client_id);
+CREATE INDEX IF NOT EXISTS idx_client_tokens_token ON client_tokens(token);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -2071,6 +2088,94 @@ def delete_case_law_doc(doc_id: str, actor: str = "system"):
         conn.execute(
             "UPDATE case_law_docs SET is_active=0, modified_at=?, modified_by=? WHERE doc_id=?",
             (_now(), actor, doc_id),
+        )
+
+
+# ── Client Portal Tokens ──────────────────────────────────────────────────────
+
+def create_client_token(
+    org_id: str, client_id: str, actor: str,
+    matter_id: str | None = None,
+    label: str | None = None,
+    expires_at: str | None = None,
+) -> dict:
+    tid   = "ctok_" + secrets.token_hex(8)
+    token = secrets.token_urlsafe(32)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO client_tokens
+               (token_id, token, org_id, client_id, matter_id, label, expires_at,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (tid, token, org_id, client_id, matter_id, label, expires_at,
+             _now(), actor, _now(), actor),
+        )
+    return get_client_token_by_id(tid)
+
+
+def get_client_token_by_id(token_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT ct.*, c.name AS client_name, m.title AS matter_title
+               FROM client_tokens ct
+               JOIN clients c ON ct.client_id = c.client_id
+               LEFT JOIN matters m ON ct.matter_id = m.matter_id
+               WHERE ct.token_id=? AND ct.is_active=1""",
+            (token_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_client_token_by_value(token: str) -> dict | None:
+    """Look up a token by its secret value — used by the unauthenticated portal."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT ct.*, c.name AS client_name, c.email AS client_email,
+                      c.phone AS client_phone,
+                      m.title AS matter_title, m.matter_type, m.case_number,
+                      m.court as court_name, m.status AS matter_status,
+                      o.name AS org_name
+               FROM client_tokens ct
+               JOIN clients c      ON ct.client_id = c.client_id
+               JOIN organizations o ON ct.org_id   = o.org_id
+               LEFT JOIN matters m ON ct.matter_id = m.matter_id
+               WHERE ct.token=? AND ct.is_active=1
+                 AND (ct.expires_at IS NULL OR ct.expires_at > datetime('now'))""",
+            (token,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_client_tokens(org_id: str, client_id: str | None = None) -> list[dict]:
+    with get_conn() as conn:
+        if client_id:
+            rows = conn.execute(
+                """SELECT ct.*, c.name AS client_name, m.title AS matter_title
+                   FROM client_tokens ct
+                   JOIN clients c ON ct.client_id = c.client_id
+                   LEFT JOIN matters m ON ct.matter_id = m.matter_id
+                   WHERE ct.org_id=? AND ct.client_id=? AND ct.is_active=1
+                   ORDER BY ct.created_at DESC""",
+                (org_id, client_id)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT ct.*, c.name AS client_name, m.title AS matter_title
+                   FROM client_tokens ct
+                   JOIN clients c ON ct.client_id = c.client_id
+                   LEFT JOIN matters m ON ct.matter_id = m.matter_id
+                   WHERE ct.org_id=? AND ct.is_active=1
+                   ORDER BY ct.created_at DESC""",
+                (org_id,)
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def revoke_client_token(token_id: str, actor: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE client_tokens SET is_active=0, modified_at=?, modified_by=? WHERE token_id=?",
+            (_now(), actor, token_id),
         )
 
 

@@ -1,0 +1,282 @@
+/* ── Client Portal ───────────────────────────────────────────────────────────
+   Standalone page for external clients — no sidebar, minimal UI
+─────────────────────────────────────────────────────────────────────────────*/
+
+.page {
+    min-height: 100vh;
+    background: var(--bg-0);
+    color: var(--text-1);
+    font-family: var(--sans, system-ui, sans-serif);
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Nav ─────────────────────────────────────────────────────────────────────*/
+
+.nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    height: 56px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-1);
+    flex-shrink: 0;
+}
+
+.navLogo {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gold);
+    font-family: var(--serif, Georgia, serif);
+    letter-spacing: -0.02em;
+}
+
+.navTag {
+    font-size: 0.75rem;
+    color: var(--text-3);
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 0.2rem 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+}
+
+/* ── Content ────────────────────────────────────────────────────────────────*/
+
+.content {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2.5rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    flex: 1;
+    width: 100%;
+}
+
+/* ── Welcome card ────────────────────────────────────────────────────────────*/
+
+.welcomeCard {
+    background: linear-gradient(135deg, rgba(184,150,76,0.08) 0%, var(--bg-1) 100%);
+    border: 1px solid rgba(184,150,76,0.25);
+    border-radius: 12px;
+    padding: 1.5rem 1.75rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+}
+
+.welcomeIcon {
+    font-size: 2.25rem;
+    flex-shrink: 0;
+}
+
+.welcomeTitle {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-1);
+    margin: 0 0 0.2rem;
+    font-family: var(--serif, Georgia, serif);
+}
+
+.welcomeSub {
+    font-size: 0.88rem;
+    color: var(--text-2);
+    margin: 0 0 0.15rem;
+}
+
+.welcomeMeta {
+    font-size: 0.78rem;
+    color: var(--text-3);
+    margin: 0;
+}
+
+/* ── Matter card ─────────────────────────────────────────────────────────────*/
+
+.matterCard {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+}
+
+.matterTitle {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--gold);
+    margin: 0 0 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.matterGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+}
+
+.matterField {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.matterLabel {
+    font-size: 0.7rem;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.matterValue {
+    font-size: 0.88rem;
+    color: var(--text-1);
+    font-weight: 500;
+}
+
+.status_active   { color: #3ab57a; }
+.status_closed   { color: var(--text-3); }
+.status_pending  { color: var(--gold); }
+.status_settled  { color: #60a5fa; }
+
+/* ── Documents section ───────────────────────────────────────────────────────*/
+
+.docsSection {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.docsTitle {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-1);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.docsCount {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.72rem;
+    color: var(--text-3);
+    font-weight: 600;
+}
+
+.emptyDocs {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 2rem;
+    text-align: center;
+    font-size: 0.88rem;
+    color: var(--text-2);
+}
+
+.docList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.docRow {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    transition: border-color 0.15s;
+}
+.docRow:hover { border-color: var(--gold); }
+
+.docIcon { font-size: 1.3rem; flex-shrink: 0; }
+
+.docInfo { flex: 1; min-width: 0; }
+
+.docName {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.docMeta {
+    font-size: 0.72rem;
+    color: var(--text-3);
+    margin-top: 0.15rem;
+}
+
+.downloadBtn {
+    background: var(--gold);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+.downloadBtn:hover:not(:disabled) { opacity: 0.85; }
+.downloadBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Security note ───────────────────────────────────────────────────────────*/
+
+.securityNote {
+    font-size: 0.75rem;
+    color: var(--text-3);
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    line-height: 1.5;
+}
+
+/* ── Loading / Error states ──────────────────────────────────────────────────*/
+
+.centered {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+}
+
+.spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.errorIcon  { font-size: 2.5rem; margin-bottom: 0.75rem; }
+.errorTitle { font-size: 1.25rem; font-weight: 700; color: var(--text-1); margin: 0 0 0.5rem; }
+.errorSub   { font-size: 0.88rem; color: var(--text-2); margin: 0; }
+
+/* ── Footer ──────────────────────────────────────────────────────────────────*/
+
+.footer {
+    border-top: 1px solid var(--border);
+    padding: 1rem 2rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-3);
+}
