@@ -13,6 +13,7 @@ import re
 import sqlite3
 import secrets
 import hashlib
+import datetime
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Optional
@@ -351,6 +352,17 @@ CREATE TABLE IF NOT EXISTS client_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_client_tokens_org ON client_tokens(org_id, client_id);
 CREATE INDEX IF NOT EXISTS idx_client_tokens_token ON client_tokens(token);
+
+-- Task #43: password reset tokens (1-hour expiry, single-use)
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token_id   TEXT PRIMARY KEY,
+    token      TEXT NOT NULL UNIQUE,
+    user_id    TEXT NOT NULL REFERENCES users(user_id),
+    expires_at TEXT NOT NULL,
+    used       INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prt_token ON password_reset_tokens(token);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -1417,6 +1429,41 @@ def unlink_document_from_matter(doc_id: str, org_id: str,
     return True
 
 
+def search_matters_by_keyword(org_id: str, keyword: str) -> list[dict]:
+    """Full-text search on matter title, case_number, and client name.
+    Returns up to 10 matches ordered by relevance (exact first, then partial)."""
+    kw = keyword.strip().lower()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT m.matter_id, m.title, m.status, m.case_number,
+                      m.court_name, m.matter_type, c.name AS client_name
+               FROM matters m
+               LEFT JOIN clients c ON c.client_id = m.client_id
+               WHERE m.org_id=? AND m.is_active=1
+                 AND (lower(m.title) LIKE ? OR lower(m.case_number) LIKE ?
+                      OR lower(c.name) LIKE ?)
+               ORDER BY
+                   CASE WHEN lower(m.title) = ? THEN 0
+                        WHEN lower(m.title) LIKE ? THEN 1
+                        ELSE 2 END,
+                   m.title
+               LIMIT 10""",
+            (org_id, f"%{kw}%", f"%{kw}%", f"%{kw}%", kw, f"{kw}%"),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_filenames_for_matter(matter_id: str, org_id: str) -> list[str]:
+    """Return list of filenames (blob names) for documents linked to a matter."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT filename FROM documents
+               WHERE matter_id=? AND org_id=? AND is_active=1 AND status='ready'""",
+            (matter_id, org_id),
+        ).fetchall()
+    return [r["filename"] for r in rows]
+
+
 # ── Upgrade Requests ──────────────────────────────────────────────────────────
 
 def create_upgrade_request(
@@ -1905,7 +1952,8 @@ def get_hearings_needing_reminder() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT h.*, o.org_id,
-                      u.whatsapp_number AS owner_wa, u.name AS owner_name
+                      u.whatsapp_number AS owner_wa, u.name AS owner_name,
+                      u.email AS owner_email
                FROM hearings h
                JOIN organizations o ON o.org_id = h.org_id AND o.is_active=1
                JOIN users u ON u.org_id = h.org_id AND u.role='org_owner' AND u.is_active=1
@@ -2009,7 +2057,8 @@ def get_deadlines_needing_reminder() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT d.*, o.org_id,
-                      u.whatsapp_number AS owner_wa, u.name AS owner_name
+                      u.whatsapp_number AS owner_wa, u.name AS owner_name,
+                      u.email AS owner_email
                FROM deadlines d
                JOIN organizations o ON o.org_id = d.org_id AND o.is_active=1
                JOIN users u ON u.org_id = d.org_id AND u.role='org_owner' AND u.is_active=1
@@ -2256,6 +2305,46 @@ def delete_template(template_id: str, actor: str) -> None:
             "UPDATE templates SET is_active=0, modified_at=?, modified_by=? WHERE template_id=?",
             (_now(), actor, template_id),
         )
+
+
+# ── Password Reset Tokens (Task #43) ──────────────────────────────────────────
+
+def create_reset_token(user_id: str) -> str:
+    """Generate a 1-hour password-reset token, purge old ones for this user, return raw token."""
+    token    = secrets.token_urlsafe(32)
+    token_id = secrets.token_hex(8)
+    now      = _now()
+    expires  = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+    expires_str = expires.strftime("%Y-%m-%d %H:%M:%S")
+    with get_conn() as conn:
+        # Invalidate any existing unused tokens for this user
+        conn.execute(
+            "UPDATE password_reset_tokens SET used=1 WHERE user_id=? AND used=0",
+            (user_id,),
+        )
+        conn.execute(
+            """INSERT INTO password_reset_tokens (token_id, token, user_id, expires_at, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (token_id, token, user_id, expires_str, now),
+        )
+    return token
+
+
+def use_reset_token(token: str) -> Optional[str]:
+    """Validate token; mark used; return user_id if valid, else None."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT token_id, user_id FROM password_reset_tokens
+               WHERE token=? AND used=0 AND expires_at > datetime('now')""",
+            (token,),
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            "UPDATE password_reset_tokens SET used=1 WHERE token_id=?",
+            (row["token_id"],),
+        )
+    return row["user_id"]
 
 
 def get_platform_stats() -> dict:

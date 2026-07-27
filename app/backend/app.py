@@ -324,6 +324,8 @@ from db import (
     get_doc_counts, get_users_for_org, create_user, delete_user,
     get_permitted_categories, set_permissions, get_docs_for_categories,
     get_user_by_id, get_user_by_whatsapp, update_user_whatsapp,
+    search_matters_by_keyword, get_filenames_for_matter,
+    create_reset_token, use_reset_token,
     # admin
     get_all_orgs, create_org, update_org, delete_org,
     get_org_details, get_platform_stats,
@@ -981,6 +983,48 @@ async def change_password():
     return jsonify({"success": True})
 
 
+@bp.route("/auth/forgot-password", methods=["POST"])
+async def forgot_password():
+    """Unauthenticated — generate a reset token and email a link.
+    Always returns 200 (don't reveal whether email exists)."""
+    import asyncio as _aio
+    from email_helper import send_password_reset as _send_reset
+    data  = await request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    if email:
+        user = get_user_by_email(email)
+        if user and user.get("is_active"):
+            token    = create_reset_token(user["user_id"])
+            base_url = (data.get("base_url") or "https://projectease.pk").rstrip("/")
+            reset_url = f"{base_url}/#/?reset_token={token}"
+            await _aio.to_thread(
+                _send_reset, email, user.get("name", "there"), reset_url
+            )
+    return jsonify({"ok": True})
+
+
+@bp.route("/auth/reset-password", methods=["POST"])
+async def reset_password():
+    """Unauthenticated — validate reset token and set new password."""
+    from db import hash_password as _hash_pw
+    data     = await request.get_json(silent=True) or {}
+    token    = (data.get("token") or "").strip()
+    new_pw   = (data.get("password") or "").strip()
+    if not token or len(new_pw) < 8:
+        return jsonify({"error": "Token and password (min 8 chars) are required."}), 400
+    user_id = use_reset_token(token)
+    if not user_id:
+        return jsonify({"error": "This reset link is invalid or has expired."}), 400
+    with __import__("db").get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash=?, must_change_password=0, modified_at=datetime('now'), modified_by=? WHERE user_id=?",
+            (_hash_pw(new_pw), "password_reset", user_id),
+        )
+    log_event("password_reset", ip_address=_get_ip(),
+              details={"user_id": user_id, "method": "email_token"})
+    return jsonify({"ok": True})
+
+
 # ─── PROJECT EASE: Team API ───────────────────────────────────────────────────
 
 @bp.route("/team", methods=["GET"])
@@ -1019,7 +1063,9 @@ async def invite_member():
             }), 403
     # ─────────────────────────────────────────────────────────────────────────
 
-    # Generate a temp password; real flow would email this
+    # Generate a temp password and email the invite
+    import asyncio as _aio
+    from email_helper import send_team_invite as _send_invite
     temp_pw = _secrets.token_urlsafe(8)
     try:
         user = create_user(
@@ -1031,6 +1077,12 @@ async def invite_member():
         _audit(session, "member_invite",
                resource_type="user", resource_id=user["user_id"],
                resource_name=name, details={"email": email, "role": role})
+        # Send invite email (fire-and-forget, non-blocking)
+        org = get_org(session.get("org") or "")
+        firm_name = org.get("name", "your firm") if org else "your firm"
+        _aio.get_event_loop().run_in_executor(
+            None, _send_invite, email, firm_name, temp_pw
+        )
         return jsonify({**user, "temp_password": temp_pw}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -1096,6 +1148,20 @@ async def update_member_whatsapp(user_id: str):
 # but is sufficient for MVP — a Redis cache can replace this later).
 _wa_sessions: dict[str, list] = {}
 
+# Multi-step self-registration state machine keyed by phone number.
+# Each entry: { "step": int, "data": { "firm": str, "name": str, "email": str, "password": str } }
+_wa_reg_sessions: dict[str, dict] = {}
+
+_WA_HELP = (
+    "📋 *Project Ease — Commands*\n"
+    "• Send any legal question to search your firm's documents\n"
+    "• *MATTER: <name>* — scope search to a specific matter\n"
+    "  e.g. _MATTER: Khan vs State_ then your question\n"
+    "• *LIST MATTERS* — see your active matters\n"
+    "• *HELP* — show this message\n"
+    "• *RESET* — clear conversation history"
+)
+
 
 def _twiml_reply(text: str):
     """Return a Twilio TwiML XML response containing a WhatsApp message."""
@@ -1134,7 +1200,13 @@ async def _transcribe_voice(media_url: str) -> str | None:
 @bp.route("/webhook/whatsapp", methods=["POST"])
 async def whatsapp_webhook():
     """Twilio WhatsApp webhook — receives messages, runs them through the chat
-    pipeline, and returns a TwiML reply."""
+    pipeline, and returns a TwiML reply.
+
+    Task #40 additions:
+    - Self-registration flow for unregistered numbers
+    - Matter-scoped queries via "MATTER: <name>" prefix
+    - HELP / LIST MATTERS / RESET commands
+    """
     form        = await request.form
     from_raw    = form.get("From", "")                  # "whatsapp:+923001234567"
     body        = (form.get("Body") or "").strip()
@@ -1146,14 +1218,27 @@ async def whatsapp_webhook():
     if not phone:
         return _twiml_reply("Could not identify your number. Please contact support.")
 
+    # ── Self-registration flow (Task #40) ─────────────────────────────────────
+    if phone in _wa_reg_sessions:
+        return await _wa_handle_registration(phone, body)
+
     user = get_user_by_whatsapp(phone)
     if not user:
+        # Unregistered number — start onboarding
+        cmd = body.upper()
+        if cmd in ("YES", "Y", "REGISTER", "SIGN UP", "SIGNUP"):
+            _wa_reg_sessions[phone] = {"step": 1, "data": {}}
+            return _twiml_reply(
+                "Great! Let's register your law firm on Project Ease.\n\n"
+                "Step 1 of 4: What is the *name of your law firm*?"
+            )
         return _twiml_reply(
-            "Hi! Your WhatsApp number is not registered with Project Ease. "
-            "Please ask your firm administrator to add it to your account."
+            "👋 Welcome to *Project Ease* — AI-powered legal research for Pakistani law firms.\n\n"
+            "Your WhatsApp number is not yet registered. Would you like to register your firm?\n"
+            "Reply *YES* to begin registration or contact us at projectease.pk"
         )
 
-    # ── Determine query text ──────────────────────────────────────────────────
+    # ── Registered user — determine query text ────────────────────────────────
     if media_url and "audio" in media_type:
         transcript = await _transcribe_voice(media_url)
         if transcript is None:
@@ -1166,6 +1251,66 @@ async def whatsapp_webhook():
     else:
         return _twiml_reply("Please send a text or voice message with your question.")
 
+    # ── Handle commands ───────────────────────────────────────────────────────
+    cmd_upper = query_text.upper().strip()
+
+    if cmd_upper == "HELP":
+        return _twiml_reply(_WA_HELP)
+
+    if cmd_upper == "RESET":
+        _wa_sessions.pop(phone, None)
+        return _twiml_reply("Conversation history cleared. Start a new question!")
+
+    if cmd_upper == "LIST MATTERS":
+        matters = get_matters(user["org_id"])[:10]
+        if not matters:
+            return _twiml_reply("No active matters found for your firm.")
+        lines = ["📁 *Active Matters*\n"]
+        for m in matters:
+            line = f"• {m['title']} ({m['status']})"
+            if m.get("case_number"):
+                line += f" — Case {m['case_number']}"
+            lines.append(line)
+        return _twiml_reply("\n".join(lines))
+
+    # ── Matter-scoped query: "MATTER: <name>\n<question>" ────────────────────
+    matter_filter: list[str] | None = None
+    matter_label  = ""
+    for prefix in ("MATTER:", "M:"):
+        if query_text.upper().startswith(prefix):
+            rest        = query_text[len(prefix):].strip()
+            # Support "MATTER: Khan vs State\nWhat is the filing date?"
+            if "\n" in rest:
+                matter_ref, query_text = rest.split("\n", 1)
+                matter_ref = matter_ref.strip()
+                query_text = query_text.strip()
+            else:
+                matter_ref = rest
+                query_text = rest   # treat the rest as the query too (single-line)
+            matches = search_matters_by_keyword(user["org_id"], matter_ref)
+            if not matches:
+                return _twiml_reply(
+                    f"No matter matching *{matter_ref}* found. "
+                    "Use LIST MATTERS to see available matters."
+                )
+            best = matches[0]
+            matter_filter = get_filenames_for_matter(best["matter_id"], user["org_id"])
+            matter_label  = best["title"]
+            break
+
+    # ── Build permitted file list ─────────────────────────────────────────────
+    if matter_filter is not None:
+        permitted = matter_filter
+        if not permitted:
+            return _twiml_reply(
+                f"Matter *{matter_label}* has no documents yet. "
+                "Upload documents in the owner portal to enable matter-scoped search."
+            )
+    else:
+        cat_ids   = get_permitted_categories(user["user_id"])
+        docs      = get_docs_for_categories(user["org_id"], cat_ids) if cat_ids else []
+        permitted = [d["filename"] for d in docs]
+
     # ── Maintain per-number conversation history (last 10 turns) ─────────────
     history = _wa_sessions.setdefault(phone, [])
     history.append({"role": "user", "content": query_text})
@@ -1173,16 +1318,20 @@ async def whatsapp_webhook():
         _wa_sessions[phone] = history[-10:]
         history = _wa_sessions[phone]
 
-    # ── Build employee scope (same logic as _inject_employee_scope) ───────────
-    cat_ids    = get_permitted_categories(user["user_id"])
-    docs       = get_docs_for_categories(user["org_id"], cat_ids) if cat_ids else []
-    permitted  = [d["filename"] for d in docs]
+    # Prefix matter context into the query when scoped
+    chat_messages = history.copy()
+    if matter_label:
+        system_note = (
+            f"[Context: This query is scoped to matter '{matter_label}'. "
+            "Answer using only the documents provided for this matter.]"
+        )
+        chat_messages = [{"role": "user", "content": system_note}] + chat_messages
 
     # ── Run through the chat pipeline ─────────────────────────────────────────
     approach: Approach = cast(Approach, current_app.config[CONFIG_CHAT_APPROACH])
     try:
         result = await approach.run(
-            messages=history.copy(),
+            messages=chat_messages,
             context={
                 "overrides": {
                     "retrieval_mode":  "hybrid",
@@ -1202,6 +1351,9 @@ async def whatsapp_webhook():
         logging.exception("WhatsApp chat pipeline error: %s", exc)
         answer = "Sorry, I ran into an error processing your request. Please try again in a moment."
 
+    if matter_label:
+        answer = f"📁 *{matter_label}*\n\n{answer}"
+
     # Add assistant reply to history
     history.append({"role": "assistant", "content": answer})
 
@@ -1210,6 +1362,95 @@ async def whatsapp_webhook():
         answer = answer[:1497] + "…"
 
     return _twiml_reply(answer)
+
+
+async def _wa_handle_registration(phone: str, body: str):
+    """Handle one step of the WhatsApp self-registration flow (Task #40).
+
+    Steps:
+        1 → firm name
+        2 → contact name
+        3 → email
+        4 → password  → create org + owner account
+    """
+    session  = _wa_reg_sessions[phone]
+    step     = session["step"]
+    data     = session["data"]
+    text     = body.strip()
+    cancel   = text.upper() in ("CANCEL", "QUIT", "EXIT", "NO", "N")
+
+    if cancel:
+        del _wa_reg_sessions[phone]
+        return _twiml_reply("Registration cancelled. Reply REGISTER any time to try again.")
+
+    if step == 1:
+        if len(text) < 2:
+            return _twiml_reply("Please enter a valid firm name (at least 2 characters).")
+        data["firm"] = text
+        session["step"] = 2
+        return _twiml_reply(
+            f"✅ Firm: *{text}*\n\nStep 2 of 4: What is *your full name*?"
+        )
+
+    if step == 2:
+        if len(text) < 2:
+            return _twiml_reply("Please enter your full name.")
+        data["name"] = text
+        session["step"] = 3
+        return _twiml_reply(
+            f"✅ Name: *{text}*\n\nStep 3 of 4: Enter your *email address*. "
+            "This will be your login for the web portal."
+        )
+
+    if step == 3:
+        import re as _re
+        if not _re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", text):
+            return _twiml_reply("That doesn't look like a valid email address. Please try again.")
+        # Check for duplicate
+        if get_user_by_email(text.lower()):
+            return _twiml_reply(
+                "An account with that email already exists. "
+                "Please use a different email or log in at the web portal."
+            )
+        data["email"] = text.lower()
+        session["step"] = 4
+        return _twiml_reply(
+            f"✅ Email: *{text}*\n\nStep 4 of 4: Create a *password* for your account.\n"
+            "It must be at least 8 characters. "
+            "⚠️ This message will not be stored — set a strong password."
+        )
+
+    if step == 4:
+        if len(text) < 8:
+            return _twiml_reply("Password must be at least 8 characters. Please try again.")
+        data["password"] = text
+        # Create the org and owner account
+        try:
+            new_org  = create_org(data["firm"], plan="trial", actor="whatsapp_onboarding")
+            new_user = create_user(
+                org_id   = new_org["org_id"],
+                email    = data["email"],
+                name     = data["name"],
+                role     = "org_owner",
+                password = data["password"],
+                actor    = "whatsapp_onboarding",
+            )
+            # Link WhatsApp number to the new owner account
+            update_user_whatsapp(new_user["user_id"], phone, actor="whatsapp_onboarding")
+        except Exception as exc:
+            logging.exception("WhatsApp registration error: %s", exc)
+            del _wa_reg_sessions[phone]
+            return _twiml_reply(
+                "Registration failed due to an internal error. Please try again or contact support."
+            )
+        del _wa_reg_sessions[phone]
+        return _twiml_reply(
+            f"🎉 *Registration complete!*\n\n"
+            f"Firm: *{data['firm']}*\n"
+            f"Login: *{data['email']}*\n\n"
+            f"Visit *projectease.pk* and sign in with your email and password.\n\n"
+            f"You're on a 14-day free trial. Send *HELP* to see what I can do for you right now!"
+        )
 
 
 # ─── PROJECT EASE: Super Admin API ───────────────────────────────────────────
@@ -2456,49 +2697,95 @@ def _send_due_reminders():
 
 
 async def _send_due_reminders_async():
+    import asyncio as _aio
     from whatsapp_helper import send_whatsapp_text  # type: ignore[import]
+    from email_helper import (
+        send_hearing_reminder_email as _hrmail,
+        send_deadline_reminder_email as _dlmail,
+    )
+    _log = logging.getLogger(__name__)
 
-    # Hearings
+    # ── Hearings ──────────────────────────────────────────────────────────────
     for h in get_hearings_needing_reminder():
-        wa = h.get("owner_wa")
-        if not wa:
-            continue
         time_str = f" at {h['hearing_time']}" if h.get("hearing_time") else ""
-        msg = (
-            f"🏛️ *Project Ease Reminder*\n\n"
-            f"*Hearing tomorrow{time_str}*\n"
-            f"📌 {h['title']}\n"
-            f"🗓️ {h['hearing_date']}\n"
-            + (f"🏛️ {h['court_name']}\n" if h.get("court_name") else "")
-            + (f"⚖️ {h['matter_title']}\n" if h.get("matter_title") else "")
-            + "\n_Sent by Project Ease_"
-        )
-        try:
-            import asyncio as _aio
-            await _aio.to_thread(send_whatsapp_text, wa, msg)
-            mark_hearing_reminder_sent(h["hearing_id"])
-        except Exception as exc:
-            logging.getLogger(__name__).error("Hearing reminder send error: %s", exc)
+        sent = False
 
-    # Deadlines
+        # WhatsApp
+        wa = h.get("owner_wa")
+        if wa:
+            msg = (
+                f"🏛️ *Project Ease Reminder*\n\n"
+                f"*Hearing tomorrow{time_str}*\n"
+                f"📌 {h['title']}\n"
+                f"🗓️ {h['hearing_date']}\n"
+                + (f"🏛️ {h['court_name']}\n" if h.get("court_name") else "")
+                + (f"⚖️ {h['matter_title']}\n" if h.get("matter_title") else "")
+                + "\n_Sent by Project Ease_"
+            )
+            try:
+                await _aio.to_thread(send_whatsapp_text, wa, msg)
+                sent = True
+            except Exception as exc:
+                _log.error("Hearing WA reminder error: %s", exc)
+
+        # Email
+        email = h.get("owner_email")
+        if email:
+            try:
+                await _aio.to_thread(
+                    _hrmail, email,
+                    h.get("owner_name", "there"),
+                    h.get("matter_title") or h.get("title", ""),
+                    h["hearing_date"],
+                    h.get("hearing_time") or "",
+                    h.get("court_name") or "",
+                )
+                sent = True
+            except Exception as exc:
+                _log.error("Hearing email reminder error: %s", exc)
+
+        if sent:
+            mark_hearing_reminder_sent(h["hearing_id"])
+
+    # ── Deadlines ─────────────────────────────────────────────────────────────
     for d in get_deadlines_needing_reminder():
+        sent = False
+
+        # WhatsApp
         wa = d.get("owner_wa")
-        if not wa:
-            continue
-        msg = (
-            f"⚠️ *Project Ease Reminder*\n\n"
-            f"*Deadline tomorrow*\n"
-            f"📌 {d['title']}\n"
-            f"🗓️ {d['due_date']} · {d.get('deadline_type', 'Filing')}\n"
-            + (f"⚖️ {d['matter_title']}\n" if d.get("matter_title") else "")
-            + "\n_Sent by Project Ease_"
-        )
-        try:
-            import asyncio as _aio
-            await _aio.to_thread(send_whatsapp_text, wa, msg)
+        if wa:
+            msg = (
+                f"⚠️ *Project Ease Reminder*\n\n"
+                f"*Deadline tomorrow*\n"
+                f"📌 {d['title']}\n"
+                f"🗓️ {d['due_date']} · {d.get('deadline_type', 'Filing')}\n"
+                + (f"⚖️ {d['matter_title']}\n" if d.get("matter_title") else "")
+                + "\n_Sent by Project Ease_"
+            )
+            try:
+                await _aio.to_thread(send_whatsapp_text, wa, msg)
+                sent = True
+            except Exception as exc:
+                _log.error("Deadline WA reminder error: %s", exc)
+
+        # Email
+        email = d.get("owner_email")
+        if email:
+            try:
+                await _aio.to_thread(
+                    _dlmail, email,
+                    d.get("owner_name", "there"),
+                    d.get("matter_title") or "",
+                    d["due_date"],
+                    d["title"],
+                    d.get("deadline_type") or "Filing",
+                )
+                sent = True
+            except Exception as exc:
+                _log.error("Deadline email reminder error: %s", exc)
+
+        if sent:
             mark_deadline_reminder_sent(d["deadline_id"])
-        except Exception as exc:
-            logging.getLogger(__name__).error("Deadline reminder send error: %s", exc)
 
 
 # ─── Answer Export (PDF via browser print / Word via python-docx) ─────────────

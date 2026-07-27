@@ -147,6 +147,87 @@ def send_upgrade_request_received(to: str, firm_name: str, requested_plan: str) 
     return send_email(to, subject, html)
 
 
+def send_password_reset(to: str, name: str, reset_url: str) -> bool:
+    """Password-reset link email — expires in 1 hour."""
+    subject = "Reset your Project Ease password"
+    html = _wrap(f"""
+      <h2 style="color:{_GOLD}; margin-top:0;">Password Reset Request</h2>
+      <p>Hi {name},</p>
+      <p>We received a request to reset the password for your Project Ease account.</p>
+      <p style="margin:24px 0;">
+        <a href="{reset_url}"
+           style="background:{_GOLD}; color:#fff; padding:12px 28px; border-radius:6px;
+                  text-decoration:none; font-weight:700; font-size:1rem;">
+          Reset Password
+        </a>
+      </p>
+      <p style="font-size:0.85rem; color:#888;">
+        This link expires in <strong>1 hour</strong>.<br>
+        If you did not request a password reset, you can safely ignore this email.
+      </p>
+    """)
+    return send_email(to, subject, html)
+
+
+def send_hearing_reminder_email(to: str, name: str, matter_title: str,
+                                 hearing_date: str, hearing_time: str,
+                                 court_name: str) -> bool:
+    """Email reminder for a hearing due tomorrow."""
+    time_str = f" at {hearing_time}" if hearing_time else ""
+    subject  = f"Hearing tomorrow{time_str} — {matter_title}"
+    html = _wrap(f"""
+      <h2 style="color:{_GOLD}; margin-top:0;">🏛️ Hearing Reminder</h2>
+      <p>Hi {name},</p>
+      <p>This is a reminder that you have a <strong>hearing tomorrow</strong>.</p>
+      <table style="border-collapse:collapse; width:100%; margin:16px 0;">
+        <tr>
+          <td style="padding:8px 12px; font-weight:600; color:#555; width:130px;">Matter</td>
+          <td style="padding:8px 12px;">{matter_title}</td>
+        </tr>
+        <tr style="background:#f9f7f2;">
+          <td style="padding:8px 12px; font-weight:600; color:#555;">Date</td>
+          <td style="padding:8px 12px;">{hearing_date}{time_str}</td>
+        </tr>
+        {'<tr><td style="padding:8px 12px; font-weight:600; color:#555;">Court</td><td style="padding:8px 12px;">' + court_name + '</td></tr>' if court_name else ''}
+      </table>
+      <p style="font-size:0.85rem; color:#888;">
+        Sent automatically by Project Ease. Log in to view full matter details.
+      </p>
+    """)
+    return send_email(to, subject, html)
+
+
+def send_deadline_reminder_email(to: str, name: str, matter_title: str,
+                                  due_date: str, title: str,
+                                  deadline_type: str) -> bool:
+    """Email reminder for a filing deadline due tomorrow."""
+    subject = f"Deadline tomorrow — {title}"
+    html = _wrap(f"""
+      <h2 style="color:{_GOLD}; margin-top:0;">⚠️ Deadline Reminder</h2>
+      <p>Hi {name},</p>
+      <p>This is a reminder that a <strong>filing deadline is due tomorrow</strong>.</p>
+      <table style="border-collapse:collapse; width:100%; margin:16px 0;">
+        <tr>
+          <td style="padding:8px 12px; font-weight:600; color:#555; width:130px;">Deadline</td>
+          <td style="padding:8px 12px;">{title}</td>
+        </tr>
+        <tr style="background:#f9f7f2;">
+          <td style="padding:8px 12px; font-weight:600; color:#555;">Type</td>
+          <td style="padding:8px 12px;">{deadline_type}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px; font-weight:600; color:#555;">Due Date</td>
+          <td style="padding:8px 12px;">{due_date}</td>
+        </tr>
+        {'<tr style="background:#f9f7f2;"><td style="padding:8px 12px; font-weight:600; color:#555;">Matter</td><td style="padding:8px 12px;">' + matter_title + '</td></tr>' if matter_title else ''}
+      </table>
+      <p style="font-size:0.85rem; color:#888;">
+        Sent automatically by Project Ease. Log in to view full deadline details.
+      </p>
+    """)
+    return send_email(to, subject, html)
+
+
 def send_team_invite(to: str, firm_name: str, temp_password: str) -> bool:
     """Invitation email sent when an org owner adds a new team member."""
     subject = f"You have been invited to {firm_name} on Project Ease"

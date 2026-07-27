@@ -1,7 +1,7 @@
 import { useState, useEffect, KeyboardEvent } from "react";
 import styles from "./Landing.module.css";
 
-type Modal = "signin" | "signup" | "demo" | null;
+type Modal = "signin" | "signup" | "demo" | "forgot" | "reset" | null;
 
 const PK_CITIES = [
     "Lahore", "Karachi", "Islamabad", "Rawalpindi", "Faisalabad",
@@ -182,15 +182,24 @@ const TRUST_BADGES = [
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const Landing = () => {
-    const [scrolled, setScrolled]     = useState(false);
-    const [modal, setModal]           = useState<Modal>(null);
-    const [demoSent, setDemoSent]     = useState(false);
+    const [scrolled, setScrolled]       = useState(false);
+    const [modal, setModal]             = useState<Modal>(null);
+    const [demoSent, setDemoSent]       = useState(false);
     const [contactSent, setContactSent] = useState(false);
+    const [resetToken, setResetToken]   = useState<string | null>(null);
 
     useEffect(() => {
         const onScroll = () => setScrolled(window.scrollY > 40);
         window.addEventListener("scroll", onScroll, { passive: true });
         return () => window.removeEventListener("scroll", onScroll);
+    }, []);
+
+    // Detect password reset token in URL hash: /#/?reset_token=xxx
+    useEffect(() => {
+        const hash   = window.location.hash;          // "#/?reset_token=xxx"
+        const search = hash.includes("?") ? hash.slice(hash.indexOf("?")) : "";
+        const tok    = new URLSearchParams(search).get("reset_token");
+        if (tok) { setResetToken(tok); setModal("reset"); }
     }, []);
 
     const open  = (m: Modal) => { setModal(m); setDemoSent(false); };
@@ -652,8 +661,10 @@ const Landing = () => {
                     <div className={styles.modal}>
                         <button className={styles.modalClose} onClick={close}>✕</button>
 
-                        {modal === "signin"  ? <SignInForm onSignUp={() => open("signup")} /> :
+                        {modal === "signin"  ? <SignInForm onSignUp={() => open("signup")} onForgot={() => open("forgot")} /> :
                          modal === "signup"  ? <SignUpForm onSignIn={() => open("signin")} /> :
+                         modal === "forgot"  ? <ForgotPasswordForm onBack={() => open("signin")} /> :
+                         modal === "reset"   ? <ResetPasswordForm token={resetToken ?? ""} onDone={() => open("signin")} /> :
                          <DemoModal sent={demoSent} onSend={() => setDemoSent(true)} onSwitch={() => open("signin")} />
                         }
                     </div>
@@ -665,7 +676,7 @@ const Landing = () => {
 
 // ─── Sign In Modal ────────────────────────────────────────────────────────────
 
-const SignInForm = ({ onSignUp }: { onSignUp?: () => void }) => {
+const SignInForm = ({ onSignUp, onForgot }: { onSignUp?: () => void; onForgot?: () => void }) => {
     const [email, setEmail]       = useState("");
     const [password, setPassword] = useState("");
     const [error, setError]       = useState("");
@@ -826,6 +837,12 @@ const SignInForm = ({ onSignUp }: { onSignUp?: () => void }) => {
                 {loading ? "Signing in…" : "Sign In"}
             </button>
 
+            <p className={styles.formSwitch} style={{ marginTop: "0.5rem" }}>
+                <button className={styles.formSwitchBtn} onClick={onForgot}>
+                    Forgot password?
+                </button>
+            </p>
+
             {onSignUp && (
                 <p className={styles.formSwitch}>
                     New firm?&nbsp;
@@ -834,6 +851,156 @@ const SignInForm = ({ onSignUp }: { onSignUp?: () => void }) => {
                     </button>
                 </p>
             )}
+        </>
+    );
+};
+
+// ─── Forgot Password Form ─────────────────────────────────────────────────────
+
+const ForgotPasswordForm = ({ onBack }: { onBack: () => void }) => {
+    const [email,   setEmail]   = useState("");
+    const [sent,    setSent]    = useState(false);
+    const [error,   setError]   = useState("");
+    const [loading, setLoading] = useState(false);
+
+    const submit = async () => {
+        if (!email) { setError("Please enter your email address."); return; }
+        setError(""); setLoading(true);
+        try {
+            await fetch("/auth/forgot-password", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    email,
+                    base_url: `${window.location.origin}${window.location.pathname}`,
+                }),
+            });
+            setSent(true);
+        } catch {
+            setError("Could not reach the server. Please try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (sent) {
+        return (
+            <>
+                <h2 className={styles.modalTitle}>Check your email</h2>
+                <p className={styles.modalSub}>
+                    If an account with <strong>{email}</strong> exists, we've sent a password reset link.
+                    It expires in 1 hour.
+                </p>
+                <p className={styles.formSwitch} style={{ marginTop: "1rem" }}>
+                    <button className={styles.formSwitchBtn} onClick={onBack}>Back to Sign In</button>
+                </p>
+            </>
+        );
+    }
+
+    return (
+        <>
+            <h2 className={styles.modalTitle}>Forgot Password</h2>
+            <p className={styles.modalSub}>Enter your email and we'll send you a reset link.</p>
+            {error && <p className={styles.formError}>{error}</p>}
+            <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Email</label>
+                <input
+                    className={styles.formInput}
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") submit(); }}
+                    autoFocus
+                />
+            </div>
+            <button className={styles.formSubmit} onClick={submit} disabled={loading}>
+                {loading ? "Sending…" : "Send Reset Link"}
+            </button>
+            <p className={styles.formSwitch} style={{ marginTop: "0.5rem" }}>
+                <button className={styles.formSwitchBtn} onClick={onBack}>Back to Sign In</button>
+            </p>
+        </>
+    );
+};
+
+// ─── Reset Password Form (token from URL hash) ────────────────────────────────
+
+const ResetPasswordForm = ({ token, onDone }: { token: string; onDone: () => void }) => {
+    const [newPw,     setNewPw]     = useState("");
+    const [confirmPw, setConfirmPw] = useState("");
+    const [error,     setError]     = useState("");
+    const [loading,   setLoading]   = useState(false);
+    const [done,      setDone]      = useState(false);
+
+    const submit = async () => {
+        if (!newPw) { setError("Please enter a new password."); return; }
+        if (newPw.length < 8) { setError("Password must be at least 8 characters."); return; }
+        if (newPw !== confirmPw) { setError("Passwords do not match."); return; }
+        setError(""); setLoading(true);
+        try {
+            const res = await fetch("/auth/reset-password", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token, password: newPw }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setError(data.error || "Could not reset password."); return; }
+            // Clear the token from the URL so it can't be reused
+            window.history.replaceState(null, "", window.location.pathname + "#/");
+            setDone(true);
+        } catch {
+            setError("Could not reach the server. Please try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (done) {
+        return (
+            <>
+                <h2 className={styles.modalTitle}>Password Reset</h2>
+                <p className={styles.modalSub}>
+                    Your password has been updated. You can now sign in with your new password.
+                </p>
+                <button className={styles.formSubmit} onClick={onDone}>Sign In</button>
+            </>
+        );
+    }
+
+    return (
+        <>
+            <h2 className={styles.modalTitle}>Set New Password</h2>
+            <p className={styles.modalSub}>Choose a new password for your account.</p>
+            {error && <p className={styles.formError}>{error}</p>}
+            <div className={styles.formGroup}>
+                <label className={styles.formLabel}>New Password</label>
+                <input
+                    className={styles.formInput}
+                    type="password"
+                    placeholder="At least 8 characters"
+                    autoComplete="new-password"
+                    value={newPw}
+                    onChange={e => setNewPw(e.target.value)}
+                    autoFocus
+                />
+            </div>
+            <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Confirm Password</label>
+                <input
+                    className={styles.formInput}
+                    type="password"
+                    placeholder="Repeat password"
+                    autoComplete="new-password"
+                    value={confirmPw}
+                    onChange={e => setConfirmPw(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") submit(); }}
+                />
+            </div>
+            <button className={styles.formSubmit} onClick={submit} disabled={loading}>
+                {loading ? "Saving…" : "Reset Password"}
+            </button>
         </>
     );
 };
