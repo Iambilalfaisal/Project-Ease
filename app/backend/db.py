@@ -644,6 +644,130 @@ CREATE TABLE IF NOT EXISTS matter_challan (
     modified_by       TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_matter_challan ON matter_challan(matter_id);
+
+CREATE TABLE IF NOT EXISTS court_fee_payments (
+    fee_payment_id   TEXT    PRIMARY KEY,
+    org_id           TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id        TEXT    NOT NULL REFERENCES matters(matter_id),
+    claim_amount_pkr REAL    NOT NULL DEFAULT 0,
+    fee_type         TEXT    NOT NULL DEFAULT 'Ad Valorem',
+    calculated_fee   REAL    NOT NULL DEFAULT 0,
+    actual_paid      REAL    NOT NULL DEFAULT 0,
+    payment_date     TEXT,
+    challan_no       TEXT,
+    court            TEXT,
+    notes            TEXT,
+    is_active        INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by       TEXT    NOT NULL DEFAULT 'system',
+    modified_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by      TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_court_fee_payments ON court_fee_payments(matter_id);
+
+CREATE TABLE IF NOT EXISTS associate_fees (
+    assoc_fee_id    TEXT    PRIMARY KEY,
+    org_id          TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id       TEXT    NOT NULL REFERENCES matters(matter_id),
+    advocate_name   TEXT    NOT NULL,
+    bar_no          TEXT,
+    appearance_date TEXT,
+    amount_pkr      REAL    NOT NULL DEFAULT 0,
+    paid            INTEGER NOT NULL DEFAULT 0,
+    payment_date    TEXT,
+    notes           TEXT,
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by      TEXT    NOT NULL DEFAULT 'system',
+    modified_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by     TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_associate_fees_matter ON associate_fees(matter_id);
+CREATE INDEX IF NOT EXISTS idx_associate_fees_org    ON associate_fees(org_id);
+
+-- Task #154: Client Trust / Advance Money Ledger
+CREATE TABLE IF NOT EXISTS client_trust_ledger (
+    ledger_id    TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL,
+    client_id    TEXT NOT NULL,
+    matter_id    TEXT,
+    txn_type     TEXT NOT NULL DEFAULT 'Credit',
+    amount_pkr   REAL NOT NULL DEFAULT 0,
+    balance_pkr  REAL NOT NULL DEFAULT 0,
+    description  TEXT NOT NULL,
+    txn_date     TEXT NOT NULL,
+    reference_no TEXT,
+    notes        TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    modified_at  TEXT,
+    modified_by  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trust_ledger_client ON client_trust_ledger(client_id);
+CREATE INDEX IF NOT EXISTS idx_trust_ledger_org    ON client_trust_ledger(org_id);
+
+-- Task #155: Post-Dated / Undated Cheque Tracker
+CREATE TABLE IF NOT EXISTS matter_cheques (
+    cheque_id      TEXT PRIMARY KEY,
+    org_id         TEXT NOT NULL,
+    matter_id      TEXT NOT NULL,
+    client_id      TEXT,
+    cheque_no      TEXT NOT NULL,
+    bank_name      TEXT,
+    account_title  TEXT,
+    amount_pkr     REAL NOT NULL DEFAULT 0,
+    cheque_date    TEXT,
+    cheque_type    TEXT NOT NULL DEFAULT 'Post-Dated',
+    status         TEXT NOT NULL DEFAULT 'Held',
+    received_date  TEXT,
+    presented_date TEXT,
+    notes          TEXT,
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL,
+    created_by     TEXT NOT NULL,
+    modified_at    TEXT,
+    modified_by    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_matter_cheques_matter ON matter_cheques(matter_id);
+CREATE INDEX IF NOT EXISTS idx_matter_cheques_org    ON matter_cheques(org_id);
+
+-- Task #158: Opposing Counsel & Judge Intelligence Notes
+CREATE TABLE IF NOT EXISTS opposing_counsel (
+    counsel_id   TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    bar_no       TEXT,
+    firm_name    TEXT,
+    phone        TEXT,
+    email        TEXT,
+    court_preference TEXT,
+    known_tactics    TEXT,
+    private_notes    TEXT,
+    matters_count    INTEGER NOT NULL DEFAULT 0,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    modified_at  TEXT,
+    modified_by  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_opposing_counsel_org ON opposing_counsel(org_id);
+
+CREATE TABLE IF NOT EXISTS judge_notes (
+    judge_id     TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    court_name   TEXT,
+    designation  TEXT,
+    known_for    TEXT,
+    private_notes TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    modified_at  TEXT,
+    modified_by  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_judge_notes_org ON judge_notes(org_id);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -762,6 +886,30 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE matters ADD COLUMN priority TEXT NOT NULL DEFAULT 'Normal'")
     except sqlite3.OperationalError:
         pass
+
+    # Physical File Reference — Task #151
+    for col, defn in [
+        ("physical_file_ref", "TEXT"),
+        ("rack_no",           "TEXT"),
+        ("bundle_no",         "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE matters ADD COLUMN {col} {defn}")
+        except sqlite3.OperationalError:
+            pass
+
+    # WHT-Compliant Invoicing — Task #157
+    for col, defn in [
+        ("wht_rate",    "REAL NOT NULL DEFAULT 0"),
+        ("wht_amount",  "REAL NOT NULL DEFAULT 0"),
+        ("net_payable", "REAL NOT NULL DEFAULT 0"),
+        ("org_ntn",     "TEXT"),
+        ("client_ntn",  "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE invoices ADD COLUMN {col} {defn}")
+        except sqlite3.OperationalError:
+            pass
 
 
 def init_db():
@@ -1682,7 +1830,8 @@ def update_matter(matter_id: str, org_id: str, actor: str = SYSTEM, **fields) ->
     allowed = {"title", "matter_type", "status", "court_name", "case_number",
                "filing_date", "opposing_party", "team_id", "notes", "client_id",
                "limitation_type", "cause_of_action_date", "limitation_date",
-               "vakalatnama_status", "priority"}
+               "vakalatnama_status", "priority",
+               "physical_file_ref", "rack_no", "bundle_no"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return get_matter_with_docs(matter_id, org_id)
@@ -2099,6 +2248,20 @@ def _next_invoice_number(org_id: str, conn: sqlite3.Connection) -> str:
     return f"INV-{year}-{str(seq).zfill(3)}"
 
 
+def compute_wht(gross: float, client_type: str) -> tuple[float, float, float]:
+    """Return (wht_rate, wht_amount, net_payable).
+    Pakistan Income Tax Ordinance 2001 §153: 6% WHT on company payments to lawyers.
+    Individual clients are exempt from WHT deduction obligation.
+    """
+    if client_type == "Corporate":
+        rate = 0.06
+    else:
+        rate = 0.0
+    wht_amount = round(gross * rate, 2)
+    net_payable = round(gross - wht_amount, 2)
+    return rate, wht_amount, net_payable
+
+
 def create_invoice(
     org_id: str, matter_id: str, title: str, issued_date: str,
     client_id: Optional[str] = None,
@@ -2106,7 +2269,9 @@ def create_invoice(
     notes: Optional[str] = None,
     actor: str = SYSTEM,
 ) -> dict:
-    """Create an invoice and link all unbilled fees for the matter to it."""
+    """Create an invoice and link all unbilled fees for the matter to it.
+    WHT (6%) is auto-applied for Corporate clients per Income Tax Ordinance 2001 §153.
+    """
     now  = _now()
     inv_id = "inv_" + secrets.token_hex(8)
     with get_conn() as conn:
@@ -2116,15 +2281,31 @@ def create_invoice(
             "SELECT COALESCE(SUM(amount),0) FROM fees WHERE matter_id=? AND org_id=? AND is_active=1 AND invoice_id IS NULL",
             (matter_id, org_id),
         ).fetchone()
-        total = row[0] if row else 0
+        total = float(row[0]) if row else 0.0
+        # Lookup client_type for WHT
+        client_type = "Individual"
+        client_ntn: Optional[str] = None
+        if client_id:
+            cr = conn.execute("SELECT client_type, cnic_ntn FROM clients WHERE client_id=?", (client_id,)).fetchone()
+            if cr:
+                client_type = cr["client_type"]
+                client_ntn = cr["cnic_ntn"]
+        # Lookup org NTN
+        org_ntn: Optional[str] = None
+        or_ = conn.execute("SELECT bar_council_no FROM organizations WHERE org_id=?", (org_id,)).fetchone()
+        if or_:
+            org_ntn = or_["bar_council_no"]
+        wht_rate, wht_amount, net_payable = compute_wht(total, client_type)
         conn.execute(
             """INSERT INTO invoices
                (invoice_id,org_id,matter_id,client_id,invoice_number,title,
                 issued_date,due_date,total_amount,notes,
+                wht_rate,wht_amount,net_payable,org_ntn,client_ntn,
                 created_at,created_by,modified_at,modified_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (inv_id, org_id, matter_id, client_id or None, inv_num, title,
              issued_date, due_date or None, total, notes or None,
+             wht_rate, wht_amount, net_payable, org_ntn, client_ntn,
              now, actor, now, actor),
         )
         # Link all unbilled fees for this matter
@@ -4047,4 +4228,435 @@ def delete_matter_challan(challan_id: str, org_id: str, actor: str = SYSTEM):
             "UPDATE matter_challan SET is_active=0, modified_at=?, modified_by=? "
             "WHERE challan_id=? AND org_id=?",
             (now, actor, challan_id, org_id),
+        )
+
+
+# ── Court Fee Calculator — Task #152 ─────────────────────────────────────────
+
+COURT_FEE_TYPES = ("Ad Valorem", "Fixed")
+
+def compute_court_fee(claim_amount: float, fee_type: str = "Ad Valorem") -> float:
+    """
+    Punjab Court Fees Act slab calculator (approximate).
+    Rates updated per Punjab Finance Act amendments; verify current gazette for exact rates.
+    """
+    if fee_type != "Ad Valorem" or claim_amount <= 0:
+        return 0.0
+    c = claim_amount
+    if c <= 1_000:
+        return round(max(20.0, c * 0.02), 2)
+    elif c <= 5_000:
+        return round(20 + (c - 1_000) * 0.01, 2)
+    elif c <= 10_000:
+        return round(60 + (c - 5_000) * 0.015, 2)
+    elif c <= 50_000:
+        return round(135 + (c - 10_000) * 0.02, 2)
+    elif c <= 100_000:
+        return round(935 + (c - 50_000) * 0.025, 2)
+    elif c <= 500_000:
+        return round(2185 + (c - 100_000) * 0.03, 2)
+    elif c <= 1_000_000:
+        return round(14185 + (c - 500_000) * 0.035, 2)
+    else:
+        return round(31685 + (c - 1_000_000) * 0.04, 2)
+
+
+def get_court_fee_payments(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM court_fee_payments WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY payment_date DESC, created_at DESC",
+            (matter_id, org_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_court_fee_payment(matter_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    fp_id = secrets.token_hex(10)
+    now = _now()
+    claim  = float(data.get("claim_amount_pkr", 0) or 0)
+    ftype  = data.get("fee_type", "Ad Valorem")
+    calc   = float(data.get("calculated_fee") or 0) or compute_court_fee(claim, ftype)
+    actual = float(data.get("actual_paid", 0) or 0)
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO court_fee_payments (fee_payment_id, org_id, matter_id, claim_amount_pkr, "
+            "fee_type, calculated_fee, actual_paid, payment_date, challan_no, court, notes, "
+            "created_at, created_by, modified_at, modified_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (fp_id, org_id, matter_id, claim, ftype, calc, actual,
+             data.get("payment_date"), data.get("challan_no"), data.get("court"),
+             data.get("notes"), now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM court_fee_payments WHERE fee_payment_id=?", (fp_id,)).fetchone()
+        return dict(row)
+
+
+def update_court_fee_payment(fp_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    allowed = {"claim_amount_pkr", "fee_type", "calculated_fee", "actual_paid",
+               "payment_date", "challan_no", "court", "notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    now = _now()
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE court_fee_payments SET {set_clause} WHERE fee_payment_id=? AND org_id=?",
+            (*updates.values(), fp_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM court_fee_payments WHERE fee_payment_id=?", (fp_id,)).fetchone()
+        return dict(row) if row else {}
+
+
+def delete_court_fee_payment(fp_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE court_fee_payments SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE fee_payment_id=? AND org_id=?",
+            (now, actor, fp_id, org_id),
+        )
+
+
+# ── Associate / Wakeel Fees — Task #153 ──────────────────────────────────────
+
+def get_associate_fees(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM associate_fees WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY appearance_date DESC, created_at DESC",
+            (matter_id, org_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_associate_fees_summary(org_id: str) -> list[dict]:
+    """Year-end summary: total paid per advocate across all matters."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT advocate_name, bar_no, COUNT(*) as appearances, "
+            "SUM(amount_pkr) as total_amount, SUM(CASE WHEN paid=1 THEN amount_pkr ELSE 0 END) as total_paid "
+            "FROM associate_fees WHERE org_id=? AND is_active=1 "
+            "GROUP BY advocate_name, bar_no ORDER BY total_amount DESC",
+            (org_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_associate_fee(matter_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    af_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO associate_fees (assoc_fee_id, org_id, matter_id, advocate_name, bar_no, "
+            "appearance_date, amount_pkr, paid, payment_date, notes, "
+            "created_at, created_by, modified_at, modified_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (af_id, org_id, matter_id,
+             data.get("advocate_name", ""), data.get("bar_no"),
+             data.get("appearance_date"), float(data.get("amount_pkr", 0) or 0),
+             int(bool(data.get("paid", False))), data.get("payment_date"),
+             data.get("notes"), now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM associate_fees WHERE assoc_fee_id=?", (af_id,)).fetchone()
+        return dict(row)
+
+
+def update_associate_fee(af_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    allowed = {"advocate_name", "bar_no", "appearance_date", "amount_pkr", "paid", "payment_date", "notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    now = _now()
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE associate_fees SET {set_clause} WHERE assoc_fee_id=? AND org_id=?",
+            (*updates.values(), af_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM associate_fees WHERE assoc_fee_id=?", (af_id,)).fetchone()
+        return dict(row) if row else {}
+
+
+def delete_associate_fee(af_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE associate_fees SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE assoc_fee_id=? AND org_id=?",
+            (now, actor, af_id, org_id),
+        )
+
+
+# ─── Task #154: Client Trust / Advance Money Ledger ──────────────────────────
+
+TRUST_TXN_TYPES = ("Credit", "Debit")
+
+
+def get_trust_ledger(client_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM client_trust_ledger WHERE client_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY txn_date ASC, created_at ASC",
+            (client_id, org_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_trust_balance(client_id: str, org_id: str) -> float:
+    """Return current running balance for client."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT balance_pkr FROM client_trust_ledger WHERE client_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY txn_date ASC, created_at ASC LIMIT 1 OFFSET -1",
+            (client_id, org_id),
+        ).fetchone()
+        if row:
+            return row["balance_pkr"]
+        # Compute from scratch
+        rows = conn.execute(
+            "SELECT txn_type, amount_pkr FROM client_trust_ledger "
+            "WHERE client_id=? AND org_id=? AND is_active=1",
+            (client_id, org_id),
+        ).fetchall()
+        bal = 0.0
+        for r in rows:
+            bal += r["amount_pkr"] if r["txn_type"] == "Credit" else -r["amount_pkr"]
+        return bal
+
+
+def _recompute_balances(client_id: str, org_id: str, conn) -> None:
+    """Recompute running balance column for all active entries of a client."""
+    rows = conn.execute(
+        "SELECT ledger_id, txn_type, amount_pkr FROM client_trust_ledger "
+        "WHERE client_id=? AND org_id=? AND is_active=1 ORDER BY txn_date ASC, created_at ASC",
+        (client_id, org_id),
+    ).fetchall()
+    bal = 0.0
+    for r in rows:
+        bal += r["amount_pkr"] if r["txn_type"] == "Credit" else -r["amount_pkr"]
+        conn.execute(
+            "UPDATE client_trust_ledger SET balance_pkr=? WHERE ledger_id=?",
+            (round(bal, 2), r["ledger_id"]),
+        )
+
+
+def create_trust_entry(client_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    lid = secrets.token_hex(10)
+    now = _now()
+    txn_type = data.get("txn_type", "Credit")
+    amount = float(data.get("amount_pkr", 0))
+    with get_conn() as conn:
+        # Compute balance from last entry
+        last = conn.execute(
+            "SELECT balance_pkr FROM client_trust_ledger WHERE client_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY txn_date ASC, created_at ASC",
+            (client_id, org_id),
+        ).fetchall()
+        last_bal = last[-1]["balance_pkr"] if last else 0.0
+        new_bal = round(last_bal + (amount if txn_type == "Credit" else -amount), 2)
+        conn.execute(
+            "INSERT INTO client_trust_ledger (ledger_id, org_id, client_id, matter_id, txn_type, "
+            "amount_pkr, balance_pkr, description, txn_date, reference_no, notes, "
+            "is_active, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?)",
+            (lid, org_id, client_id, data.get("matter_id"), txn_type, amount, new_bal,
+             data.get("description", ""), data.get("txn_date", now[:10]),
+             data.get("reference_no"), data.get("notes"), now, actor),
+        )
+        row = conn.execute("SELECT * FROM client_trust_ledger WHERE ledger_id=?", (lid,)).fetchone()
+        return dict(row) if row else {}
+
+
+def update_trust_entry(ledger_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    now = _now()
+    allowed = {"txn_type", "amount_pkr", "description", "txn_date", "reference_no", "notes", "matter_id"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        # Get client_id for balance recompute
+        row = conn.execute("SELECT client_id FROM client_trust_ledger WHERE ledger_id=?", (ledger_id,)).fetchone()
+        conn.execute(
+            f"UPDATE client_trust_ledger SET {set_clause} WHERE ledger_id=? AND org_id=?",
+            (*updates.values(), ledger_id, org_id),
+        )
+        if row:
+            _recompute_balances(row["client_id"], org_id, conn)
+        row2 = conn.execute("SELECT * FROM client_trust_ledger WHERE ledger_id=?", (ledger_id,)).fetchone()
+        return dict(row2) if row2 else {}
+
+
+def delete_trust_entry(ledger_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        row = conn.execute("SELECT client_id FROM client_trust_ledger WHERE ledger_id=?", (ledger_id,)).fetchone()
+        conn.execute(
+            "UPDATE client_trust_ledger SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE ledger_id=? AND org_id=?",
+            (now, actor, ledger_id, org_id),
+        )
+        if row:
+            _recompute_balances(row["client_id"], org_id, conn)
+
+
+# ─── Task #155: Post-Dated / Undated Cheque Tracker ──────────────────────────
+
+CHEQUE_TYPES    = ("Post-Dated", "Undated", "Bearer", "Crossed")
+CHEQUE_STATUSES = ("Held", "Presented", "Cleared", "Bounced", "Returned", "Cancelled")
+
+
+def get_matter_cheques(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM matter_cheques WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY cheque_date ASC, created_at ASC",
+            (matter_id, org_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_matter_cheque(matter_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    cid = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO matter_cheques (cheque_id, org_id, matter_id, client_id, cheque_no, bank_name, "
+            "account_title, amount_pkr, cheque_date, cheque_type, status, received_date, "
+            "presented_date, notes, is_active, created_at, created_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)",
+            (cid, org_id, matter_id, data.get("client_id"), data.get("cheque_no", ""),
+             data.get("bank_name"), data.get("account_title"), float(data.get("amount_pkr", 0)),
+             data.get("cheque_date"), data.get("cheque_type", "Post-Dated"),
+             data.get("status", "Held"), data.get("received_date"), data.get("presented_date"),
+             data.get("notes"), now, actor),
+        )
+        row = conn.execute("SELECT * FROM matter_cheques WHERE cheque_id=?", (cid,)).fetchone()
+        return dict(row) if row else {}
+
+
+def update_matter_cheque(cheque_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    now = _now()
+    allowed = {"cheque_no", "bank_name", "account_title", "amount_pkr", "cheque_date",
+               "cheque_type", "status", "received_date", "presented_date", "notes", "client_id"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_cheques SET {set_clause} WHERE cheque_id=? AND org_id=?",
+            (*updates.values(), cheque_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM matter_cheques WHERE cheque_id=?", (cheque_id,)).fetchone()
+        return dict(row) if row else {}
+
+
+def delete_matter_cheque(cheque_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_cheques SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE cheque_id=? AND org_id=?",
+            (now, actor, cheque_id, org_id),
+        )
+
+
+# ─── Task #158: Opposing Counsel & Judge Intelligence Notes ──────────────────
+
+def get_opposing_counsel(org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM opposing_counsel WHERE org_id=? AND is_active=1 ORDER BY name ASC",
+            (org_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_opposing_counsel(org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    cid = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO opposing_counsel (counsel_id, org_id, name, bar_no, firm_name, phone, email, "
+            "court_preference, known_tactics, private_notes, is_active, created_at, created_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)",
+            (cid, org_id, data.get("name", ""), data.get("bar_no"), data.get("firm_name"),
+             data.get("phone"), data.get("email"), data.get("court_preference"),
+             data.get("known_tactics"), data.get("private_notes"), now, actor),
+        )
+        row = conn.execute("SELECT * FROM opposing_counsel WHERE counsel_id=?", (cid,)).fetchone()
+        return dict(row) if row else {}
+
+
+def update_opposing_counsel(counsel_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    now = _now()
+    allowed = {"name", "bar_no", "firm_name", "phone", "email", "court_preference", "known_tactics", "private_notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE opposing_counsel SET {set_clause} WHERE counsel_id=? AND org_id=?",
+            (*updates.values(), counsel_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM opposing_counsel WHERE counsel_id=?", (counsel_id,)).fetchone()
+        return dict(row) if row else {}
+
+
+def delete_opposing_counsel(counsel_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE opposing_counsel SET is_active=0, modified_at=?, modified_by=? WHERE counsel_id=? AND org_id=?",
+            (now, actor, counsel_id, org_id),
+        )
+
+
+def get_judge_notes(org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM judge_notes WHERE org_id=? AND is_active=1 ORDER BY name ASC",
+            (org_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_judge_note(org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    jid = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO judge_notes (judge_id, org_id, name, court_name, designation, "
+            "known_for, private_notes, is_active, created_at, created_by) VALUES (?,?,?,?,?,?,?,1,?,?)",
+            (jid, org_id, data.get("name", ""), data.get("court_name"), data.get("designation"),
+             data.get("known_for"), data.get("private_notes"), now, actor),
+        )
+        row = conn.execute("SELECT * FROM judge_notes WHERE judge_id=?", (jid,)).fetchone()
+        return dict(row) if row else {}
+
+
+def update_judge_note(judge_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    now = _now()
+    allowed = {"name", "court_name", "designation", "known_for", "private_notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE judge_notes SET {set_clause} WHERE judge_id=? AND org_id=?",
+            (*updates.values(), judge_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM judge_notes WHERE judge_id=?", (judge_id,)).fetchone()
+        return dict(row) if row else {}
+
+
+def delete_judge_note(judge_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE judge_notes SET is_active=0, modified_at=?, modified_by=? WHERE judge_id=? AND org_id=?",
+            (now, actor, judge_id, org_id),
         )

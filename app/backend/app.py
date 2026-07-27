@@ -402,6 +402,24 @@ from db import (
     # Matter Challan — Task #149
     CHALLAN_TYPES, CHALLAN_STATUSES,
     get_matter_challan, create_matter_challan, update_matter_challan, delete_matter_challan,
+    # Court Fee Calculator — Task #152
+    COURT_FEE_TYPES, compute_court_fee,
+    get_court_fee_payments, create_court_fee_payment,
+    update_court_fee_payment, delete_court_fee_payment,
+    # Associate Fees — Task #153
+    get_associate_fees, get_associate_fees_summary,
+    create_associate_fee, update_associate_fee, delete_associate_fee,
+    # Trust Ledger — Task #154
+    TRUST_TXN_TYPES,
+    get_trust_ledger, create_trust_entry, update_trust_entry, delete_trust_entry,
+    # Cheque Tracker — Task #155
+    CHEQUE_TYPES, CHEQUE_STATUSES,
+    get_matter_cheques, create_matter_cheque, update_matter_cheque, delete_matter_cheque,
+    # WHT Invoice — Task #157
+    compute_wht,
+    # Intelligence Notes — Task #158
+    get_opposing_counsel, create_opposing_counsel, update_opposing_counsel, delete_opposing_counsel,
+    get_judge_notes, create_judge_note, update_judge_note, delete_judge_note,
 )
 # Note: Conflict check (Task #150) reuses get_clients + get_matters already imported above.
 
@@ -2970,6 +2988,460 @@ async def remove_matter_challan(matter_id: str, challan_id: str):
     delete_matter_challan(challan_id, session.get("org") or "",
                           actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
+
+
+# ─── Conflict of Interest Check — Task #150 ───────────────────────────────────
+
+@bp.route("/conflicts/check", methods=["POST"])
+async def check_conflicts():
+    """
+    Given a new_client_name and opponent_name, return any existing matters where
+    either name appears as the client or as the opposing_party.
+    """
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    new_client = (data.get("new_client_name") or "").strip().lower()
+    opponent   = (data.get("opponent_name") or "").strip().lower()
+    org_id = session.get("org") or ""
+
+    if not new_client and not opponent:
+        return jsonify({"conflicts": [], "checked": False})
+
+    all_clients = get_clients(org_id)
+    all_matters = get_matters(org_id)
+
+    # Build client_id → name map
+    client_map = {c["client_id"]: c["name"].lower() for c in all_clients}
+
+    conflicts = []
+    for m in all_matters:
+        client_name = client_map.get(m.get("client_id") or "", "")
+        opp = (m.get("opposing_party") or "").lower()
+        match_reason = []
+        # New client name matches an existing client in any matter → they may already be on file
+        if new_client and new_client in client_name:
+            match_reason.append(f"'{data.get('new_client_name')}' is already a client in this matter")
+        # New client name matches the opponent in an existing matter
+        if new_client and opp and new_client in opp:
+            match_reason.append(f"'{data.get('new_client_name')}' appears as opposing party in this matter")
+        # Opponent name matches an existing client in any matter
+        if opponent and client_name and opponent in client_name:
+            match_reason.append(f"'{data.get('opponent_name')}' is an existing client of the firm")
+        # Opponent name matches the opposing party in another matter (same counsel, fine — but flag for awareness)
+        if match_reason:
+            conflicts.append({
+                "matter_id":    m.get("matter_id"),
+                "matter_title": m.get("title"),
+                "client_name":  next((c["name"] for c in all_clients if c["client_id"] == m.get("client_id")), ""),
+                "opposing_party": m.get("opposing_party"),
+                "status":       m.get("status"),
+                "reasons":      match_reason,
+            })
+
+    return jsonify({"conflicts": conflicts, "checked": True})
+
+
+# ─── Court Fee Calculator — Task #152 ────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/court-fees", methods=["GET"])
+async def list_court_fees(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    records = get_court_fee_payments(matter_id, session.get("org") or "")
+    return jsonify({"payments": records, "fee_types": list(COURT_FEE_TYPES)})
+
+
+@bp.route("/court-fees/calculate", methods=["POST"])
+async def calculate_court_fee():
+    """Quick calculator — no DB write."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    claim  = float(data.get("claim_amount_pkr", 0) or 0)
+    ftype  = data.get("fee_type", "Ad Valorem")
+    result = compute_court_fee(claim, ftype)
+    return jsonify({"calculated_fee": result, "claim_amount_pkr": claim, "fee_type": ftype})
+
+
+@bp.route("/matters/<matter_id>/court-fees", methods=["POST"])
+async def add_court_fee(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    record = create_court_fee_payment(
+        matter_id=matter_id, org_id=session.get("org") or "",
+        data=data, actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(record), 201
+
+
+@bp.route("/matters/<matter_id>/court-fees/<fp_id>", methods=["PATCH"])
+async def edit_court_fee(matter_id: str, fp_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    updated = update_court_fee_payment(fp_id, session.get("org") or "", data,
+                                       actor=session.get("user_id") or SYSTEM)
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/court-fees/<fp_id>", methods=["DELETE"])
+async def remove_court_fee(matter_id: str, fp_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_court_fee_payment(fp_id, session.get("org") or "",
+                             actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Associate Fees — Task #153 ──────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/associate-fees", methods=["GET"])
+async def list_associate_fees(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"fees": get_associate_fees(matter_id, session.get("org") or "")})
+
+
+@bp.route("/matters/<matter_id>/associate-fees", methods=["POST"])
+async def add_associate_fee(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("advocate_name"):
+        return jsonify({"error": "advocate_name is required"}), 400
+    record = create_associate_fee(matter_id, session.get("org") or "", data,
+                                  actor=session.get("user_id") or SYSTEM)
+    return jsonify(record), 201
+
+
+@bp.route("/matters/<matter_id>/associate-fees/<af_id>", methods=["PATCH"])
+async def edit_associate_fee(matter_id: str, af_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    return jsonify(update_associate_fee(af_id, session.get("org") or "", data,
+                                        actor=session.get("user_id") or SYSTEM))
+
+
+@bp.route("/matters/<matter_id>/associate-fees/<af_id>", methods=["DELETE"])
+async def remove_associate_fee(matter_id: str, af_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_associate_fee(af_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+@bp.route("/associate-fees/summary", methods=["GET"])
+async def associate_fees_summary():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"summary": get_associate_fees_summary(session.get("org") or "")})
+
+
+# ─── Client Trust Ledger — Task #154 ─────────────────────────────────────────
+
+@bp.route("/clients/<client_id>/trust-ledger", methods=["GET"])
+async def list_trust_ledger(client_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    entries = get_trust_ledger(client_id, session.get("org") or "")
+    balance = entries[-1]["balance_pkr"] if entries else 0.0
+    return jsonify({"entries": entries, "balance": balance, "txn_types": list(TRUST_TXN_TYPES)})
+
+
+@bp.route("/clients/<client_id>/trust-ledger", methods=["POST"])
+async def add_trust_entry(client_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("description"):
+        return jsonify({"error": "description is required"}), 400
+    if not data.get("txn_date"):
+        return jsonify({"error": "txn_date is required"}), 400
+    record = create_trust_entry(client_id, session.get("org") or "", data,
+                                actor=session.get("user_id") or SYSTEM)
+    return jsonify(record), 201
+
+
+@bp.route("/clients/<client_id>/trust-ledger/<ledger_id>", methods=["PATCH"])
+async def edit_trust_entry(client_id: str, ledger_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    return jsonify(update_trust_entry(ledger_id, session.get("org") or "", data,
+                                      actor=session.get("user_id") or SYSTEM))
+
+
+@bp.route("/clients/<client_id>/trust-ledger/<ledger_id>", methods=["DELETE"])
+async def remove_trust_entry(client_id: str, ledger_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_trust_entry(ledger_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Cheque Tracker — Task #155 ──────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/cheques", methods=["GET"])
+async def list_matter_cheques(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({
+        "cheques": get_matter_cheques(matter_id, session.get("org") or ""),
+        "cheque_types": list(CHEQUE_TYPES),
+        "cheque_statuses": list(CHEQUE_STATUSES),
+    })
+
+
+@bp.route("/matters/<matter_id>/cheques", methods=["POST"])
+async def add_matter_cheque(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("cheque_no"):
+        return jsonify({"error": "cheque_no is required"}), 400
+    record = create_matter_cheque(matter_id, session.get("org") or "", data,
+                                  actor=session.get("user_id") or SYSTEM)
+    return jsonify(record), 201
+
+
+@bp.route("/matters/<matter_id>/cheques/<cheque_id>", methods=["PATCH"])
+async def edit_matter_cheque(matter_id: str, cheque_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    return jsonify(update_matter_cheque(cheque_id, session.get("org") or "", data,
+                                        actor=session.get("user_id") or SYSTEM))
+
+
+@bp.route("/matters/<matter_id>/cheques/<cheque_id>", methods=["DELETE"])
+async def remove_matter_cheque(matter_id: str, cheque_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_cheque(cheque_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Vakalatnama Register — Task #156 ────────────────────────────────────────
+
+@bp.route("/vakalatnama-register", methods=["GET"])
+async def vakalatnama_register():
+    """Cross-matter vakalatnama status register."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session.get("org") or ""
+    matters = get_matters(org_id)
+    # Attach client names
+    clients = {c["client_id"]: c["name"] for c in get_clients(org_id)}
+    register = []
+    for m in matters:
+        register.append({
+            "matter_id":          m["matter_id"],
+            "title":              m["title"],
+            "matter_no":          m.get("matter_no"),
+            "client_name":        clients.get(m.get("client_id", ""), "Unknown"),
+            "court_name":         m.get("court_name"),
+            "vakalatnama_status": m.get("vakalatnama_status", "Pending"),
+            "status":             m.get("status"),
+            "created_at":         m.get("created_at"),
+        })
+    return jsonify({"register": register})
+
+
+@bp.route("/matters/<matter_id>/vakalatnama", methods=["PATCH"])
+async def update_vakalatnama_status(matter_id: str):
+    """Quick-update vakalatnama_status on a matter."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    new_status = data.get("vakalatnama_status")
+    if new_status not in ("Pending", "Filed", "Rejected"):
+        return jsonify({"error": "Invalid status"}), 400
+    return jsonify(update_matter(
+        matter_id, session.get("org") or "",
+        {"vakalatnama_status": new_status},
+        actor=session.get("user_id") or SYSTEM,
+    ))
+
+
+# ─── WHT Invoice Preview — Task #157 ─────────────────────────────────────────
+
+@bp.route("/invoices/wht-preview", methods=["POST"])
+async def wht_preview():
+    """Calculate WHT for a gross amount + client_type without writing to DB."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    gross = float(data.get("gross", 0))
+    client_type = data.get("client_type", "Individual")
+    rate, wht_amount, net_payable = compute_wht(gross, client_type)
+    return jsonify({
+        "gross":       gross,
+        "client_type": client_type,
+        "wht_rate":    rate,
+        "wht_amount":  wht_amount,
+        "net_payable": net_payable,
+        "note": "6% WHT applies to Corporate clients per Income Tax Ordinance 2001 §153" if rate > 0 else "No WHT — individual client",
+    })
+
+
+# ─── Intelligence Notes — Task #158 ─────────────────────────────────────────
+
+@bp.route("/opposing-counsel", methods=["GET"])
+async def list_opposing_counsel():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"counsel": get_opposing_counsel(session.get("org") or "")})
+
+
+@bp.route("/opposing-counsel", methods=["POST"])
+async def add_opposing_counsel():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("name"):
+        return jsonify({"error": "name is required"}), 400
+    record = create_opposing_counsel(session.get("org") or "", data, actor=session.get("user_id") or SYSTEM)
+    return jsonify(record), 201
+
+
+@bp.route("/opposing-counsel/<counsel_id>", methods=["PATCH"])
+async def edit_opposing_counsel(counsel_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    return jsonify(update_opposing_counsel(counsel_id, session.get("org") or "", data, actor=session.get("user_id") or SYSTEM))
+
+
+@bp.route("/opposing-counsel/<counsel_id>", methods=["DELETE"])
+async def remove_opposing_counsel(counsel_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_opposing_counsel(counsel_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+@bp.route("/judge-notes", methods=["GET"])
+async def list_judge_notes():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"judges": get_judge_notes(session.get("org") or "")})
+
+
+@bp.route("/judge-notes", methods=["POST"])
+async def add_judge_note():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("name"):
+        return jsonify({"error": "name is required"}), 400
+    record = create_judge_note(session.get("org") or "", data, actor=session.get("user_id") or SYSTEM)
+    return jsonify(record), 201
+
+
+@bp.route("/judge-notes/<judge_id>", methods=["PATCH"])
+async def edit_judge_note(judge_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    return jsonify(update_judge_note(judge_id, session.get("org") or "", data, actor=session.get("user_id") or SYSTEM))
+
+
+@bp.route("/judge-notes/<judge_id>", methods=["DELETE"])
+async def remove_judge_note(judge_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_judge_note(judge_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── LHC Case Status Live Lookup — Task #159 ─────────────────────────────────
+# Replace LHC_CASE_STATUS_URL with the actual Lahore High Court e-filing / case
+# status endpoint when available.  The form field names (case_no_field etc.) must
+# also be updated to match the live page's HTML form.
+LHC_CASE_STATUS_URL = "PLACEHOLDER_LHC_CASE_STATUS_URL"
+LHC_CASE_NO_FIELD   = "PLACEHOLDER_CASE_NO_FIELD"        # <input name="?"> in the LHC form
+
+import aiohttp
+
+
+@bp.route("/lhc/case-status", methods=["GET"])
+async def lhc_case_status():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+
+    case_no = request.args.get("case_no", "").strip()
+    if not case_no:
+        return jsonify({"error": "case_no is required"}), 400
+
+    if LHC_CASE_STATUS_URL == "PLACEHOLDER_LHC_CASE_STATUS_URL":
+        return jsonify({
+            "status":  "unavailable",
+            "message": "LHC_CASE_STATUS_URL placeholder not yet configured. "
+                       "Replace LHC_CASE_STATUS_URL and LHC_CASE_NO_FIELD in app.py "
+                       "with the actual Lahore High Court case-status portal URL and form field name.",
+            "case_no": case_no,
+        }), 503
+
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as http:
+            async with http.post(
+                LHC_CASE_STATUS_URL,
+                data={LHC_CASE_NO_FIELD: case_no},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; ProjectEase/1.0)"},
+            ) as resp:
+                html = await resp.text()
+
+        # ── Parse with BeautifulSoup ──────────────────────────────────────────
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Extract whatever the LHC portal returns — adjust selectors to match
+        # the actual page structure once the URL is configured.
+        result_text = soup.get_text(separator=" ", strip=True)[:2000]
+
+        return jsonify({
+            "status":  "ok",
+            "case_no": case_no,
+            "raw_text": result_text,
+            "note": "Selectors may need adjustment once LHC_CASE_STATUS_URL is set.",
+        })
+
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc), "case_no": case_no}), 502
 
 
 # ─── PROJECT EASE: Plan & Upgrade API ───────────────────────────────────────

@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "invoices" | "team" | "subscription" | "settings" | "audit" | "drafting" | "causelist";
+type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "invoices" | "team" | "subscription" | "settings" | "audit" | "drafting" | "causelist" | "vakalat" | "intelligence";
 
 interface Category {
     category_id: string;
@@ -87,6 +87,9 @@ interface Matter {
     vakalatnama_status?:   string;
     adjournment_count?:    number;
     priority?:             string;
+    physical_file_ref?:    string;
+    rack_no?:              string;
+    bundle_no?:            string;
     created_at:            string;
     doc_count?:            number;
     documents?:            MatterDoc[];
@@ -127,6 +130,11 @@ interface Invoice {
     issued_date:    string;
     due_date:       string | null;
     total_amount:   number;
+    wht_rate:       number;
+    wht_amount:     number;
+    net_payable:    number;
+    org_ntn:        string | null;
+    client_ntn:     string | null;
     notes:          string | null;
     matter_title:   string | null;
     case_number:    string | null;
@@ -185,6 +193,49 @@ interface MatterCorrespondence {
     reference_no: string | null;
     notes:        string | null;
     created_at:   string;
+}
+
+interface CourtFeePayment {
+    fee_payment_id:   string;
+    matter_id:        string;
+    claim_amount_pkr: number;
+    fee_type:         string;
+    calculated_fee:   number;
+    actual_paid:      number;
+    payment_date:     string | null;
+    challan_no:       string | null;
+    court:            string | null;
+    notes:            string | null;
+    created_at:       string;
+}
+
+interface MatterCheque {
+    cheque_id:      string;
+    matter_id:      string;
+    cheque_no:      string;
+    bank_name:      string | null;
+    account_title:  string | null;
+    amount_pkr:     number;
+    cheque_date:    string | null;
+    cheque_type:    string;
+    status:         string;
+    received_date:  string | null;
+    presented_date: string | null;
+    notes:          string | null;
+    created_at:     string;
+}
+
+interface AssociateFee {
+    assoc_fee_id:    string;
+    matter_id:       string;
+    advocate_name:   string;
+    bar_no:          string | null;
+    appearance_date: string | null;
+    amount_pkr:      number;
+    paid:            number;
+    payment_date:    string | null;
+    notes:           string | null;
+    created_at:      string;
 }
 
 interface MatterChallan {
@@ -365,6 +416,8 @@ const NAV: { id: Panel; icon: string; label: string }[] = [
     { id: "team",         icon: "T",  label: "Team"         },
     { id: "drafting",     icon: "Dr", label: "Drafting"     },
     { id: "causelist",    icon: "CL", label: "Cause List"   },
+    { id: "vakalat",      icon: "VK", label: "Vakalatnama"  },
+    { id: "intelligence", icon: "IN", label: "Intelligence"  },
     { id: "audit",        icon: "A",  label: "Audit Log"    },
     { id: "subscription", icon: "P",  label: "Subscription" },
     { id: "settings",     icon: "S",  label: "Settings"     },
@@ -383,6 +436,8 @@ const PANEL_TITLES: Record<Panel, string> = {
     subscription: "Plan & Subscription",
     settings:     "Organization Settings",
     causelist:    "Cause List",
+    vakalat:      "Vakalatnama Register",
+    intelligence: "Counsel & Judge Intelligence",
 };
 
 const PANEL_SUBS: Record<Panel, string> = {
@@ -398,6 +453,8 @@ const PANEL_SUBS: Record<Panel, string> = {
     subscription: "Your current plan, usage, and billing",
     settings:     "Firm profile and account preferences",
     causelist:    "Daily court cause list — parse and match to your matters",
+    vakalat:      "Cross-matter vakalatnama filing status register",
+    intelligence: "Private notes on opposing counsel and judges",
 };
 
 // ── Matter / Court constants ──────────────────────────────────────────────────
@@ -609,6 +666,45 @@ const ClientsPanel = () => {
 
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    };
+
+    // ─ Trust Ledger — Task #154 ─
+    const BLANK_TL = { txn_type: "Credit", amount_pkr: 0, description: "", txn_date: new Date().toISOString().slice(0, 10), reference_no: "", notes: "", matter_id: "" };
+    const [trustClient,   setTrustClient]   = useState<Client | null>(null);
+    const [trustEntries,  setTrustEntries]  = useState<{ ledger_id: string; txn_type: string; amount_pkr: number; balance_pkr: number; description: string; txn_date: string; reference_no: string | null; notes: string | null; matter_id: string | null; created_at: string }[]>([]);
+    const [trustBalance,  setTrustBalance]  = useState(0);
+    const [trustLoading,  setTrustLoading]  = useState(false);
+    const [showTLModal,   setShowTLModal]   = useState(false);
+    const [tlForm,        setTlForm]        = useState<typeof BLANK_TL>({ ...BLANK_TL });
+    const [tlSaving,      setTlSaving]      = useState(false);
+    const [tlErr,         setTlErr]         = useState("");
+
+    const openTrustLedger = (c: Client) => {
+        setTrustClient(c); setTrustLoading(true); setTrustEntries([]); setTrustBalance(0);
+        fetch(`/clients/${c.client_id}/trust-ledger`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setTrustEntries(d.entries || []); setTrustBalance(d.balance || 0); setTrustLoading(false); })
+            .catch(() => setTrustLoading(false));
+    };
+    const saveTLEntry = async () => {
+        if (!trustClient) return;
+        if (!tlForm.description.trim()) { setTlErr("Description is required"); return; }
+        if (!tlForm.txn_date) { setTlErr("Date is required"); return; }
+        setTlSaving(true); setTlErr("");
+        const res = await fetch(`/clients/${trustClient.client_id}/trust-ledger`, {
+            method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify(tlForm),
+        });
+        setTlSaving(false);
+        if (res.ok) {
+            setShowTLModal(false); setTlForm({ ...BLANK_TL });
+            openTrustLedger(trustClient);
+        } else { const e = await res.json(); setTlErr(e.error || "Save failed"); }
+    };
+    const deleteTLEntry = (ledgerId: string) => {
+        if (!trustClient || !confirm("Delete this ledger entry? Balance will be recomputed.")) return;
+        fetch(`/clients/${trustClient.client_id}/trust-ledger/${ledgerId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => openTrustLedger(trustClient));
     };
 
     const PortalModal = () => (
@@ -852,6 +948,7 @@ const ClientsPanel = () => {
                                         <button className={styles.actionBtn} onClick={() => openDetail(c)}>View</button>
                                         <button className={styles.actionBtn} onClick={() => openEdit(c)}>Edit</button>
                                         <button className={styles.actionBtnPortal} onClick={() => openPortal(c)}>Share Portal</button>
+                                        <button className={styles.actionBtn} onClick={() => openTrustLedger(c)}>Trust A/C</button>
                                         <button className={styles.actionBtnDanger} disabled={removing === c.client_id} onClick={() => removeClient(c)}>
                                             {removing === c.client_id ? "…" : "Delete"}
                                         </button>
@@ -864,6 +961,106 @@ const ClientsPanel = () => {
             )}
             {showModal && <ClientModal />}
             {portalClient && <PortalModal />}
+
+            {/* ── Trust Ledger Sheet — Task #154 ── */}
+            {trustClient && (
+                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setTrustClient(null); }}>
+                    <div className={styles.modal} style={{ maxWidth: 680 }}>
+                        <div className={styles.modalHeader}>
+                            <h3 className={styles.modalTitle}>💰 Trust / Advance Ledger — {trustClient.name}</h3>
+                            <button className={styles.modalClose} onClick={() => setTrustClient(null)}>✕</button>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                            <div>
+                                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Running Balance: </span>
+                                <strong style={{ fontSize: "1.1rem", color: trustBalance >= 0 ? "#16a34a" : "#dc2626" }}>
+                                    PKR {trustBalance.toLocaleString()}
+                                </strong>
+                                {trustBalance < 0 && <span style={{ marginLeft: "0.5rem", fontSize: "0.78rem", color: "#dc2626" }}>(Overdrawn)</span>}
+                            </div>
+                            <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => { setTlForm({ ...BLANK_TL }); setTlErr(""); setShowTLModal(true); }}>+ Add Entry</button>
+                        </div>
+                        {trustLoading ? (
+                            <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                        ) : trustEntries.length === 0 ? (
+                            <div className={styles.emptyHint}>No entries yet. Record advance payments received from the client (Credit) or disbursements made on their behalf (Debit).</div>
+                        ) : (
+                            <table className={styles.feeTable}>
+                                <thead><tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Balance</th>
+                                    <th>Ref</th>
+                                    <th style={{ width: 50 }}></th>
+                                </tr></thead>
+                                <tbody>
+                                    {trustEntries.map(e => (
+                                        <tr key={e.ledger_id}>
+                                            <td className={styles.muted}>{e.txn_date}</td>
+                                            <td>
+                                                <span style={{ padding: "2px 8px", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: 600, background: e.txn_type === "Credit" ? "#dcfce7" : "#fee2e2", color: e.txn_type === "Credit" ? "#16a34a" : "#dc2626" }}>
+                                                    {e.txn_type}
+                                                </span>
+                                            </td>
+                                            <td>{e.description}</td>
+                                            <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                                                <span style={{ color: e.txn_type === "Credit" ? "#16a34a" : "#dc2626" }}>
+                                                    {e.txn_type === "Credit" ? "+" : "−"}PKR {e.amount_pkr.toLocaleString()}
+                                                </span>
+                                            </td>
+                                            <td style={{ fontVariantNumeric: "tabular-nums", color: e.balance_pkr < 0 ? "#dc2626" : "var(--text-1)" }}>
+                                                PKR {e.balance_pkr.toLocaleString()}
+                                            </td>
+                                            <td className={styles.muted} style={{ fontSize: "0.78rem" }}>{e.reference_no || "—"}</td>
+                                            <td>
+                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 6px" }} onClick={() => deleteTLEntry(e.ledger_id)}>Del</button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+
+                        {showTLModal && (
+                            <div style={{ marginTop: "1.25rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+                                <h4 style={{ marginBottom: "0.75rem", fontSize: "0.9rem" }}>New Entry</h4>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Type</label>
+                                        <select className={styles.formInput} value={tlForm.txn_type} onChange={e => setTlForm(f => ({ ...f, txn_type: e.target.value }))}>
+                                            <option>Credit</option>
+                                            <option>Debit</option>
+                                        </select>
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Date *</label>
+                                        <input type="date" className={styles.formInput} value={tlForm.txn_date} onChange={e => setTlForm(f => ({ ...f, txn_date: e.target.value }))} />
+                                    </div>
+                                    <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
+                                        <label className={styles.formLabel}>Description *</label>
+                                        <input className={styles.formInput} value={tlForm.description} onChange={e => setTlForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Advance received for Supreme Court appeal" />
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Amount (PKR) *</label>
+                                        <input type="number" className={styles.formInput} min={0} value={tlForm.amount_pkr} onChange={e => setTlForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Reference No.</label>
+                                        <input className={styles.formInput} value={tlForm.reference_no} onChange={e => setTlForm(f => ({ ...f, reference_no: e.target.value }))} placeholder="Cheque / receipt no." />
+                                    </div>
+                                </div>
+                                {tlErr && <div className={styles.formError}>{tlErr}</div>}
+                                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.75rem" }}>
+                                    <button className={styles.btnGhost} onClick={() => setShowTLModal(false)}>Cancel</button>
+                                    <button className={styles.btnPrimary} onClick={saveTLEntry} disabled={tlSaving}>{tlSaving ? "Saving…" : "Save Entry"}</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -922,11 +1119,13 @@ const BLANK_MATTER: {
     team_id: string; notes: string;
     limitation_type: string; cause_of_action_date: string; limitation_date: string;
     vakalatnama_status: string; priority: string;
+    physical_file_ref: string; rack_no: string; bundle_no: string;
 } = {
     client_id: "", title: "", matter_type: MATTER_TYPES[0], status: "Active",
     court_name: "", case_number: "", filing_date: "", opposing_party: "", team_id: "", notes: "",
     limitation_type: "", cause_of_action_date: "", limitation_date: "",
     vakalatnama_status: "Pending", priority: "Normal",
+    physical_file_ref: "", rack_no: "", bundle_no: "",
 };
 
 const MattersPanel = () => {
@@ -952,8 +1151,12 @@ const MattersPanel = () => {
     // New court input
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
+    // Conflict checker — Task #150
+    const [conflictResults, setConflictResults] = useState<{ matter_id: string; matter_title: string; client_name: string; opposing_party: string | null; status: string; reasons: string[] }[]>([]);
+    const [conflictChecking, setConflictChecking] = useState(false);
+    const [showConflictModal, setShowConflictModal] = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome" | "charges" | "fir" | "challan">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome" | "charges" | "fir" | "challan" | "courtfees" | "assocfees" | "cheques">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -1086,6 +1289,52 @@ const MattersPanel = () => {
     const [chargeForm,        setChargeForm]        = useState<{ section_no: string; description: string; plea: string; charge_framed: boolean; charge_framed_date: string; court: string; notes: string }>({ ...BLANK_CHARGE });
     const [chargeSaving,      setChargeSaving]      = useState(false);
     const [chargeErr,         setChargeErr]         = useState("");
+    // Court Fees — Task #152
+    const COURT_FEE_TYPES_UI = ["Ad Valorem", "Fixed"];
+    const BLANK_CF = { claim_amount_pkr: 0, fee_type: "Ad Valorem", calculated_fee: 0, actual_paid: 0, payment_date: "", challan_no: "", court: "", notes: "" };
+    const [courtFeeList,     setCourtFeeList]     = useState<CourtFeePayment[]>([]);
+    const [courtFeeLoading,  setCourtFeeLoading]  = useState(false);
+    const [showCFModal,      setShowCFModal]      = useState(false);
+    const [editCF,           setEditCF]           = useState<CourtFeePayment | null>(null);
+    const [cfForm,           setCfForm]           = useState<{ claim_amount_pkr: number; fee_type: string; calculated_fee: number; actual_paid: number; payment_date: string; challan_no: string; court: string; notes: string }>({ ...BLANK_CF });
+    const [cfSaving,         setCfSaving]         = useState(false);
+    const [cfErr,            setCfErr]            = useState("");
+    const [cfCalcPreview,    setCfCalcPreview]    = useState<number | null>(null);
+
+    // ── LHC Case Status — Task #159 ──────────────────────────────────────────
+    const [lhcChecking, setLhcChecking] = useState(false);
+    const [lhcResult,   setLhcResult]   = useState<{ status: string; message?: string; raw_text?: string } | null>(null);
+
+    const checkLhcStatus = async () => {
+        if (!detail?.case_number) return;
+        setLhcChecking(true); setLhcResult(null);
+        try {
+            const res = await fetch(`/lhc/case-status?case_no=${encodeURIComponent(detail.case_number)}`, { headers: authHeaders() });
+            const d = await res.json();
+            setLhcResult(d);
+        } catch { setLhcResult({ status: "error", message: "Network error" }); }
+        setLhcChecking(false);
+    };
+
+    // ── Cheques — Task #155 ──────────────────────────────────────────────────
+    const BLANK_CHQ = { cheque_no: "", bank_name: "", account_title: "", amount_pkr: 0, cheque_date: "", cheque_type: "Post-Dated", status: "Held", received_date: "", presented_date: "", notes: "" };
+    const [chequeList,    setChequeList]    = useState<MatterCheque[]>([]);
+    const [chequeLoading, setChequeLoading] = useState(false);
+    const [showCHQModal,  setShowCHQModal]  = useState(false);
+    const [editCHQ,       setEditCHQ]       = useState<MatterCheque | null>(null);
+    const [chqForm,       setChqForm]       = useState<typeof BLANK_CHQ>({ ...BLANK_CHQ });
+    const [chqSaving,     setChqSaving]     = useState(false);
+    const [chqErr,        setChqErr]        = useState("");
+
+    // ── Associate Fees — Task #153 ────────────────────────────────────────────
+    const BLANK_AF = { advocate_name: "", bar_no: "", appearance_date: "", amount_pkr: 0, paid: 0, payment_date: "", notes: "" };
+    const [assocFeeList,    setAssocFeeList]    = useState<AssociateFee[]>([]);
+    const [assocFeeLoading, setAssocFeeLoading] = useState(false);
+    const [showAFModal,     setShowAFModal]     = useState(false);
+    const [editAF,          setEditAF]          = useState<AssociateFee | null>(null);
+    const [afForm,          setAfForm]          = useState<typeof BLANK_AF>({ ...BLANK_AF });
+    const [afSaving,        setAfSaving]        = useState(false);
+    const [afErr,           setAfErr]           = useState("");
     // Challan — Task #149
     const CHALLAN_TYPES_UI   = ["Complete", "Incomplete", "Supplementary"];
     const CHALLAN_STATUSES_UI = ["Pending", "Submitted", "Returned", "Accepted"];
@@ -1754,6 +2003,103 @@ const MattersPanel = () => {
             .then(() => loadFir(detail.matter_id));
     };
 
+    // ── Court Fee functions — Task #152 ────────────────────────────────────
+    const BLANK_CF_FN = { claim_amount_pkr: 0, fee_type: "Ad Valorem", calculated_fee: 0, actual_paid: 0, payment_date: "", challan_no: "", court: "", notes: "" };
+    const loadCourtFees = (matterId: string) => {
+        setCourtFeeLoading(true);
+        fetch(`/matters/${matterId}/court-fees`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setCourtFeeList(d.payments || []); setCourtFeeLoading(false); })
+            .catch(() => setCourtFeeLoading(false));
+    };
+    const previewCourtFee = async (claim: number, ftype: string) => {
+        if (claim <= 0) { setCfCalcPreview(null); return; }
+        const res = await fetch("/court-fees/calculate", { method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ claim_amount_pkr: claim, fee_type: ftype }) });
+        const d = await res.json();
+        setCfCalcPreview(d.calculated_fee ?? null);
+        setCfForm(f => ({ ...f, calculated_fee: d.calculated_fee ?? f.calculated_fee }));
+    };
+    const openCFModal = (cf?: CourtFeePayment) => {
+        setEditCF(cf || null); setCfErr(""); setCfCalcPreview(null);
+        setCfForm(cf ? { claim_amount_pkr: cf.claim_amount_pkr, fee_type: cf.fee_type, calculated_fee: cf.calculated_fee, actual_paid: cf.actual_paid, payment_date: cf.payment_date || "", challan_no: cf.challan_no || "", court: cf.court || "", notes: cf.notes || "" } : { ...BLANK_CF_FN });
+        setShowCFModal(true);
+    };
+    const saveCF = async () => {
+        if (!detail) return;
+        setCfSaving(true); setCfErr("");
+        const url = editCF ? `/matters/${detail.matter_id}/court-fees/${editCF.fee_payment_id}` : `/matters/${detail.matter_id}/court-fees`;
+        const method = editCF ? "PATCH" : "POST";
+        const res = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(cfForm) });
+        setCfSaving(false);
+        if (res.ok) { setShowCFModal(false); loadCourtFees(detail.matter_id); }
+        else { const d = await res.json(); setCfErr(d.error || "Save failed"); }
+    };
+    const deleteCFUI = (fpId: string) => {
+        if (!detail || !confirm("Delete this court fee record?")) return;
+        fetch(`/matters/${detail.matter_id}/court-fees/${fpId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadCourtFees(detail.matter_id));
+    };
+
+    // ── Associate Fee functions — Task #153 ──────────────────────────────────
+    const loadAssocFees = (matterId: string) => {
+        setAssocFeeLoading(true);
+        fetch(`/matters/${matterId}/associate-fees`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setAssocFeeList(d.fees || []); setAssocFeeLoading(false); })
+            .catch(() => setAssocFeeLoading(false));
+    };
+    const openAFModal = (af?: AssociateFee) => {
+        setEditAF(af || null);
+        setAfForm(af ? { advocate_name: af.advocate_name, bar_no: af.bar_no || "", appearance_date: af.appearance_date || "", amount_pkr: af.amount_pkr, paid: af.paid, payment_date: af.payment_date || "", notes: af.notes || "" } : { ...BLANK_AF });
+        setAfErr(""); setShowAFModal(true);
+    };
+    const saveAssocFee = async () => {
+        if (!detail) return;
+        if (!afForm.advocate_name.trim()) { setAfErr("Advocate name is required"); return; }
+        setAfSaving(true); setAfErr("");
+        const url = editAF ? `/matters/${detail.matter_id}/associate-fees/${editAF.assoc_fee_id}` : `/matters/${detail.matter_id}/associate-fees`;
+        const method = editAF ? "PATCH" : "POST";
+        const res = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(afForm) });
+        setAfSaving(false);
+        if (res.ok) { setShowAFModal(false); loadAssocFees(detail.matter_id); }
+        else { const e = await res.json(); setAfErr(e.error || "Save failed"); }
+    };
+    const deleteAssocFeeUI = (afId: string) => {
+        if (!detail || !confirm("Delete this associate fee record?")) return;
+        fetch(`/matters/${detail.matter_id}/associate-fees/${afId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadAssocFees(detail.matter_id));
+    };
+
+    // ── Cheque functions — Task #155 ──────────────────────────────────────────
+    const loadCheques = (matterId: string) => {
+        setChequeLoading(true);
+        fetch(`/matters/${matterId}/cheques`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setChequeList(d.cheques || []); setChequeLoading(false); })
+            .catch(() => setChequeLoading(false));
+    };
+    const openCHQModal = (c?: MatterCheque) => {
+        setEditCHQ(c || null);
+        setChqForm(c ? { cheque_no: c.cheque_no, bank_name: c.bank_name || "", account_title: c.account_title || "", amount_pkr: c.amount_pkr, cheque_date: c.cheque_date || "", cheque_type: c.cheque_type, status: c.status, received_date: c.received_date || "", presented_date: c.presented_date || "", notes: c.notes || "" } : { ...BLANK_CHQ });
+        setChqErr(""); setShowCHQModal(true);
+    };
+    const saveCHQ = async () => {
+        if (!detail) return;
+        if (!chqForm.cheque_no.trim()) { setChqErr("Cheque number is required"); return; }
+        setChqSaving(true); setChqErr("");
+        const url = editCHQ ? `/matters/${detail.matter_id}/cheques/${editCHQ.cheque_id}` : `/matters/${detail.matter_id}/cheques`;
+        const method = editCHQ ? "PATCH" : "POST";
+        const res = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(chqForm) });
+        setChqSaving(false);
+        if (res.ok) { setShowCHQModal(false); loadCheques(detail.matter_id); }
+        else { const e = await res.json(); setChqErr(e.error || "Save failed"); }
+    };
+    const deleteCHQUI = (chequeId: string) => {
+        if (!detail || !confirm("Delete this cheque record?")) return;
+        fetch(`/matters/${detail.matter_id}/cheques/${chequeId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadCheques(detail.matter_id));
+    };
+
     // ── Challan functions — Task #149 ──────────────────────────────────────
     const BLANK_CHALLAN_FN = { challan_date: "", challan_type: "Complete", submitted_in_time: true, witnesses_count: 0, challan_court: "", status: "Pending", notes: "" };
     const loadChallan = (matterId: string) => {
@@ -1986,6 +2332,22 @@ const MattersPanel = () => {
         finally { setGenInvLoading(false); }
     };
 
+    const checkConflicts = async () => {
+        const clientName = clients.find(c => c.client_id === form.client_id)?.name || "";
+        const opponent = form.opposing_party || "";
+        if (!clientName && !opponent) { alert("Enter a client and/or opposing party first."); return; }
+        setConflictChecking(true);
+        const res = await fetch("/conflicts/check", {
+            method: "POST",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ new_client_name: clientName, opponent_name: opponent }),
+        });
+        const d = await res.json();
+        setConflictResults(d.conflicts || []);
+        setConflictChecking(false);
+        setShowConflictModal(true);
+    };
+
     const saveMatter = async () => {
         if (!form.client_id || !form.title.trim() || !form.matter_type) {
             setFormErr("Client, title, and matter type are required."); return;
@@ -2160,7 +2522,13 @@ const MattersPanel = () => {
                 </div>
                 <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
                     <label className={styles.formLabel}>Opposing Party</label>
-                    <input className={styles.formInput} value={form.opposing_party} onChange={e => setForm({ ...form, opposing_party: e.target.value })} placeholder="Name of opposing counsel or party" />
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <input className={styles.formInput} value={form.opposing_party} onChange={e => setForm({ ...form, opposing_party: e.target.value })} placeholder="Name of opposing counsel or party" style={{ flex: 1 }} />
+                        <button type="button" className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.35rem 0.75rem", whiteSpace: "nowrap", borderColor: "#dc2626", color: "#dc2626" }}
+                            onClick={checkConflicts} disabled={conflictChecking}>
+                            {conflictChecking ? "Checking…" : "⚖ Check Conflicts"}
+                        </button>
+                    </div>
                 </div>
                 <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
                     <label className={styles.formLabel}>Notes</label>
@@ -2177,6 +2545,22 @@ const MattersPanel = () => {
                     <select className={styles.formSelect} value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
                         {MATTER_PRIORITIES.map(p => <option key={p}>{p}</option>)}
                     </select>
+                </div>
+                {/* Physical File — Task #151 */}
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
+                    <label className={styles.formLabel} style={{ fontWeight: 700 }}>📁 Physical File Location</label>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>File Ref No.</label>
+                    <input className={styles.formInput} value={form.physical_file_ref} onChange={e => setForm({ ...form, physical_file_ref: e.target.value })} placeholder="e.g. PF-2024-042" />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Rack No.</label>
+                    <input className={styles.formInput} value={form.rack_no} onChange={e => setForm({ ...form, rack_no: e.target.value })} placeholder="e.g. R3" />
+                </div>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Bundle / Folder No.</label>
+                    <input className={styles.formInput} value={form.bundle_no} onChange={e => setForm({ ...form, bundle_no: e.target.value })} placeholder="e.g. B12" />
                 </div>
                 {/* Limitation fields */}
                 <div className={styles.formGroup} style={{ gridColumn: "1/-1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
@@ -2241,13 +2625,32 @@ const MattersPanel = () => {
                                     limitation_date: detail.limitation_date ?? "",
                                     vakalatnama_status: detail.vakalatnama_status ?? "Pending",
                                     priority: detail.priority ?? "Normal",
+                                    physical_file_ref: detail.physical_file_ref ?? "",
+                                    rack_no: detail.rack_no ?? "",
+                                    bundle_no: detail.bundle_no ?? "",
                                 });
                                 setFormErr(null); setEditDetail(true);
                             }}>Edit</button>
                             <button className={styles.actionBtnDanger} style={{ fontSize: "0.8rem" }} onClick={() => removeMatter(detail)}>Delete</button>
+                            {detail.case_number && (
+                                <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }}
+                                    onClick={checkLhcStatus} disabled={lhcChecking}>
+                                    {lhcChecking ? "Checking…" : "🏛 LHC Status"}
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
+                {lhcResult && (
+                    <div style={{ margin: "0.5rem 0", padding: "0.75rem 1rem", borderRadius: "var(--radius)", border: "1px solid var(--border)", background: lhcResult.status === "ok" ? "var(--bg-1)" : "rgba(220,38,38,0.06)", fontSize: "0.82rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <strong>{lhcResult.status === "ok" ? "🏛 LHC Result" : lhcResult.status === "unavailable" ? "⚠ LHC lookup not yet configured" : "✗ LHC lookup error"}</strong>
+                            <button className={styles.btnGhost} style={{ fontSize: "0.72rem", padding: "1px 6px" }} onClick={() => setLhcResult(null)}>✕</button>
+                        </div>
+                        {lhcResult.message && <div className={styles.muted} style={{ marginTop: "0.25rem" }}>{lhcResult.message}</div>}
+                        {lhcResult.raw_text && <pre style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap", fontSize: "0.78rem", maxHeight: 200, overflow: "auto" }}>{lhcResult.raw_text}</pre>}
+                    </div>
+                )}
 
                 {editDetail ? (
                     <div className={styles.settingsCard} style={{ marginBottom: "1.5rem" }}>
@@ -2271,6 +2674,14 @@ const MattersPanel = () => {
                             {detail.filing_date   && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Filed</span><span>{detail.filing_date}</span></div>}
                             {detail.opposing_party && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Opposing Party</span><span>{detail.opposing_party}</span></div>}
                             {detail.notes         && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
+                            {(detail.physical_file_ref || detail.rack_no || detail.bundle_no) && (
+                                <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}>
+                                    <span className={styles.detailInfoLabel}>📁 Physical File</span>
+                                    <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>
+                                        {[detail.physical_file_ref && `Ref: ${detail.physical_file_ref}`, detail.rack_no && `Rack: ${detail.rack_no}`, detail.bundle_no && `Bundle: ${detail.bundle_no}`].filter(Boolean).join(" · ")}
+                                    </span>
+                                </div>
+                            )}
                             <div className={styles.detailInfoItem}>
                                 <span className={styles.detailInfoLabel}>Vakalatnama</span>
                                 <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -2492,6 +2903,18 @@ const MattersPanel = () => {
                     <button className={`${styles.detailTabBtn}${detailTab === "challan" ? " " + styles.detailTabBtnActive : ""}`}
                         onClick={() => { setDetailTab("challan"); if (detail) loadChallan(detail.matter_id); }}>
                         Challan ({matterChallanList.length})
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "courtfees" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("courtfees"); if (detail) loadCourtFees(detail.matter_id); }}>
+                        Court Fees ({courtFeeList.length})
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "assocfees" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("assocfees"); if (detail) loadAssocFees(detail.matter_id); }}>
+                        Assoc. Fees ({assocFeeList.length})
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "cheques" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("cheques"); if (detail) loadCheques(detail.matter_id); }}>
+                        Cheques ({chequeList.length})
                     </button>
                 </div>
 
@@ -3309,6 +3732,326 @@ const MattersPanel = () => {
                     )}
                 </>)}
 
+                {/* ── Court Fees tab ── */}
+                {detailTab === "courtfees" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <div>
+                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                                Total paid: <strong>PKR {courtFeeList.reduce((s, r) => s + r.actual_paid, 0).toLocaleString()}</strong>
+                                {" · "}Calculated: <strong>PKR {courtFeeList.reduce((s, r) => s + r.calculated_fee, 0).toLocaleString()}</strong>
+                            </span>
+                        </div>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openCFModal()}>+ Add Payment</button>
+                    </div>
+                    <div style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 0.9rem", marginBottom: "0.75rem", fontSize: "0.78rem", color: "var(--text-2)" }}>
+                        ℹ Punjab Court Fees Act slab calculator (ad valorem). Rates are approximate — verify current gazette for exact amounts.
+                    </div>
+                    {courtFeeLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : courtFeeList.length === 0 ? (
+                        <div className={styles.emptyHint}>No court fee records yet. Use this tab to track court fee calculations, challan numbers, and payments for this matter.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th>Date</th>
+                                <th>Claim (PKR)</th>
+                                <th>Type</th>
+                                <th>Calculated</th>
+                                <th>Paid</th>
+                                <th>Challan No.</th>
+                                <th style={{ width: 80 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {courtFeeList.map(r => (
+                                    <tr key={r.fee_payment_id}>
+                                        <td style={{ fontSize: "0.82rem" }}>{r.payment_date || "—"}</td>
+                                        <td style={{ fontSize: "0.82rem" }}>PKR {r.claim_amount_pkr.toLocaleString()}</td>
+                                        <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{r.fee_type}</td>
+                                        <td style={{ fontSize: "0.82rem", fontWeight: 600 }}>PKR {r.calculated_fee.toLocaleString()}</td>
+                                        <td style={{ fontSize: "0.82rem", color: r.actual_paid >= r.calculated_fee ? "#16a34a" : "#dc2626", fontWeight: 600 }}>PKR {r.actual_paid.toLocaleString()}</td>
+                                        <td style={{ fontSize: "0.78rem", fontFamily: "monospace" }}>{r.challan_no || "—"}</td>
+                                        <td style={{ display: "flex", gap: 4 }}>
+                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCFModal(r)}>Edit</button>
+                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCFUI(r.fee_payment_id)}>Del</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </>)}
+
+                {/* ── Court Fee modal ── */}
+                {showCFModal && (
+                    <div className={styles.overlay} onClick={() => setShowCFModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+                            <div className={styles.modalTitle}>{editCF ? "Edit Court Fee" : "Add Court Fee Payment"}</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Claim Amount (PKR)</label>
+                                    <input type="number" className={styles.formInput} min={0} value={cfForm.claim_amount_pkr}
+                                        onChange={e => { const v = parseFloat(e.target.value) || 0; setCfForm(f => ({ ...f, claim_amount_pkr: v })); previewCourtFee(v, cfForm.fee_type); }} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Fee Type</label>
+                                    <select className={styles.formInput} value={cfForm.fee_type} onChange={e => { setCfForm(f => ({ ...f, fee_type: e.target.value })); previewCourtFee(cfForm.claim_amount_pkr, e.target.value); }}>
+                                        {COURT_FEE_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            {cfCalcPreview !== null && (
+                                <div style={{ background: "var(--bg-1)", border: "1px solid var(--gold)", borderRadius: "var(--radius)", padding: "0.5rem 0.75rem", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                                    📐 Calculated court fee: <strong>PKR {cfCalcPreview.toLocaleString()}</strong>
+                                </div>
+                            )}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Calculated Fee (PKR)</label>
+                                    <input type="number" className={styles.formInput} min={0} value={cfForm.calculated_fee} onChange={e => setCfForm(f => ({ ...f, calculated_fee: parseFloat(e.target.value) || 0 }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Actual Paid (PKR)</label>
+                                    <input type="number" className={styles.formInput} min={0} value={cfForm.actual_paid} onChange={e => setCfForm(f => ({ ...f, actual_paid: parseFloat(e.target.value) || 0 }))} />
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Payment Date</label>
+                                    <input type="date" className={styles.formInput} value={cfForm.payment_date} onChange={e => setCfForm(f => ({ ...f, payment_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Challan No.</label>
+                                    <input className={styles.formInput} value={cfForm.challan_no} onChange={e => setCfForm(f => ({ ...f, challan_no: e.target.value }))} placeholder="Treasury challan number" />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Court</label>
+                                <input className={styles.formInput} value={cfForm.court} onChange={e => setCfForm(f => ({ ...f, court: e.target.value }))} placeholder="Optional" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={2} value={cfForm.notes} onChange={e => setCfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                            </div>
+                            {cfErr && <div className={styles.formError}>{cfErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowCFModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveCF} disabled={cfSaving}>{cfSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Associate Fees tab — Task #153 ── */}
+                {detailTab === "assocfees" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <div>
+                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Associate / Wakeel appearance fees for this matter</span>
+                            {assocFeeList.length > 0 && (
+                                <span style={{ marginLeft: "0.75rem", fontSize: "0.82rem" }}>
+                                    Total: <strong>PKR {assocFeeList.reduce((s, r) => s + r.amount_pkr, 0).toLocaleString()}</strong>
+                                    {" · "}Paid: <strong style={{ color: "#16a34a" }}>PKR {assocFeeList.filter(r => r.paid).reduce((s, r) => s + r.amount_pkr, 0).toLocaleString()}</strong>
+                                    {" · "}Unpaid: <strong style={{ color: "#dc2626" }}>PKR {assocFeeList.filter(r => !r.paid).reduce((s, r) => s + r.amount_pkr, 0).toLocaleString()}</strong>
+                                </span>
+                            )}
+                        </div>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openAFModal()}>+ Add Fee</button>
+                    </div>
+                    {assocFeeLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : assocFeeList.length === 0 ? (
+                        <div className={styles.emptyHint}>No associate fee records yet. Track fees paid to junior advocates, wakeels, or associates who appeared on behalf of the firm.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th>Advocate</th>
+                                <th>Bar No.</th>
+                                <th>Appearance Date</th>
+                                <th>Amount (PKR)</th>
+                                <th>Status</th>
+                                <th>Payment Date</th>
+                                <th style={{ width: 90 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {assocFeeList.map(r => (
+                                    <tr key={r.assoc_fee_id} style={{ background: r.paid ? "transparent" : "rgba(220,38,38,0.04)" }}>
+                                        <td><strong>{r.advocate_name}</strong></td>
+                                        <td className={styles.muted}>{r.bar_no || "—"}</td>
+                                        <td>{r.appearance_date || "—"}</td>
+                                        <td>PKR {r.amount_pkr.toLocaleString()}</td>
+                                        <td>
+                                            <span style={{ padding: "2px 8px", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: 600, background: r.paid ? "#dcfce7" : "#fee2e2", color: r.paid ? "#16a34a" : "#dc2626" }}>
+                                                {r.paid ? "Paid" : "Unpaid"}
+                                            </span>
+                                        </td>
+                                        <td className={styles.muted}>{r.payment_date || "—"}</td>
+                                        <td style={{ display: "flex", gap: "0.25rem" }}>
+                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openAFModal(r)}>Edit</button>
+                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteAssocFeeUI(r.assoc_fee_id)}>Del</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </>)}
+
+                {showAFModal && (
+                    <div className={styles.modalOverlay}>
+                        <div className={styles.modal} style={{ maxWidth: 480 }}>
+                            <div className={styles.modalHeader}>
+                                <h3 className={styles.modalTitle}>{editAF ? "Edit Associate Fee" : "Add Associate Fee"}</h3>
+                                <button className={styles.modalClose} onClick={() => setShowAFModal(false)}>✕</button>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Advocate Name *</label>
+                                <input className={styles.formInput} value={afForm.advocate_name} onChange={e => setAfForm(f => ({ ...f, advocate_name: e.target.value }))} placeholder="Full name" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Bar Registration No.</label>
+                                <input className={styles.formInput} value={afForm.bar_no} onChange={e => setAfForm(f => ({ ...f, bar_no: e.target.value }))} placeholder="Optional" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Appearance Date</label>
+                                <input type="date" className={styles.formInput} value={afForm.appearance_date} onChange={e => setAfForm(f => ({ ...f, appearance_date: e.target.value }))} />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Amount (PKR) *</label>
+                                <input type="number" className={styles.formInput} min={0} value={afForm.amount_pkr} onChange={e => setAfForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} placeholder="0" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel} style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                                    <input type="checkbox" checked={!!afForm.paid} onChange={e => setAfForm(f => ({ ...f, paid: e.target.checked ? 1 : 0 }))} />
+                                    Mark as Paid
+                                </label>
+                            </div>
+                            {afForm.paid ? (
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Payment Date</label>
+                                    <input type="date" className={styles.formInput} value={afForm.payment_date} onChange={e => setAfForm(f => ({ ...f, payment_date: e.target.value }))} />
+                                </div>
+                            ) : null}
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={2} value={afForm.notes} onChange={e => setAfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                            </div>
+                            {afErr && <div className={styles.formError}>{afErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowAFModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveAssocFee} disabled={afSaving}>{afSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Cheques tab — Task #155 ── */}
+                {detailTab === "cheques" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <div>
+                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Post-dated & undated cheques held or presented for this matter</span>
+                            {chequeList.length > 0 && (
+                                <span style={{ marginLeft: "0.75rem", fontSize: "0.82rem" }}>
+                                    Total: <strong>PKR {chequeList.reduce((s, c) => s + c.amount_pkr, 0).toLocaleString()}</strong>
+                                </span>
+                            )}
+                        </div>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openCHQModal()}>+ Add Cheque</button>
+                    </div>
+                    {chequeLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : chequeList.length === 0 ? (
+                        <div className={styles.emptyHint}>No cheque records yet. Track post-dated, undated, or bearer cheques received from clients as security or payment.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th>Cheque No.</th>
+                                <th>Bank</th>
+                                <th>Amount</th>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th style={{ width: 90 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {chequeList.map(c => {
+                                    const statusColor = c.status === "Cleared" ? "#16a34a" : c.status === "Bounced" ? "#dc2626" : c.status === "Presented" ? "#2563eb" : c.status === "Returned" || c.status === "Cancelled" ? "#9ca3af" : "var(--text-2)";
+                                    return (
+                                        <tr key={c.cheque_id}>
+                                            <td><strong>{c.cheque_no}</strong></td>
+                                            <td className={styles.muted}>{c.bank_name || "—"}{c.account_title ? ` / ${c.account_title}` : ""}</td>
+                                            <td>PKR {c.amount_pkr.toLocaleString()}</td>
+                                            <td className={styles.muted}>{c.cheque_date || "Undated"}</td>
+                                            <td><span style={{ fontSize: "0.78rem" }}>{c.cheque_type}</span></td>
+                                            <td><span style={{ fontWeight: 600, fontSize: "0.8rem", color: statusColor }}>{c.status}</span></td>
+                                            <td style={{ display: "flex", gap: "0.25rem" }}>
+                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCHQModal(c)}>Edit</button>
+                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCHQUI(c.cheque_id)}>Del</button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                </>)}
+
+                {showCHQModal && (
+                    <div className={styles.modalOverlay}>
+                        <div className={styles.modal} style={{ maxWidth: 500 }}>
+                            <div className={styles.modalHeader}>
+                                <h3 className={styles.modalTitle}>{editCHQ ? "Edit Cheque" : "Add Cheque"}</h3>
+                                <button className={styles.modalClose} onClick={() => setShowCHQModal(false)}>✕</button>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Cheque No. *</label>
+                                    <input className={styles.formInput} value={chqForm.cheque_no} onChange={e => setChqForm(f => ({ ...f, cheque_no: e.target.value }))} placeholder="e.g. 000123" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Amount (PKR)</label>
+                                    <input type="number" className={styles.formInput} min={0} value={chqForm.amount_pkr} onChange={e => setChqForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Bank Name</label>
+                                    <input className={styles.formInput} value={chqForm.bank_name} onChange={e => setChqForm(f => ({ ...f, bank_name: e.target.value }))} placeholder="e.g. HBL" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Account Title</label>
+                                    <input className={styles.formInput} value={chqForm.account_title} onChange={e => setChqForm(f => ({ ...f, account_title: e.target.value }))} placeholder="Optional" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Cheque Date</label>
+                                    <input type="date" className={styles.formInput} value={chqForm.cheque_date} onChange={e => setChqForm(f => ({ ...f, cheque_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Type</label>
+                                    <select className={styles.formInput} value={chqForm.cheque_type} onChange={e => setChqForm(f => ({ ...f, cheque_type: e.target.value }))}>
+                                        {["Post-Dated", "Undated", "Bearer", "Crossed"].map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Status</label>
+                                    <select className={styles.formInput} value={chqForm.status} onChange={e => setChqForm(f => ({ ...f, status: e.target.value }))}>
+                                        {["Held", "Presented", "Cleared", "Bounced", "Returned", "Cancelled"].map(s => <option key={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Received Date</label>
+                                    <input type="date" className={styles.formInput} value={chqForm.received_date} onChange={e => setChqForm(f => ({ ...f, received_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
+                                    <label className={styles.formLabel}>Notes</label>
+                                    <textarea className={styles.formInput} rows={2} value={chqForm.notes} onChange={e => setChqForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                                </div>
+                            </div>
+                            {chqErr && <div className={styles.formError}>{chqErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowCHQModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveCHQ} disabled={chqSaving}>{chqSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* ── Challan tab ── */}
                 {detailTab === "challan" && (<>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
@@ -4116,6 +4859,38 @@ const MattersPanel = () => {
                     </div>
                 </div>
             )}
+
+            {/* ── Conflict of Interest Results Modal — Task #150 ── */}
+            {showConflictModal && (
+                <div className={styles.overlay} onClick={() => setShowConflictModal(false)}>
+                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
+                        <div className={styles.modalTitle} style={{ color: conflictResults.length > 0 ? "#dc2626" : "#16a34a" }}>
+                            {conflictResults.length > 0 ? `⚠ ${conflictResults.length} Potential Conflict${conflictResults.length > 1 ? "s" : ""} Found` : "✓ No Conflicts Found"}
+                        </div>
+                        {conflictResults.length === 0 ? (
+                            <p style={{ color: "var(--text-2)", fontSize: "0.9rem" }}>No existing matters involve this client or opposing party. You may proceed.</p>
+                        ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: 360, overflowY: "auto" }}>
+                                {conflictResults.map((c, i) => (
+                                    <div key={i} style={{ background: "var(--bg-1)", border: "1px solid #dc2626", borderRadius: "var(--radius)", padding: "0.75rem" }}>
+                                        <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>{c.matter_title}</div>
+                                        <div style={{ fontSize: "0.8rem", color: "var(--text-2)", marginTop: "0.2rem" }}>
+                                            Client: {c.client_name} · Opponent: {c.opposing_party || "—"} · Status: {c.status}
+                                        </div>
+                                        <ul style={{ margin: "0.4rem 0 0 1rem", padding: 0, fontSize: "0.8rem", color: "#dc2626" }}>
+                                            {c.reasons.map((r, j) => <li key={j}>{r}</li>)}
+                                        </ul>
+                                    </div>
+                                ))}
+                                <p style={{ fontSize: "0.82rem", color: "var(--text-3)", margin: 0 }}>Review these conflicts carefully before proceeding. You may still create the matter if you determine there is no actual conflict.</p>
+                            </div>
+                        )}
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
+                            <button className={styles.btnPrimary} onClick={() => setShowConflictModal(false)}>Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -4190,6 +4965,331 @@ const PAKISTAN_COURTS = [
     "Civil Court",
     "Other",
 ];
+
+// ── Intelligence Panel — Task #158 ───────────────────────────────────────────
+const IntelligencePanel = () => {
+    type Counsel = { counsel_id: string; name: string; bar_no: string | null; firm_name: string | null; phone: string | null; email: string | null; court_preference: string | null; known_tactics: string | null; private_notes: string | null };
+    type Judge   = { judge_id: string; name: string; court_name: string | null; designation: string | null; known_for: string | null; private_notes: string | null };
+    const [tab,          setTab]          = useState<"counsel" | "judges">("counsel");
+    const [counselList,  setCounselList]  = useState<Counsel[]>([]);
+    const [judgeList,    setJudgeList]    = useState<Judge[]>([]);
+    const [loading,      setLoading]      = useState(true);
+    const [showModal,    setShowModal]    = useState(false);
+    const [editItem,     setEditItem]     = useState<Counsel | Judge | null>(null);
+    const [form,         setForm]         = useState<Record<string, string>>({});
+    const [saving,       setSaving]       = useState(false);
+    const [err,          setErr]          = useState("");
+    const [expanded,     setExpanded]     = useState<string | null>(null);
+
+    const loadAll = () => {
+        setLoading(true);
+        Promise.all([
+            fetch("/opposing-counsel", { headers: authHeaders() }).then(r => r.json()),
+            fetch("/judge-notes",      { headers: authHeaders() }).then(r => r.json()),
+        ]).then(([c, j]) => {
+            setCounselList(c.counsel || []);
+            setJudgeList(j.judges || []);
+            setLoading(false);
+        }).catch(() => setLoading(false));
+    };
+    useEffect(() => { loadAll(); }, []);
+
+    const openModal = (item?: Counsel | Judge) => {
+        setEditItem(item || null);
+        if (tab === "counsel") {
+            const c = item as Counsel | undefined;
+            setForm({ name: c?.name || "", bar_no: c?.bar_no || "", firm_name: c?.firm_name || "", phone: c?.phone || "", email: c?.email || "", court_preference: c?.court_preference || "", known_tactics: c?.known_tactics || "", private_notes: c?.private_notes || "" });
+        } else {
+            const j = item as Judge | undefined;
+            setForm({ name: j?.name || "", court_name: j?.court_name || "", designation: j?.designation || "", known_for: j?.known_for || "", private_notes: j?.private_notes || "" });
+        }
+        setErr(""); setShowModal(true);
+    };
+
+    const save = async () => {
+        if (!form.name?.trim()) { setErr("Name is required"); return; }
+        setSaving(true); setErr("");
+        const isCounsel = tab === "counsel";
+        const base = isCounsel ? "/opposing-counsel" : "/judge-notes";
+        const idKey = isCounsel ? (editItem as Counsel | null)?.counsel_id : (editItem as Judge | null)?.judge_id;
+        const url = idKey ? `${base}/${idKey}` : base;
+        const method = idKey ? "PATCH" : "POST";
+        const res = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        setSaving(false);
+        if (res.ok) { setShowModal(false); loadAll(); }
+        else { const e = await res.json(); setErr(e.error || "Save failed"); }
+    };
+
+    const deleteItem = async (id: string) => {
+        if (!confirm("Delete this record?")) return;
+        const base = tab === "counsel" ? `/opposing-counsel/${id}` : `/judge-notes/${id}`;
+        await fetch(base, { method: "DELETE", headers: authHeaders() });
+        loadAll();
+    };
+
+    return (
+        <div className={styles.panelContent}>
+            <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", alignItems: "center" }}>
+                <button className={tab === "counsel" ? styles.btnPrimary : styles.btnGhost} style={{ fontSize: "0.82rem" }} onClick={() => setTab("counsel")}>
+                    ⚖ Opposing Counsel ({counselList.length})
+                </button>
+                <button className={tab === "judges" ? styles.btnPrimary : styles.btnGhost} style={{ fontSize: "0.82rem" }} onClick={() => setTab("judges")}>
+                    🏛 Judges ({judgeList.length})
+                </button>
+                <button className={styles.btnPrimary} style={{ marginLeft: "auto", fontSize: "0.82rem" }} onClick={() => openModal()}>
+                    + Add {tab === "counsel" ? "Counsel" : "Judge"}
+                </button>
+            </div>
+            {loading ? (
+                <div className={styles.muted} style={{ textAlign: "center", padding: "2rem" }}>Loading…</div>
+            ) : tab === "counsel" ? (
+                counselList.length === 0 ? (
+                    <div className={styles.emptyHint}>No opposing counsel records yet. Build your private intelligence file on lawyers you frequently face — their tactics, preferred courts, and contact info.</div>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {counselList.map(c => (
+                            <div key={c.counsel_id} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.75rem 1rem" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                    <div>
+                                        <strong>{c.name}</strong>
+                                        {c.bar_no && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>Bar: {c.bar_no}</span>}
+                                        {c.firm_name && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>{c.firm_name}</span>}
+                                    </div>
+                                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => setExpanded(expanded === c.counsel_id ? null : c.counsel_id)}>
+                                            {expanded === c.counsel_id ? "Less" : "Notes"}
+                                        </button>
+                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openModal(c)}>Edit</button>
+                                        <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteItem(c.counsel_id)}>Del</button>
+                                    </div>
+                                </div>
+                                {(c.phone || c.email || c.court_preference) && (
+                                    <div className={styles.muted} style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>
+                                        {c.phone && `📞 ${c.phone}`}{c.phone && c.email && " · "}{c.email && `✉ ${c.email}`}
+                                        {c.court_preference && ` · Prefers: ${c.court_preference}`}
+                                    </div>
+                                )}
+                                {expanded === c.counsel_id && (
+                                    <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px dashed var(--border)" }}>
+                                        {c.known_tactics && <div style={{ fontSize: "0.82rem", marginBottom: "0.25rem" }}><strong>Known Tactics:</strong> {c.known_tactics}</div>}
+                                        {c.private_notes && <div style={{ fontSize: "0.82rem", color: "var(--text-2)", fontStyle: "italic" }}>{c.private_notes}</div>}
+                                        {!c.known_tactics && !c.private_notes && <div className={styles.muted} style={{ fontSize: "0.8rem" }}>No detailed notes yet.</div>}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )
+            ) : (
+                judgeList.length === 0 ? (
+                    <div className={styles.emptyHint}>No judge records yet. Keep private notes on judges you appear before — their known inclinations, preferences, and important observations.</div>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {judgeList.map(j => (
+                            <div key={j.judge_id} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.75rem 1rem" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                    <div>
+                                        <strong>{j.name}</strong>
+                                        {j.designation && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>{j.designation}</span>}
+                                        {j.court_name && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>@ {j.court_name}</span>}
+                                    </div>
+                                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => setExpanded(expanded === j.judge_id ? null : j.judge_id)}>
+                                            {expanded === j.judge_id ? "Less" : "Notes"}
+                                        </button>
+                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openModal(j)}>Edit</button>
+                                        <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteItem(j.judge_id)}>Del</button>
+                                    </div>
+                                </div>
+                                {expanded === j.judge_id && (
+                                    <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px dashed var(--border)" }}>
+                                        {j.known_for && <div style={{ fontSize: "0.82rem", marginBottom: "0.25rem" }}><strong>Known For:</strong> {j.known_for}</div>}
+                                        {j.private_notes && <div style={{ fontSize: "0.82rem", color: "var(--text-2)", fontStyle: "italic" }}>{j.private_notes}</div>}
+                                        {!j.known_for && !j.private_notes && <div className={styles.muted} style={{ fontSize: "0.8rem" }}>No detailed notes yet.</div>}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )
+            )}
+
+            {showModal && (
+                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
+                    <div className={styles.modal} style={{ maxWidth: 480 }}>
+                        <div className={styles.modalHeader}>
+                            <h3 className={styles.modalTitle}>{editItem ? "Edit" : "Add"} {tab === "counsel" ? "Opposing Counsel" : "Judge"}</h3>
+                            <button className={styles.modalClose} onClick={() => setShowModal(false)}>✕</button>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Full Name *</label>
+                            <input className={styles.formInput} value={form.name || ""} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Ch. Hamid Iqbal" />
+                        </div>
+                        {tab === "counsel" ? (<>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Bar Registration No.</label>
+                                    <input className={styles.formInput} value={form.bar_no || ""} onChange={e => setForm(f => ({ ...f, bar_no: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Firm Name</label>
+                                    <input className={styles.formInput} value={form.firm_name || ""} onChange={e => setForm(f => ({ ...f, firm_name: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Phone</label>
+                                    <input className={styles.formInput} value={form.phone || ""} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Email</label>
+                                    <input className={styles.formInput} value={form.email || ""} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Preferred Court</label>
+                                <input className={styles.formInput} value={form.court_preference || ""} onChange={e => setForm(f => ({ ...f, court_preference: e.target.value }))} placeholder="e.g. LHC Banking Court" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Known Tactics / Style</label>
+                                <textarea className={styles.formInput} rows={2} value={form.known_tactics || ""} onChange={e => setForm(f => ({ ...f, known_tactics: e.target.value }))} placeholder="e.g. Often requests adjournments, strong on procedure…" />
+                            </div>
+                        </>) : (<>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Court</label>
+                                    <input className={styles.formInput} value={form.court_name || ""} onChange={e => setForm(f => ({ ...f, court_name: e.target.value }))} placeholder="e.g. LHC Civil" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Designation</label>
+                                    <input className={styles.formInput} value={form.designation || ""} onChange={e => setForm(f => ({ ...f, designation: e.target.value }))} placeholder="e.g. Senior Civil Judge" />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Known For</label>
+                                <textarea className={styles.formInput} rows={2} value={form.known_for || ""} onChange={e => setForm(f => ({ ...f, known_for: e.target.value }))} placeholder="e.g. Strict on time limits, favours written submissions…" />
+                            </div>
+                        </>)}
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Private Notes (not shared with client)</label>
+                            <textarea className={styles.formInput} rows={3} value={form.private_notes || ""} onChange={e => setForm(f => ({ ...f, private_notes: e.target.value }))} placeholder="Confidential observations…" />
+                        </div>
+                        {err && <div className={styles.formError}>{err}</div>}
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                            <button className={styles.btnGhost} onClick={() => setShowModal(false)}>Cancel</button>
+                            <button className={styles.btnPrimary} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ── Vakalatnama Register Panel — Task #156 ────────────────────────────────────
+const VakalatnamaPanel = () => {
+    type VEntry = { matter_id: string; title: string; matter_no: string | null; client_name: string; court_name: string | null; vakalatnama_status: string; status: string; created_at: string };
+    const [register,  setRegister]  = useState<VEntry[]>([]);
+    const [loading,   setLoading]   = useState(true);
+    const [filter,    setFilter]    = useState<"All" | "Pending" | "Filed" | "Rejected">("All");
+    const [search,    setSearch]    = useState("");
+    const [updating,  setUpdating]  = useState<string | null>(null);
+
+    const load = () => {
+        setLoading(true);
+        fetch("/vakalatnama-register", { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setRegister(d.register || []); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+    useEffect(() => { load(); }, []);
+
+    const updateStatus = async (matterId: string, newStatus: string) => {
+        setUpdating(matterId);
+        const res = await fetch(`/matters/${matterId}/vakalatnama`, {
+            method: "PATCH",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ vakalatnama_status: newStatus }),
+        });
+        if (res.ok) {
+            setRegister(prev => prev.map(e => e.matter_id === matterId ? { ...e, vakalatnama_status: newStatus } : e));
+        }
+        setUpdating(null);
+    };
+
+    const visible = register.filter(e => {
+        if (filter !== "All" && e.vakalatnama_status !== filter) return false;
+        if (search) {
+            const q = search.toLowerCase();
+            return e.title.toLowerCase().includes(q) || e.client_name.toLowerCase().includes(q) || (e.matter_no || "").toLowerCase().includes(q);
+        }
+        return true;
+    });
+
+    const counts = { All: register.length, Pending: 0, Filed: 0, Rejected: 0 };
+    register.forEach(e => { if (e.vakalatnama_status in counts) (counts as Record<string,number>)[e.vakalatnama_status]++; });
+
+    const statusColor = (s: string) => s === "Filed" ? "#16a34a" : s === "Rejected" ? "#dc2626" : "#d97706";
+
+    return (
+        <div className={styles.panelContent}>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem", alignItems: "center" }}>
+                {(["All", "Pending", "Filed", "Rejected"] as const).map(f => (
+                    <button key={f} onClick={() => setFilter(f)}
+                        className={filter === f ? styles.btnPrimary : styles.btnGhost}
+                        style={{ fontSize: "0.82rem" }}>
+                        {f} ({counts[f]})
+                    </button>
+                ))}
+                <input className={styles.searchInput} placeholder="Search matter / client…" value={search}
+                    onChange={e => setSearch(e.target.value)} style={{ marginLeft: "auto", width: 220 }} />
+            </div>
+            {loading ? (
+                <div className={styles.muted} style={{ textAlign: "center", padding: "2rem" }}>Loading…</div>
+            ) : visible.length === 0 ? (
+                <div className={styles.emptyHint}>No matters match the current filter. All matters with a vakalatnama status appear here.</div>
+            ) : (
+                <table className={styles.feeTable}>
+                    <thead><tr>
+                        <th>Matter No.</th>
+                        <th>Title</th>
+                        <th>Client</th>
+                        <th>Court</th>
+                        <th>Matter Status</th>
+                        <th>Vakalatnama</th>
+                        <th style={{ width: 160 }}>Update</th>
+                    </tr></thead>
+                    <tbody>
+                        {visible.map(e => (
+                            <tr key={e.matter_id}>
+                                <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{e.matter_no || "—"}</td>
+                                <td><strong style={{ fontSize: "0.88rem" }}>{e.title}</strong></td>
+                                <td className={styles.muted}>{e.client_name}</td>
+                                <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{e.court_name || "—"}</td>
+                                <td><span style={{ fontSize: "0.78rem" }}>{e.status}</span></td>
+                                <td>
+                                    <span style={{ fontWeight: 700, fontSize: "0.82rem", color: statusColor(e.vakalatnama_status) }}>
+                                        {e.vakalatnama_status}
+                                    </span>
+                                </td>
+                                <td>
+                                    <select
+                                        className={styles.formInput}
+                                        style={{ fontSize: "0.78rem", padding: "2px 6px" }}
+                                        value={e.vakalatnama_status}
+                                        disabled={updating === e.matter_id}
+                                        onChange={ev => updateStatus(e.matter_id, ev.target.value)}>
+                                        <option>Pending</option>
+                                        <option>Filed</option>
+                                        <option>Rejected</option>
+                                    </select>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+        </div>
+    );
+};
 
 const CauseListPanel = () => {
     const [entries,    setEntries]    = useState<CauseListEntry[]>([]);
@@ -5642,11 +6742,44 @@ ${inv.notes ? `<div class="section" style="margin-top:20px"><div class="section-
                                 </tbody>
                                 <tfoot>
                                     <tr>
-                                        <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Total</td>
-                                        <td style={{ textAlign: "right", fontWeight: 700, color: "var(--gold)" }}>
+                                        <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Gross Amount</td>
+                                        <td style={{ textAlign: "right", fontWeight: 700 }}>
                                             PKR {viewInvoice.total_amount.toLocaleString("en-PK")}
                                         </td>
                                     </tr>
+                                    {(viewInvoice.wht_rate ?? 0) > 0 && (<>
+                                        <tr>
+                                            <td colSpan={3} style={{ textAlign: "right", color: "#dc2626", fontSize: "0.85rem" }}>
+                                                WHT @ {((viewInvoice.wht_rate ?? 0) * 100).toFixed(0)}% (§153 ITO 2001 — Corporate deduction)
+                                            </td>
+                                            <td style={{ textAlign: "right", color: "#dc2626", fontSize: "0.85rem" }}>
+                                                − PKR {(viewInvoice.wht_amount ?? 0).toLocaleString("en-PK")}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Net Payable</td>
+                                            <td style={{ textAlign: "right", fontWeight: 700, color: "var(--gold)" }}>
+                                                PKR {(viewInvoice.net_payable ?? viewInvoice.total_amount).toLocaleString("en-PK")}
+                                            </td>
+                                        </tr>
+                                    </>)}
+                                    {!(viewInvoice.wht_rate ?? 0) && (
+                                        <tr>
+                                            <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Net Payable</td>
+                                            <td style={{ textAlign: "right", fontWeight: 700, color: "var(--gold)" }}>
+                                                PKR {viewInvoice.total_amount.toLocaleString("en-PK")}
+                                            </td>
+                                        </tr>
+                                    )}
+                                    {(viewInvoice.client_ntn || viewInvoice.org_ntn) && (
+                                        <tr>
+                                            <td colSpan={4} style={{ fontSize: "0.78rem", color: "var(--text-3)", paddingTop: "0.4rem" }}>
+                                                {viewInvoice.org_ntn && `Firm NTN/Bar: ${viewInvoice.org_ntn}`}
+                                                {viewInvoice.org_ntn && viewInvoice.client_ntn && " · "}
+                                                {viewInvoice.client_ntn && `Client NTN/CNIC: ${viewInvoice.client_ntn}`}
+                                            </td>
+                                        </tr>
+                                    )}
                                 </tfoot>
                             </table>
                         </div>
@@ -7710,6 +8843,8 @@ const OwnerPortal = () => {
                             {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} maxUsers={maxUsers} onUpgrade={() => setPanel("subscription")} />}
                             {panel === "drafting"      && <DraftingPanel />}
                             {panel === "causelist"     && <CauseListPanel />}
+                            {panel === "vakalat"       && <VakalatnamaPanel />}
+                            {panel === "intelligence"  && <IntelligencePanel />}
                             {panel === "audit"         && <AuditPanel />}
                             {panel === "subscription"  && (
                                 <SubscriptionPanel
