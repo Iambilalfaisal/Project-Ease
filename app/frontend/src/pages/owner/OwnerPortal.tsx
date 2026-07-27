@@ -37,16 +37,17 @@ interface Usage {
 }
 
 interface Client {
-    client_id:   string;
-    name:        string;
-    client_type: "Individual" | "Corporate";
-    email?:      string;
-    phone?:      string;
-    address?:    string;
-    cnic_ntn?:   string;
-    notes?:      string;
-    created_at:  string;
-    matter_count?: number;
+    client_id:        string;
+    name:             string;
+    client_type:      "Individual" | "Corporate";
+    email?:           string;
+    phone?:           string;
+    address?:         string;
+    cnic_ntn?:        string;
+    notes?:           string;
+    referral_source?: string;
+    created_at:       string;
+    matter_count?:    number;
 }
 
 interface MatterTeam {
@@ -330,9 +331,14 @@ const PLAN_LIMITS: Record<string, { docs: number; users: number }> = {
 
 // ── Clients Panel ─────────────────────────────────────────────────────────────
 
+const REFERRAL_SOURCES = [
+    "Walk-in", "Referral – Existing Client", "Referral – Colleague",
+    "Bar Association", "Online / Website", "Social Media", "WhatsApp", "Other",
+] as const;
+
 const BLANK_CLIENT = {
     name: "", client_type: "Individual" as "Individual" | "Corporate",
-    email: "", phone: "", address: "", cnic_ntn: "", notes: "",
+    email: "", phone: "", address: "", cnic_ntn: "", notes: "", referral_source: "",
 };
 
 const ClientsPanel = () => {
@@ -381,6 +387,7 @@ const ClientsPanel = () => {
             name: c.name, client_type: c.client_type,
             email: c.email ?? "", phone: c.phone ?? "",
             address: c.address ?? "", cnic_ntn: c.cnic_ntn ?? "", notes: c.notes ?? "",
+            referral_source: c.referral_source ?? "",
         });
         setEditMode(true); setFormErr(null); setShowModal(true);
     };
@@ -599,6 +606,13 @@ const ClientsPanel = () => {
                         <label className={styles.formLabel}>Address</label>
                         <input className={styles.formInput} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="City, Province" />
                     </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Referral Source</label>
+                        <select className={styles.formSelect} value={form.referral_source} onChange={e => setForm({ ...form, referral_source: e.target.value })}>
+                            <option value="">Not specified</option>
+                            {REFERRAL_SOURCES.map(s => <option key={s}>{s}</option>)}
+                        </select>
+                    </div>
                     <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
                         <label className={styles.formLabel}>Notes</label>
                         <input className={styles.formInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional internal notes" />
@@ -633,9 +647,10 @@ const ClientsPanel = () => {
                 <div className={styles.detailInfoGrid}>
                     {detail.email    && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Email</span><span>{detail.email}</span></div>}
                     {detail.phone    && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Phone</span><span>{detail.phone}</span></div>}
-                    {detail.cnic_ntn && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>CNIC / NTN</span><span>{detail.cnic_ntn}</span></div>}
-                    {detail.address  && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Address</span><span>{detail.address}</span></div>}
-                    {detail.notes    && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
+                    {detail.cnic_ntn        && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>CNIC / NTN</span><span>{detail.cnic_ntn}</span></div>}
+                    {detail.address         && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Address</span><span>{detail.address}</span></div>}
+                    {detail.referral_source && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Referral Source</span><span className={styles.badgeGray} style={{ fontSize: "0.78rem" }}>{detail.referral_source}</span></div>}
+                    {detail.notes           && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
                 </div>
 
                 <div className={styles.sectionTitle} style={{ marginTop: "1.75rem" }}>
@@ -684,7 +699,7 @@ const ClientsPanel = () => {
                 <div className={styles.tableWrap}>
                     <table className={styles.table}>
                         <thead><tr>
-                            <th>Name</th><th>Type</th><th>Email</th><th>Phone</th><th>Matters</th><th>Actions</th>
+                            <th>Name</th><th>Type</th><th>Referral Source</th><th>Email</th><th>Phone</th><th>Matters</th><th>Actions</th>
                         </tr></thead>
                         <tbody>
                             {clients.map(c => (
@@ -693,6 +708,7 @@ const ClientsPanel = () => {
                                         <button className={styles.linkBtn} onClick={() => openDetail(c)}>{c.name}</button>
                                     </td>
                                     <td><span className={c.client_type === "Corporate" ? styles.badgeGold : styles.badgeGray}>{c.client_type}</span></td>
+                                    <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{c.referral_source ?? <span style={{ color: "var(--text-3)" }}>—</span>}</td>
                                     <td className={styles.muted}>{c.email ?? "—"}</td>
                                     <td className={styles.muted}>{c.phone ?? "—"}</td>
                                     <td className={styles.muted}>{c.matter_count ?? 0}</td>

@@ -1743,6 +1743,7 @@ async def add_client():
         address=data.get("address") or None,
         cnic_ntn=data.get("cnic_ntn") or None,
         notes=data.get("notes") or None,
+        referral_source=data.get("referral_source") or None,
         actor=session.get("user_id") or SYSTEM,
     )
     _audit(session, "client_create",

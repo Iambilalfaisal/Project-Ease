@@ -527,6 +527,12 @@ def _run_migrations(conn: sqlite3.Connection):
     except sqlite3.OperationalError:
         pass
 
+    # Referral Source — Task #136
+    try:
+        conn.execute("ALTER TABLE clients ADD COLUMN referral_source TEXT")
+    except sqlite3.OperationalError:
+        pass
+
 
 def init_db():
     """Create tables if they don't exist, apply migrations, then seed dev data."""
@@ -1183,11 +1189,18 @@ def get_clients(org_id: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+REFERRAL_SOURCES = (
+    "Walk-in", "Referral – Existing Client", "Referral – Colleague",
+    "Bar Association", "Online / Website", "Social Media", "WhatsApp", "Other",
+)
+
 def create_client(
     org_id: str, name: str, client_type: str = "Individual",
     email: Optional[str] = None, phone: Optional[str] = None,
     address: Optional[str] = None, cnic_ntn: Optional[str] = None,
-    notes: Optional[str] = None, actor: str = SYSTEM,
+    notes: Optional[str] = None,
+    referral_source: Optional[str] = None,
+    actor: str = SYSTEM,
 ) -> dict:
     client_id = secrets.token_hex(10)
     now = _now()
@@ -1195,17 +1208,17 @@ def create_client(
         conn.execute(
             """INSERT INTO clients
                (client_id, org_id, name, client_type, email, phone, address, cnic_ntn, notes,
-                created_at, created_by, modified_at, modified_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                referral_source, created_at, created_by, modified_at, modified_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (client_id, org_id, name, client_type, email, phone, address, cnic_ntn, notes,
-             now, actor, now, actor),
+             referral_source, now, actor, now, actor),
         )
     return {"client_id": client_id, "org_id": org_id, "name": name,
             "client_type": client_type, "created_at": now, "matter_count": 0}
 
 
 def update_client(client_id: str, org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
-    allowed = {"name", "client_type", "email", "phone", "address", "cnic_ntn", "notes"}
+    allowed = {"name", "client_type", "email", "phone", "address", "cnic_ntn", "notes", "referral_source"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return get_client_with_matters(client_id, org_id)
