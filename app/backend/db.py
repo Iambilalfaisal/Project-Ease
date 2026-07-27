@@ -363,6 +363,24 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_prt_token ON password_reset_tokens(token);
+
+-- Task #130: court orders log — one row per hearing outcome
+CREATE TABLE IF NOT EXISTS court_orders (
+    order_id     TEXT    PRIMARY KEY,
+    org_id       TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id    TEXT    NOT NULL REFERENCES matters(matter_id),
+    hearing_date TEXT    NOT NULL,
+    court_name   TEXT,
+    order_brief  TEXT    NOT NULL,
+    next_date    TEXT,
+    outcome      TEXT    NOT NULL DEFAULT 'Adjourned',
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by   TEXT    NOT NULL DEFAULT 'system',
+    modified_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by  TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_court_orders_matter ON court_orders(matter_id, hearing_date DESC);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -2345,6 +2363,75 @@ def use_reset_token(token: str) -> Optional[str]:
             (row["token_id"],),
         )
     return row["user_id"]
+
+
+# ── Court Orders (Task #130) ──────────────────────────────────────────────────
+
+def get_court_orders(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM court_orders
+               WHERE matter_id=? AND org_id=? AND is_active=1
+               ORDER BY hearing_date DESC""",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_court_order(
+    matter_id: str, org_id: str, hearing_date: str, order_brief: str,
+    outcome: str = "Adjourned", court_name: Optional[str] = None,
+    next_date: Optional[str] = None, actor: str = SYSTEM,
+) -> dict:
+    order_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO court_orders
+               (order_id, org_id, matter_id, hearing_date, court_name,
+                order_brief, next_date, outcome, created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (order_id, org_id, matter_id, hearing_date, court_name,
+             order_brief, next_date, outcome, now, actor, now, actor),
+        )
+    return {
+        "order_id": order_id, "org_id": org_id, "matter_id": matter_id,
+        "hearing_date": hearing_date, "court_name": court_name,
+        "order_brief": order_brief, "next_date": next_date,
+        "outcome": outcome, "created_at": now,
+    }
+
+
+def update_court_order(
+    order_id: str, org_id: str, actor: str = SYSTEM, **fields
+) -> Optional[dict]:
+    allowed = {"hearing_date", "court_name", "order_brief", "next_date", "outcome"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return None
+    now = _now()
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE court_orders SET {set_clause} WHERE order_id=? AND org_id=?",
+            (*updates.values(), order_id, org_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM court_orders WHERE order_id=? AND org_id=?",
+            (order_id, org_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_court_order(order_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE court_orders SET is_active=0, modified_at=?, modified_by=? WHERE order_id=? AND org_id=?",
+            (now, actor, order_id, org_id),
+        )
 
 
 def get_platform_stats() -> dict:

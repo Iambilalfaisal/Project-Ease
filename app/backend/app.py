@@ -359,6 +359,8 @@ from db import (
     # Client Portal — Task #39
     create_client_token, get_client_token_by_id, get_client_token_by_value,
     list_client_tokens, revoke_client_token,
+    # Court Orders — Task #130
+    get_court_orders, create_court_order, update_court_order, delete_court_order,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2008,6 +2010,70 @@ async def unlink_doc_from_matter(matter_id: str, doc_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     unlink_document_from_matter(doc_id, session.get("org") or "",
                                 actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+# ─── Court Orders (Task #130) ────────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/orders", methods=["GET"])
+async def list_court_orders(matter_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session.get("org") or ""
+    orders = get_court_orders(matter_id, org_id)
+    return jsonify({"orders": orders})
+
+
+@bp.route("/matters/<matter_id>/orders", methods=["POST"])
+async def add_court_order(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json() or {}
+    hearing_date = (data.get("hearing_date") or "").strip()
+    order_brief  = (data.get("order_brief")  or "").strip()
+    if not hearing_date or not order_brief:
+        return jsonify({"error": "hearing_date and order_brief are required"}), 400
+    org_id = session.get("org") or ""
+    order = create_court_order(
+        matter_id=matter_id,
+        org_id=org_id,
+        hearing_date=hearing_date,
+        order_brief=order_brief,
+        outcome=data.get("outcome", "Adjourned"),
+        court_name=data.get("court_name") or None,
+        next_date=data.get("next_date") or None,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(order), 201
+
+
+@bp.route("/matters/<matter_id>/orders/<order_id>", methods=["PATCH"])
+async def edit_court_order(matter_id: str, order_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json() or {}
+    org_id = session.get("org") or ""
+    updated = update_court_order(
+        order_id, org_id,
+        actor=session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"hearing_date", "court_name", "order_brief", "next_date", "outcome"}},
+    )
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/orders/<order_id>", methods=["DELETE"])
+async def remove_court_order(matter_id: str, order_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_court_order(order_id, session.get("org") or "",
+                       actor=session.get("user_id") or SYSTEM)
     return jsonify({"success": True})
 
 

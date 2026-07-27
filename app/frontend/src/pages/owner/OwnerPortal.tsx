@@ -129,6 +129,17 @@ interface Invoice {
     fees?:          Fee[];
 }
 
+interface CourtOrder {
+    order_id:     string;
+    matter_id:    string;
+    hearing_date: string;
+    court_name:   string | null;
+    order_brief:  string;
+    next_date:    string | null;
+    outcome:      "Adjourned" | "Heard" | "Decided" | "Partially Heard";
+    created_at:   string;
+}
+
 interface AuditLog {
     log_id:        string;
     org_id:        string | null;
@@ -710,7 +721,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -719,6 +730,14 @@ const MattersPanel = () => {
     const [feeSaving,    setFeeSaving]    = useState(false);
     const [feeErr,       setFeeErr]       = useState("");
     const [genInvLoading, setGenInvLoading] = useState(false);
+    // Court Orders — Task #130
+    const [orders,        setOrders]        = useState<CourtOrder[]>([]);
+    const [ordersLoading, setOrdersLoading] = useState(false);
+    const [showOrderModal, setShowOrderModal] = useState(false);
+    const [editOrder,      setEditOrder]      = useState<CourtOrder | null>(null);
+    const [orderForm,      setOrderForm]      = useState({ hearing_date: "", court_name: "", order_brief: "", next_date: "", outcome: "Adjourned" });
+    const [orderSaving,    setOrderSaving]    = useState(false);
+    const [orderErr,       setOrderErr]       = useState("");
 
     const allCourts = [...DEFAULT_COURTS, ...customCourts.map(c => c.name)];
 
@@ -738,9 +757,61 @@ const MattersPanel = () => {
     };
     useEffect(() => { loadAll(); }, []);
 
+    const loadOrders = (matterId: string) => {
+        setOrdersLoading(true);
+        fetch(`/matters/${matterId}/orders`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setOrders(d.orders ?? []); setOrdersLoading(false); })
+            .catch(() => setOrdersLoading(false));
+    };
+
+    const openOrderModal = (order?: CourtOrder) => {
+        const today = new Date().toISOString().slice(0, 10);
+        if (order) {
+            setEditOrder(order);
+            setOrderForm({ hearing_date: order.hearing_date, court_name: order.court_name ?? "", order_brief: order.order_brief, next_date: order.next_date ?? "", outcome: order.outcome });
+        } else {
+            setEditOrder(null);
+            setOrderForm({ hearing_date: today, court_name: detail?.court_name ?? "", order_brief: "", next_date: "", outcome: "Adjourned" });
+        }
+        setOrderErr(""); setShowOrderModal(true);
+    };
+
+    const saveOrder = async () => {
+        if (!orderForm.hearing_date || !orderForm.order_brief.trim()) {
+            setOrderErr("Hearing date and order summary are required."); return;
+        }
+        if (!detail) return;
+        setOrderSaving(true); setOrderErr("");
+        const body = {
+            hearing_date: orderForm.hearing_date,
+            court_name:   orderForm.court_name.trim() || undefined,
+            order_brief:  orderForm.order_brief.trim(),
+            next_date:    orderForm.next_date || undefined,
+            outcome:      orderForm.outcome,
+        };
+        try {
+            const url = editOrder
+                ? `/matters/${detail.matter_id}/orders/${editOrder.order_id}`
+                : `/matters/${detail.matter_id}/orders`;
+            const method = editOrder ? "PATCH" : "POST";
+            const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const d = await r.json().catch(() => ({})); setOrderErr(d.error ?? "Save failed."); }
+            else { setShowOrderModal(false); loadOrders(detail.matter_id); }
+        } catch { setOrderErr("Network error."); }
+        finally { setOrderSaving(false); }
+    };
+
+    const deleteOrder = async (order: CourtOrder) => {
+        if (!detail || !confirm("Delete this court order entry?")) return;
+        await fetch(`/matters/${detail.matter_id}/orders/${order.order_id}`, { method: "DELETE", headers: authHeaders() });
+        loadOrders(detail.matter_id);
+    };
+
     const openDetail = (m: Matter) => {
         setDetailTab("documents");
         setFees([]);
+        setOrders([]);
         fetch(`/matters/${m.matter_id}`, { headers: authHeaders() })
             .then(r => r.json())
             .then(d => { setDetail(d); setEditDetail(false); });
@@ -1065,6 +1136,10 @@ const MattersPanel = () => {
                         onClick={() => { setDetailTab("fees"); if (detail) loadFees(detail.matter_id); }}>
                         Fees &amp; Invoices
                     </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "orders" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("orders"); if (detail) loadOrders(detail.matter_id); }}>
+                        Court Orders ({orders.length})
+                    </button>
                 </div>
 
                 {/* ── Documents tab ── */}
@@ -1178,6 +1253,96 @@ const MattersPanel = () => {
                         );
                     })()}
                 </>)}
+
+                {/* ── Court Orders tab ── */}
+                {detailTab === "orders" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{orders.length} order{orders.length !== 1 ? "s" : ""} recorded</span>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openOrderModal()}>+ Add Order</button>
+                    </div>
+                    {ordersLoading ? (
+                        <div className={styles.emptyHint}>Loading…</div>
+                    ) : orders.length === 0 ? (
+                        <div className={styles.emptyHint}>No court orders recorded yet. Click "+ Add Order" after each hearing to build the case timeline.</div>
+                    ) : (
+                        <div className={styles.ordersTimeline}>
+                            {orders.map((o, idx) => {
+                                const outcomeColor: Record<string, string> = {
+                                    "Adjourned":       "var(--text-3)",
+                                    "Heard":           "var(--gold)",
+                                    "Decided":         "#2d8a4e",
+                                    "Partially Heard": "#c97c2a",
+                                };
+                                return (
+                                    <div key={o.order_id} className={styles.orderCard}>
+                                        <div className={styles.orderCardLeft}>
+                                            <div className={styles.orderDot} style={{ background: outcomeColor[o.outcome] ?? "var(--border)" }} />
+                                            {idx < orders.length - 1 && <div className={styles.orderLine} />}
+                                        </div>
+                                        <div className={styles.orderCardBody}>
+                                            <div className={styles.orderCardHeader}>
+                                                <div>
+                                                    <span className={styles.orderDate}>{o.hearing_date}</span>
+                                                    {o.court_name && <span className={styles.orderCourt}> · {o.court_name}</span>}
+                                                </div>
+                                                <span className={styles.orderOutcomeBadge} style={{ color: outcomeColor[o.outcome] }}>{o.outcome}</span>
+                                            </div>
+                                            <div className={styles.orderBrief}>{o.order_brief}</div>
+                                            {o.next_date && (
+                                                <div className={styles.orderNextDate}>Next date: <strong>{o.next_date}</strong></div>
+                                            )}
+                                            <div className={styles.orderActions}>
+                                                <button className={styles.actionBtn} onClick={() => openOrderModal(o)}>Edit</button>
+                                                <button className={styles.actionBtnDanger} onClick={() => deleteOrder(o)}>Delete</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </>)}
+
+                {/* ── Court Order add/edit modal ── */}
+                {showOrderModal && (
+                    <div className={styles.overlay} onClick={() => setShowOrderModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+                            <div className={styles.modalTitle}>{editOrder ? "Edit Court Order" : "Add Court Order"}</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Hearing Date *</label>
+                                    <input type="date" className={styles.formInput} value={orderForm.hearing_date} onChange={e => setOrderForm(f => ({ ...f, hearing_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Outcome</label>
+                                    <select className={styles.formSelect} value={orderForm.outcome} onChange={e => setOrderForm(f => ({ ...f, outcome: e.target.value }))}>
+                                        {["Adjourned", "Heard", "Partially Heard", "Decided"].map(o => <option key={o}>{o}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Court (optional)</label>
+                                <select className={styles.formSelect} value={orderForm.court_name} onChange={e => setOrderForm(f => ({ ...f, court_name: e.target.value }))}>
+                                    <option value="">Same as matter</option>
+                                    {allCourts.map(c => <option key={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Order Summary *</label>
+                                <textarea className={styles.formInput} rows={4} style={{ resize: "vertical" }} value={orderForm.order_brief} onChange={e => setOrderForm(f => ({ ...f, order_brief: e.target.value }))} placeholder="e.g. Case adjourned on application of plaintiff's counsel. Next date fixed for arguments on maintainability." />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Next Date Fixed</label>
+                                <input type="date" className={styles.formInput} value={orderForm.next_date} onChange={e => setOrderForm(f => ({ ...f, next_date: e.target.value }))} />
+                            </div>
+                            {orderErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{orderErr}</div>}
+                            <div className={styles.modalActions}>
+                                <button className={styles.btnGhost} onClick={() => setShowOrderModal(false)} disabled={orderSaving}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveOrder} disabled={orderSaving}>{orderSaving ? "Saving…" : editOrder ? "Save Changes" : "Add Order"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Fee add/edit modal ── */}
                 {showFeeModal && (

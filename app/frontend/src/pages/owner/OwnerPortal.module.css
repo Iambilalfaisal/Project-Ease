@@ -2576,3 +2576,100 @@
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
+/* ── Court Orders Timeline (Task #130) ──────────────────────────────────── */
+.ordersTimeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 0.5rem;
+}
+
+.orderCard {
+  display: flex;
+  gap: 0;
+}
+
+.orderCardLeft {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.orderDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+  border: 2px solid var(--bg-1);
+  box-shadow: 0 0 0 2px var(--border);
+}
+
+.orderLine {
+  width: 2px;
+  flex: 1;
+  background: var(--border);
+  min-height: 20px;
+  margin: 4px 0;
+}
+
+.orderCardBody {
+  flex: 1;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  margin-left: 0.5rem;
+}
+
+.orderCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+}
+
+.orderDate {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-1);
+}
+
+.orderCourt {
+  font-size: 0.82rem;
+  color: var(--text-3);
+}
+
+.orderOutcomeBadge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.orderBrief {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin-bottom: 0.4rem;
+}
+
+.orderNextDate {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  margin-bottom: 0.4rem;
+}
+
+.orderNextDate strong {
+  color: var(--gold);
+}
+
+.orderActions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
