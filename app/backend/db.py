@@ -400,6 +400,26 @@ CREATE TABLE IF NOT EXISTS adverse_parties (
     modified_by  TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_adverse_parties_matter ON adverse_parties(matter_id);
+
+-- Task #133: time tracking per matter
+CREATE TABLE IF NOT EXISTS time_entries (
+    entry_id         TEXT    PRIMARY KEY,
+    org_id           TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id        TEXT    NOT NULL REFERENCES matters(matter_id),
+    user_id          TEXT    REFERENCES users(user_id),
+    description      TEXT,
+    entry_date       TEXT    NOT NULL,
+    duration_minutes INTEGER NOT NULL DEFAULT 0,
+    hourly_rate      INTEGER NOT NULL DEFAULT 0,
+    billable         INTEGER NOT NULL DEFAULT 1,
+    fee_id           TEXT    REFERENCES fees(fee_id),
+    is_active        INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by       TEXT    NOT NULL DEFAULT 'system',
+    modified_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by      TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_time_entries_matter ON time_entries(matter_id, entry_date DESC);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -2544,6 +2564,120 @@ def delete_adverse_party(party_id: str, org_id: str, actor: str = SYSTEM):
             "UPDATE adverse_parties SET is_active=0, modified_at=?, modified_by=? WHERE party_id=? AND org_id=?",
             (now, actor, party_id, org_id),
         )
+
+
+# ── Time Tracking (Task #133) ─────────────────────────────────────────────────
+
+def get_time_entries(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT te.*, u.name AS user_name
+               FROM time_entries te
+               LEFT JOIN users u ON u.user_id = te.user_id
+               WHERE te.matter_id=? AND te.org_id=? AND te.is_active=1
+               ORDER BY te.entry_date DESC, te.created_at DESC""",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_time_entry(
+    matter_id: str, org_id: str, duration_minutes: int, entry_date: str,
+    description: Optional[str] = None, hourly_rate: int = 0,
+    billable: int = 1, user_id: Optional[str] = None, actor: str = SYSTEM,
+) -> dict:
+    entry_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO time_entries
+               (entry_id, org_id, matter_id, user_id, description, entry_date,
+                duration_minutes, hourly_rate, billable,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (entry_id, org_id, matter_id, user_id, description, entry_date,
+             duration_minutes, hourly_rate, billable,
+             now, actor, now, actor),
+        )
+    return {
+        "entry_id": entry_id, "org_id": org_id, "matter_id": matter_id,
+        "user_id": user_id, "description": description, "entry_date": entry_date,
+        "duration_minutes": duration_minutes, "hourly_rate": hourly_rate,
+        "billable": billable, "fee_id": None, "created_at": now,
+    }
+
+
+def update_time_entry(
+    entry_id: str, org_id: str, actor: str = SYSTEM, **fields
+) -> Optional[dict]:
+    allowed = {"description", "entry_date", "duration_minutes", "hourly_rate", "billable", "fee_id"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return None
+    now = _now()
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE time_entries SET {set_clause} WHERE entry_id=? AND org_id=?",
+            (*updates.values(), entry_id, org_id),
+        )
+        row = conn.execute(
+            """SELECT te.*, u.name AS user_name FROM time_entries te
+               LEFT JOIN users u ON u.user_id = te.user_id
+               WHERE te.entry_id=? AND te.org_id=?""",
+            (entry_id, org_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_time_entry(entry_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE time_entries SET is_active=0, modified_at=?, modified_by=? WHERE entry_id=? AND org_id=?",
+            (now, actor, entry_id, org_id),
+        )
+
+
+def bill_time_entries(
+    entry_ids: list[str], matter_id: str, org_id: str,
+    fee_description: str, actor: str = SYSTEM,
+) -> Optional[dict]:
+    """Convert selected time entries into a single fee and link them."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT entry_id, duration_minutes, hourly_rate FROM time_entries
+                WHERE entry_id IN ({','.join('?' * len(entry_ids))})
+                  AND matter_id=? AND org_id=? AND is_active=1 AND fee_id IS NULL AND billable=1""",
+            (*entry_ids, matter_id, org_id),
+        ).fetchall()
+    if not rows:
+        return None
+    total_minutes = sum(r["duration_minutes"] for r in rows)
+    total_hours   = total_minutes / 60
+    # Use the highest hourly rate among selected entries for the fee amount
+    avg_rate = max((r["hourly_rate"] for r in rows), default=0)
+    amount   = int(total_hours * avg_rate)
+    today    = datetime.date.today().strftime("%Y-%m-%d")
+    fee      = create_fee(
+        org_id=org_id, matter_id=matter_id,
+        description=fee_description,
+        fee_type="Time-Based",
+        amount=amount,
+        fee_date=today,
+        actor=actor,
+    )
+    # Link entries to this fee
+    now = _now()
+    with get_conn() as conn:
+        for r in rows:
+            conn.execute(
+                "UPDATE time_entries SET fee_id=?, modified_at=?, modified_by=? WHERE entry_id=?",
+                (fee["fee_id"], now, actor, r["entry_id"]),
+            )
+    return fee
 
 
 # ── Limitation Tracker (Task #132) ───────────────────────────────────────────

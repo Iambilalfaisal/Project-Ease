@@ -2799,3 +2799,55 @@
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+
+/* ── Time Tracking (Task #133) ── */
+.timerWidget {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    margin: 0.75rem 0;
+}
+
+.timerDisplay {
+    font-size: 1.85rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--text-1);
+    letter-spacing: 0.06em;
+    min-width: 7rem;
+}
+
+.timerControls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.btnGold {
+    background: var(--gold);
+    color: #1a1400;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.45rem 0.9rem;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: opacity 0.15s;
+}
+.btnGold:hover { opacity: 0.85; }
+
+.timeSummaryRow {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    font-size: 0.83rem;
+    color: var(--text-2);
+    padding: 0.4rem 0 0.75rem;
+    flex-wrap: wrap;
+}
+.timeSummaryRow strong { color: var(--text-1); }

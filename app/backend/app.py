@@ -365,6 +365,8 @@ from db import (
     get_adverse_parties, create_adverse_party, update_adverse_party, delete_adverse_party,
     # Limitation Tracker — Task #132
     LIMITATION_PERIODS, compute_limitation_date, get_matters_with_approaching_limitation,
+    # Time Tracking — Task #133
+    get_time_entries, create_time_entry, update_time_entry, delete_time_entry, bill_time_entries,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2167,6 +2169,90 @@ async def remove_adverse_party(matter_id: str, party_id: str):
     delete_adverse_party(party_id, session.get("org") or "",
                          actor=session.get("user_id") or SYSTEM)
     return jsonify({"success": True})
+
+
+# ─── Time Tracking (Task #133) ───────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/time-entries", methods=["GET"])
+async def list_time_entries(matter_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    entries = get_time_entries(matter_id, session.get("org") or "")
+    return jsonify({"entries": entries})
+
+
+@bp.route("/matters/<matter_id>/time-entries", methods=["POST"])
+async def add_time_entry(matter_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json() or {}
+    duration_minutes = int(data.get("duration_minutes") or 0)
+    entry_date = (data.get("entry_date") or "").strip()
+    if duration_minutes <= 0 or not entry_date:
+        return jsonify({"error": "duration_minutes and entry_date are required"}), 400
+    entry = create_time_entry(
+        matter_id=matter_id,
+        org_id=session.get("org") or "",
+        duration_minutes=duration_minutes,
+        entry_date=entry_date,
+        description=data.get("description") or None,
+        hourly_rate=int(data.get("hourly_rate") or 0),
+        billable=int(data.get("billable", 1)),
+        user_id=session.get("user_id") or None,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(entry), 201
+
+
+@bp.route("/matters/<matter_id>/time-entries/<entry_id>", methods=["PATCH"])
+async def edit_time_entry(matter_id: str, entry_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json() or {}
+    updated = update_time_entry(
+        entry_id, session.get("org") or "",
+        actor=session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"description", "entry_date", "duration_minutes", "hourly_rate", "billable"}},
+    )
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/time-entries/<entry_id>", methods=["DELETE"])
+async def remove_time_entry(matter_id: str, entry_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_time_entry(entry_id, session.get("org") or "",
+                      actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+@bp.route("/matters/<matter_id>/time-entries/bill", methods=["POST"])
+async def bill_time_entries_route(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json() or {}
+    entry_ids = data.get("entry_ids") or []
+    description = (data.get("description") or "Time charges").strip()
+    if not entry_ids:
+        return jsonify({"error": "entry_ids required"}), 400
+    fee = bill_time_entries(
+        entry_ids=entry_ids,
+        matter_id=matter_id,
+        org_id=session.get("org") or "",
+        fee_description=description,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    if not fee:
+        return jsonify({"error": "No billable unbilled entries found"}), 400
+    return jsonify(fee), 201
 
 
 # ─── PROJECT EASE: Plan & Upgrade API ───────────────────────────────────────

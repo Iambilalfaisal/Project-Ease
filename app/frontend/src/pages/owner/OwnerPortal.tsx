@@ -132,6 +132,20 @@ interface Invoice {
     fees?:          Fee[];
 }
 
+interface TimeEntry {
+    entry_id:         string;
+    matter_id:        string;
+    user_id:          string | null;
+    user_name:        string | null;
+    description:      string | null;
+    entry_date:       string;
+    duration_minutes: number;
+    hourly_rate:      number;
+    billable:         number;
+    fee_id:           string | null;
+    created_at:       string;
+}
+
 interface AdverseParty {
     party_id:     string;
     matter_id:    string;
@@ -779,7 +793,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -804,6 +818,22 @@ const MattersPanel = () => {
     const [partyForm,        setPartyForm]        = useState({ ...BLANK_PARTY });
     const [partySaving,      setPartySaving]      = useState(false);
     const [partyErr,         setPartyErr]         = useState("");
+    // Time Tracking — Task #133
+    const BLANK_TIME_FORM = { description: "", entry_date: new Date().toISOString().slice(0, 10), hours: "", minutes: "", hourly_rate: "", billable: true };
+    const [timeEntries,    setTimeEntries]    = useState<TimeEntry[]>([]);
+    const [timeLoading,    setTimeLoading]    = useState(false);
+    const [showTimeModal,  setShowTimeModal]  = useState(false);
+    const [editTimeEntry,  setEditTimeEntry]  = useState<TimeEntry | null>(null);
+    const [timeForm,       setTimeForm]       = useState({ ...BLANK_TIME_FORM });
+    const [timeSaving,     setTimeSaving]     = useState(false);
+    const [timeErr,        setTimeErr]        = useState("");
+    const [timerRunning,   setTimerRunning]   = useState(false);
+    const [timerStart,     setTimerStart]     = useState<number | null>(null);
+    const [timerElapsed,   setTimerElapsed]   = useState(0);   // seconds
+    const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
+    const [billing,        setBilling]        = useState(false);
+    const [billDesc,       setBillDesc]       = useState("");
+    const [showBillModal,  setShowBillModal]  = useState(false);
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
 
@@ -926,11 +956,133 @@ const MattersPanel = () => {
         loadAdverseParties(detail.matter_id);
     };
 
+    // ── Time Tracking helpers ──
+    const loadTimeEntries = (matterId: string) => {
+        setTimeLoading(true);
+        fetch(`/matters/${matterId}/time-entries`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setTimeEntries(d.entries ?? []); setTimeLoading(false); })
+            .catch(() => setTimeLoading(false));
+    };
+
+    const fmtElapsed = (secs: number) => {
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    };
+
+    const fmtDuration = (mins: number) => {
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    };
+
+    const startTimer = () => {
+        setTimerStart(Date.now() - timerElapsed * 1000);
+        setTimerRunning(true);
+    };
+
+    const stopTimer = () => {
+        setTimerRunning(false);
+        const mins = Math.max(1, Math.round(timerElapsed / 60));
+        const hh = Math.floor(mins / 60);
+        const mm = mins % 60;
+        setTimeForm({ ...BLANK_TIME_FORM, hours: String(hh), minutes: String(mm), entry_date: new Date().toISOString().slice(0, 10) });
+        setEditTimeEntry(null); setTimeErr(""); setShowTimeModal(true);
+    };
+
+    const resetTimer = () => { setTimerRunning(false); setTimerElapsed(0); setTimerStart(null); };
+
+    // Live timer tick
+    useEffect(() => {
+        if (!timerRunning || timerStart === null) return;
+        const id = setInterval(() => {
+            setTimerElapsed(Math.floor((Date.now() - timerStart) / 1000));
+        }, 1000);
+        return () => clearInterval(id);
+    }, [timerRunning, timerStart]);
+
+    const openTimeModal = (entry?: TimeEntry) => {
+        if (entry) {
+            setEditTimeEntry(entry);
+            setTimeForm({
+                description: entry.description ?? "",
+                entry_date: entry.entry_date,
+                hours: String(Math.floor(entry.duration_minutes / 60)),
+                minutes: String(entry.duration_minutes % 60),
+                hourly_rate: String(entry.hourly_rate),
+                billable: entry.billable === 1,
+            });
+        } else {
+            setEditTimeEntry(null);
+            setTimeForm({ ...BLANK_TIME_FORM, entry_date: new Date().toISOString().slice(0, 10) });
+        }
+        setTimeErr(""); setShowTimeModal(true);
+    };
+
+    const saveTimeEntry = async () => {
+        const hrs = parseInt(timeForm.hours || "0");
+        const mins = parseInt(timeForm.minutes || "0");
+        const totalMins = hrs * 60 + mins;
+        if (totalMins <= 0) { setTimeErr("Duration must be greater than 0."); return; }
+        if (!timeForm.entry_date) { setTimeErr("Date is required."); return; }
+        if (!detail) return;
+        setTimeSaving(true); setTimeErr("");
+        const body = {
+            duration_minutes: totalMins,
+            entry_date: timeForm.entry_date,
+            description: timeForm.description.trim() || undefined,
+            hourly_rate: parseInt(timeForm.hourly_rate || "0"),
+            billable: timeForm.billable ? 1 : 0,
+        };
+        try {
+            const url = editTimeEntry
+                ? `/matters/${detail.matter_id}/time-entries/${editTimeEntry.entry_id}`
+                : `/matters/${detail.matter_id}/time-entries`;
+            const method = editTimeEntry ? "PATCH" : "POST";
+            const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const d = await r.json().catch(() => ({})); setTimeErr(d.error ?? "Save failed."); }
+            else { setShowTimeModal(false); setTimerElapsed(0); loadTimeEntries(detail.matter_id); }
+        } catch { setTimeErr("Network error."); }
+        finally { setTimeSaving(false); }
+    };
+
+    const deleteTimeEntryUI = async (entry: TimeEntry) => {
+        if (!detail || !confirm("Delete this time entry?")) return;
+        await fetch(`/matters/${detail.matter_id}/time-entries/${entry.entry_id}`, { method: "DELETE", headers: authHeaders() });
+        loadTimeEntries(detail.matter_id);
+    };
+
+    const billSelected = async () => {
+        if (!detail || selectedEntries.size === 0) return;
+        setBilling(true);
+        try {
+            const r = await fetch(`/matters/${detail.matter_id}/time-entries/bill`, {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ entry_ids: [...selectedEntries], description: billDesc || "Time charges" }),
+            });
+            if (r.ok) {
+                setShowBillModal(false); setSelectedEntries(new Set()); setBillDesc("");
+                loadTimeEntries(detail.matter_id);
+                alert("Fee created! View it in the Fees & Invoices tab.");
+            } else {
+                const d = await r.json().catch(() => ({}));
+                alert(d.error ?? "Failed to create fee.");
+            }
+        } catch { alert("Network error."); }
+        finally { setBilling(false); }
+    };
+
     const openDetail = (m: Matter) => {
         setDetailTab("documents");
         setFees([]);
         setOrders([]);
         setAdverseParties([]);
+        setTimeEntries([]);
+        setSelectedEntries(new Set());
+        resetTimer();
         fetch(`/matters/${m.matter_id}`, { headers: authHeaders() })
             .then(r => r.json())
             .then(d => { setDetail(d); setEditDetail(false); });
@@ -1388,6 +1540,10 @@ const MattersPanel = () => {
                         onClick={() => { setDetailTab("orders"); if (detail) loadOrders(detail.matter_id); }}>
                         Court Orders ({orders.length})
                     </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "time" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("time"); if (detail) loadTimeEntries(detail.matter_id); }}>
+                        Time ({timeEntries.length})
+                    </button>
                 </div>
 
                 {/* ── Documents tab ── */}
@@ -1550,6 +1706,171 @@ const MattersPanel = () => {
                         </div>
                     )}
                 </>)}
+
+                {/* ── Time Tracking tab ── */}
+                {detailTab === "time" && (() => {
+                    const billable   = timeEntries.filter(e => e.billable === 1 && !e.fee_id);
+                    const totalMins  = timeEntries.reduce((s, e) => s + e.duration_minutes, 0);
+                    const billMins   = billable.reduce((s, e) => s + e.duration_minutes, 0);
+                    const totalValue = billable.reduce((s, e) => s + Math.round(e.duration_minutes / 60 * e.hourly_rate), 0);
+                    return (
+                        <>
+                            {/* Timer widget */}
+                            <div className={styles.timerWidget}>
+                                <div className={styles.timerDisplay}>{fmtElapsed(timerElapsed)}</div>
+                                <div className={styles.timerControls}>
+                                    {!timerRunning ? (
+                                        <button className={styles.btnPrimary} style={{ fontSize: "0.82rem" }} onClick={startTimer}>▶ Start Timer</button>
+                                    ) : (
+                                        <button className={styles.btnGold} style={{ fontSize: "0.82rem" }} onClick={stopTimer}>⏹ Stop &amp; Log</button>
+                                    )}
+                                    {timerElapsed > 0 && !timerRunning && (
+                                        <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={resetTimer}>Reset</button>
+                                    )}
+                                    <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openTimeModal()}>+ Manual Entry</button>
+                                </div>
+                            </div>
+
+                            {/* Summary row */}
+                            <div className={styles.timeSummaryRow}>
+                                <span>Total: <strong>{fmtDuration(totalMins)}</strong></span>
+                                <span>Unbilled billable: <strong style={{ color: "var(--gold)" }}>{fmtDuration(billMins)}</strong></span>
+                                <span>Value: <strong>{totalValue.toLocaleString("en-PK")} PKR</strong></span>
+                                {selectedEntries.size > 0 && (
+                                    <button className={styles.btnPrimary} style={{ fontSize: "0.8rem", marginLeft: "auto" }}
+                                        onClick={() => setShowBillModal(true)}>
+                                        Convert {selectedEntries.size} to Fee
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Entries table */}
+                            {timeLoading ? (
+                                <div className={styles.emptyHint}>Loading…</div>
+                            ) : timeEntries.length === 0 ? (
+                                <div className={styles.emptyHint}>No time logged yet. Start the timer or add a manual entry.</div>
+                            ) : (
+                                <div className={styles.tableWrap}>
+                                    <table className={styles.table}>
+                                        <thead><tr>
+                                            <th style={{ width: 32 }}></th>
+                                            <th>Date</th><th>Description</th><th>Duration</th>
+                                            <th>Rate (PKR/hr)</th><th>Value</th><th>Billable</th><th>Billed</th><th>Actions</th>
+                                        </tr></thead>
+                                        <tbody>
+                                            {timeEntries.map(e => {
+                                                const val = Math.round(e.duration_minutes / 60 * e.hourly_rate);
+                                                const canSelect = e.billable === 1 && !e.fee_id;
+                                                const checked   = selectedEntries.has(e.entry_id);
+                                                return (
+                                                    <tr key={e.entry_id} style={{ opacity: e.fee_id ? 0.55 : 1 }}>
+                                                        <td>
+                                                            {canSelect && (
+                                                                <input type="checkbox" checked={checked}
+                                                                    onChange={() => {
+                                                                        setSelectedEntries(prev => {
+                                                                            const n = new Set(prev);
+                                                                            checked ? n.delete(e.entry_id) : n.add(e.entry_id);
+                                                                            return n;
+                                                                        });
+                                                                    }} />
+                                                            )}
+                                                        </td>
+                                                        <td className={styles.muted}>{e.entry_date}</td>
+                                                        <td>{e.description || <span className={styles.muted}>—</span>}</td>
+                                                        <td><strong>{fmtDuration(e.duration_minutes)}</strong></td>
+                                                        <td className={styles.muted}>{e.hourly_rate > 0 ? e.hourly_rate.toLocaleString("en-PK") : "—"}</td>
+                                                        <td>{val > 0 ? val.toLocaleString("en-PK") : "—"}</td>
+                                                        <td>{e.billable === 1 ? <span className={styles.badgeGreen} style={{ fontSize: "0.68rem" }}>Yes</span> : <span className={styles.badgeGray} style={{ fontSize: "0.68rem" }}>No</span>}</td>
+                                                        <td>{e.fee_id ? <span className={styles.badgeBlue} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
+                                                        <td style={{ display: "flex", gap: "0.35rem" }}>
+                                                            <button className={styles.actionBtn} onClick={() => openTimeModal(e)} disabled={!!e.fee_id}>Edit</button>
+                                                            <button className={styles.actionBtnDanger} onClick={() => deleteTimeEntryUI(e)} disabled={!!e.fee_id}>Delete</button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {/* Convert to fee modal */}
+                            {showBillModal && (
+                                <div className={styles.overlay} onClick={() => setShowBillModal(false)}>
+                                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+                                        <div className={styles.modalTitle}>Convert Time to Fee</div>
+                                        <p style={{ fontSize: "0.85rem", color: "var(--text-2)", marginBottom: "1rem" }}>
+                                            This will create a single fee entry from {selectedEntries.size} selected time entries and mark them as billed.
+                                        </p>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Fee Description</label>
+                                            <input className={styles.formInput} value={billDesc}
+                                                onChange={e => setBillDesc(e.target.value)}
+                                                placeholder="e.g. Legal services — July 2025" />
+                                        </div>
+                                        <div className={styles.modalActions}>
+                                            <button className={styles.btnGhost} onClick={() => setShowBillModal(false)} disabled={billing}>Cancel</button>
+                                            <button className={styles.btnPrimary} onClick={billSelected} disabled={billing}>{billing ? "Creating…" : "Create Fee"}</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Time entry add/edit modal */}
+                            {showTimeModal && (
+                                <div className={styles.overlay} onClick={() => setShowTimeModal(false)}>
+                                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                                        <div className={styles.modalTitle}>{editTimeEntry ? "Edit Time Entry" : "Log Time"}</div>
+                                        <div className={styles.formGroup}>
+                                            <label className={styles.formLabel}>Description</label>
+                                            <input className={styles.formInput} value={timeForm.description}
+                                                onChange={e => setTimeForm(f => ({ ...f, description: e.target.value }))}
+                                                placeholder="e.g. Court appearance, research, drafting" autoFocus />
+                                        </div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                                            <div className={styles.formGroup}>
+                                                <label className={styles.formLabel}>Hours</label>
+                                                <input type="number" min="0" className={styles.formInput} value={timeForm.hours}
+                                                    onChange={e => setTimeForm(f => ({ ...f, hours: e.target.value }))} placeholder="0" />
+                                            </div>
+                                            <div className={styles.formGroup}>
+                                                <label className={styles.formLabel}>Minutes</label>
+                                                <input type="number" min="0" max="59" className={styles.formInput} value={timeForm.minutes}
+                                                    onChange={e => setTimeForm(f => ({ ...f, minutes: e.target.value }))} placeholder="30" />
+                                            </div>
+                                            <div className={styles.formGroup}>
+                                                <label className={styles.formLabel}>Date</label>
+                                                <input type="date" className={styles.formInput} value={timeForm.entry_date}
+                                                    onChange={e => setTimeForm(f => ({ ...f, entry_date: e.target.value }))} />
+                                            </div>
+                                        </div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                            <div className={styles.formGroup}>
+                                                <label className={styles.formLabel}>Hourly Rate (PKR)</label>
+                                                <input type="number" min="0" className={styles.formInput} value={timeForm.hourly_rate}
+                                                    onChange={e => setTimeForm(f => ({ ...f, hourly_rate: e.target.value }))} placeholder="e.g. 5000" />
+                                            </div>
+                                            <div className={styles.formGroup}>
+                                                <label className={styles.formLabel}>Billable?</label>
+                                                <select className={styles.formSelect} value={timeForm.billable ? "yes" : "no"}
+                                                    onChange={e => setTimeForm(f => ({ ...f, billable: e.target.value === "yes" }))}>
+                                                    <option value="yes">Yes</option>
+                                                    <option value="no">No</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        {timeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{timeErr}</div>}
+                                        <div className={styles.modalActions}>
+                                            <button className={styles.btnGhost} onClick={() => setShowTimeModal(false)} disabled={timeSaving}>Cancel</button>
+                                            <button className={styles.btnPrimary} onClick={saveTimeEntry} disabled={timeSaving}>{timeSaving ? "Saving…" : editTimeEntry ? "Save Changes" : "Log Time"}</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    );
+                })()}
 
                 {/* ── Court Order add/edit modal ── */}
                 {showOrderModal && (
