@@ -150,6 +150,18 @@ interface TimeEntry {
     created_at:       string;
 }
 
+interface MatterDeadline {
+    deadline_id:  string;
+    matter_id:    string;
+    title:        string;
+    due_date:     string;
+    priority:     string;
+    completed:    number;
+    completed_at: string | null;
+    notes:        string | null;
+    created_at:   string;
+}
+
 interface Witness {
     witness_id:      string;
     matter_id:       string;
@@ -845,7 +857,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -917,6 +929,16 @@ const MattersPanel = () => {
     const [witnessForm,     setWitnessForm]     = useState({ ...BLANK_WITNESS });
     const [witnessSaving,   setWitnessSaving]   = useState(false);
     const [witnessErr,      setWitnessErr]      = useState("");
+    // Matter Deadlines — Task #142
+    const DEADLINE_PRIORITIES_UI = ["High", "Medium", "Low"];
+    const BLANK_DEADLINE = { title: "", due_date: new Date().toISOString().slice(0, 10), priority: "Medium", notes: "" };
+    const [matterDeadlines,    setMatterDeadlines]    = useState<MatterDeadline[]>([]);
+    const [deadlinesLoading,   setDeadlinesLoading]   = useState(false);
+    const [showDeadlineModal,  setShowDeadlineModal]  = useState(false);
+    const [editDeadline,       setEditDeadline]       = useState<MatterDeadline | null>(null);
+    const [deadlineForm,       setDeadlineForm]       = useState({ ...BLANK_DEADLINE });
+    const [deadlineSaving,     setDeadlineSaving]     = useState(false);
+    const [deadlineErr,        setDeadlineErr]        = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1195,6 +1217,60 @@ const MattersPanel = () => {
         if (!detail || !confirm("Delete this witness?")) return;
         fetch(`/matters/${detail.matter_id}/witnesses/${witnessId}`, { method: "DELETE", headers: authHeaders() })
             .then(() => loadWitnesses(detail.matter_id));
+    };
+
+    // ── Deadlines (Task #142) ──────────────────────────────────────────────
+    const loadDeadlines = (matterId: string) => {
+        setDeadlinesLoading(true);
+        fetch(`/matters/${matterId}/deadlines`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setMatterDeadlines(d.deadlines ?? []); })
+            .finally(() => setDeadlinesLoading(false));
+    };
+
+    const openDeadlineModal = (dl?: MatterDeadline) => {
+        if (dl) {
+            setEditDeadline(dl);
+            setDeadlineForm({ title: dl.title, due_date: dl.due_date, priority: dl.priority, notes: dl.notes ?? "" });
+        } else {
+            setEditDeadline(null);
+            setDeadlineForm({ ...BLANK_DEADLINE });
+        }
+        setDeadlineErr(""); setShowDeadlineModal(true);
+    };
+
+    const saveDeadline = async () => {
+        if (!detail) return;
+        if (!deadlineForm.title.trim()) { setDeadlineErr("Title is required."); return; }
+        if (!deadlineForm.due_date) { setDeadlineErr("Due date is required."); return; }
+        setDeadlineSaving(true); setDeadlineErr("");
+        const url = editDeadline
+            ? `/matters/${detail.matter_id}/deadlines/${editDeadline.deadline_id}`
+            : `/matters/${detail.matter_id}/deadlines`;
+        const method = editDeadline ? "PATCH" : "POST";
+        try {
+            const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(deadlineForm) });
+            if (!r.ok) { const e = await r.json(); setDeadlineErr(e.error ?? "Save failed."); return; }
+            setShowDeadlineModal(false);
+            loadDeadlines(detail.matter_id);
+        } catch { setDeadlineErr("Network error."); }
+        finally { setDeadlineSaving(false); }
+    };
+
+    const deleteDeadlineUI = (deadlineId: string) => {
+        if (!detail || !confirm("Delete this deadline?")) return;
+        fetch(`/matters/${detail.matter_id}/deadlines/${deadlineId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadDeadlines(detail.matter_id));
+    };
+
+    const toggleDeadlineComplete = (dl: MatterDeadline) => {
+        if (!detail) return;
+        const completed = dl.completed === 1 ? 0 : 1;
+        fetch(`/matters/${detail.matter_id}/deadlines/${dl.deadline_id}`, {
+            method: "PATCH",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ completed }),
+        }).then(() => loadDeadlines(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -1868,6 +1944,10 @@ const MattersPanel = () => {
                         onClick={() => { setDetailTab("witnesses"); if (detail) loadWitnesses(detail.matter_id); }}>
                         Witnesses ({witnesses.length})
                     </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "deadlines" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("deadlines"); if (detail) loadDeadlines(detail.matter_id); }}>
+                        Deadlines ({matterDeadlines.filter(d => !d.completed).length} open)
+                    </button>
                 </div>
 
                 {/* ── Documents tab ── */}
@@ -2479,6 +2559,88 @@ const MattersPanel = () => {
                             </div>
                         )}
                     </>
+                )}
+
+                {/* ── Deadlines tab ── */}
+                {detailTab === "deadlines" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                            {matterDeadlines.filter(d => !d.completed).length} open · {matterDeadlines.filter(d => d.completed).length} done
+                        </span>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openDeadlineModal()}>+ Add Deadline</button>
+                    </div>
+                    {deadlinesLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : matterDeadlines.length === 0 ? (
+                        <div className={styles.emptyHint}>No deadlines yet. Add internal tasks and due dates to stay on track.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th style={{ width: 32 }}></th>
+                                <th>Title</th>
+                                <th>Due Date</th>
+                                <th>Priority</th>
+                                <th style={{ width: 80 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {matterDeadlines.map(dl => {
+                                    const isOverdue = !dl.completed && dl.due_date < new Date().toISOString().slice(0, 10);
+                                    const priorityColour = dl.priority === "High" ? "var(--red, #dc2626)" : dl.priority === "Medium" ? "var(--amber, #d97706)" : "var(--text-2)";
+                                    return (
+                                        <tr key={dl.deadline_id} style={{ opacity: dl.completed ? 0.5 : 1 }}>
+                                            <td>
+                                                <input type="checkbox" checked={dl.completed === 1} onChange={() => toggleDeadlineComplete(dl)} title={dl.completed ? "Mark incomplete" : "Mark complete"} />
+                                            </td>
+                                            <td style={{ textDecoration: dl.completed ? "line-through" : "none", color: isOverdue ? "var(--red, #dc2626)" : undefined }}>
+                                                {dl.title}
+                                                {isOverdue && <span style={{ fontSize: "0.7rem", marginLeft: 6, fontWeight: 600, color: "var(--red, #dc2626)" }}>OVERDUE</span>}
+                                            </td>
+                                            <td style={{ whiteSpace: "nowrap", color: isOverdue && !dl.completed ? "var(--red, #dc2626)" : undefined }}>{dl.due_date}</td>
+                                            <td><span style={{ fontSize: "0.75rem", fontWeight: 600, color: priorityColour }}>{dl.priority}</span></td>
+                                            <td style={{ display: "flex", gap: 4 }}>
+                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openDeadlineModal(dl)}>Edit</button>
+                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteDeadlineUI(dl.deadline_id)}>Del</button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                </>)}
+
+                {/* ── Deadline add/edit modal ── */}
+                {showDeadlineModal && (
+                    <div className={styles.overlay} onClick={() => setShowDeadlineModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+                            <div className={styles.modalTitle}>{editDeadline ? "Edit Deadline" : "Add Deadline"}</div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Title *</label>
+                                <input className={styles.formInput} value={deadlineForm.title} onChange={e => setDeadlineForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. File written arguments" />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Due Date *</label>
+                                    <input type="date" className={styles.formInput} value={deadlineForm.due_date} onChange={e => setDeadlineForm(f => ({ ...f, due_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Priority</label>
+                                    <select className={styles.formInput} value={deadlineForm.priority} onChange={e => setDeadlineForm(f => ({ ...f, priority: e.target.value }))}>
+                                        {DEADLINE_PRIORITIES_UI.map(p => <option key={p}>{p}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={3} value={deadlineForm.notes} onChange={e => setDeadlineForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional context…" />
+                            </div>
+                            {deadlineErr && <div className={styles.formError}>{deadlineErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowDeadlineModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveDeadline} disabled={deadlineSaving}>{deadlineSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {/* ── Court Order add/edit modal ── */}

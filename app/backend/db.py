@@ -3317,3 +3317,86 @@ def delete_witness(witness_id: str, org_id: str, actor: str = SYSTEM):
             "WHERE witness_id=? AND org_id=?",
             (now, actor, witness_id, org_id),
         )
+
+
+# ── Matter Deadlines — Task #142 ──────────────────────────────────────────────
+
+DEADLINE_PRIORITIES = ("High", "Medium", "Low")
+
+
+def get_matter_deadlines(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM matter_deadlines
+               WHERE matter_id=? AND org_id=? AND is_active=1
+               ORDER BY completed ASC,
+                        CASE priority WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 ELSE 2 END,
+                        due_date ASC""",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_matter_deadline(
+    org_id: str,
+    matter_id: str,
+    title: str,
+    due_date: str,
+    priority: str = "Medium",
+    notes: Optional[str] = None,
+    actor: str = SYSTEM,
+) -> dict:
+    deadline_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO matter_deadlines
+               (deadline_id, org_id, matter_id, title, due_date, priority, notes,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (deadline_id, org_id, matter_id, title, due_date, priority, notes,
+             now, actor, now, actor),
+        )
+        row = conn.execute(
+            "SELECT * FROM matter_deadlines WHERE deadline_id=?", (deadline_id,)
+        ).fetchone()
+    return dict(row)
+
+
+def update_matter_deadline(
+    deadline_id: str,
+    org_id: str,
+    actor: str = SYSTEM,
+    **fields,
+) -> dict:
+    allowed = {"title", "due_date", "priority", "notes", "completed", "completed_at"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM matter_deadlines WHERE deadline_id=? AND org_id=?",
+                (deadline_id, org_id),
+            ).fetchone()
+        return dict(row) if row else {}
+    now = _now()
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_deadlines SET {set_clause}, modified_at=?, modified_by=? "
+            f"WHERE deadline_id=? AND org_id=?",
+            (*updates.values(), now, actor, deadline_id, org_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM matter_deadlines WHERE deadline_id=?", (deadline_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_matter_deadline(deadline_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_deadlines SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE deadline_id=? AND org_id=?",
+            (now, actor, deadline_id, org_id),
+        )

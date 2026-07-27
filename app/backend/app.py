@@ -380,6 +380,9 @@ from db import (
     # Witnesses — Task #141
     WITNESS_TYPES, STATEMENT_STATUSES, get_witnesses, create_witness,
     update_witness, delete_witness,
+    # Matter Deadlines — Task #142
+    DEADLINE_PRIORITIES, get_matter_deadlines, create_matter_deadline,
+    update_matter_deadline, delete_matter_deadline,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2513,6 +2516,67 @@ async def remove_witness(matter_id: str, witness_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_witness(witness_id, session.get("org") or "",
                    actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Matter Deadlines — Task #142 ───────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/deadlines", methods=["GET"])
+async def list_matter_deadlines(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    dl = get_matter_deadlines(matter_id, session.get("org") or "")
+    return jsonify({"deadlines": dl, "priorities": list(DEADLINE_PRIORITIES)})
+
+
+@bp.route("/matters/<matter_id>/deadlines", methods=["POST"])
+async def add_matter_deadline(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    due_date = (data.get("due_date") or "").strip()
+    if not due_date:
+        return jsonify({"error": "due_date required"}), 400
+    dl = create_matter_deadline(
+        org_id    = session.get("org") or "",
+        matter_id = matter_id,
+        title     = title,
+        due_date  = due_date,
+        priority  = data.get("priority", "Medium"),
+        notes     = data.get("notes") or None,
+        actor     = session.get("user_id") or SYSTEM,
+    )
+    return jsonify(dl), 201
+
+
+@bp.route("/matters/<matter_id>/deadlines/<deadline_id>", methods=["PATCH"])
+async def edit_matter_deadline(matter_id: str, deadline_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    dl = update_matter_deadline(
+        deadline_id = deadline_id,
+        org_id      = session.get("org") or "",
+        actor       = session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"title", "due_date", "priority", "notes", "completed", "completed_at"}},
+    )
+    return jsonify(dl)
+
+
+@bp.route("/matters/<matter_id>/deadlines/<deadline_id>", methods=["DELETE"])
+async def remove_matter_deadline(matter_id: str, deadline_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_deadline(deadline_id, session.get("org") or "",
+                           actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 
