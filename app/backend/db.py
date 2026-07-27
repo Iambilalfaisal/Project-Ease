@@ -566,6 +566,24 @@ CREATE TABLE IF NOT EXISTS matter_relief (
     modified_by      TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_matter_relief ON matter_relief(matter_id, application_date);
+
+CREATE TABLE IF NOT EXISTS matter_outcomes (
+    outcome_id       TEXT    PRIMARY KEY,
+    org_id           TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id        TEXT    NOT NULL UNIQUE REFERENCES matters(matter_id),
+    disposal_date    TEXT,
+    outcome_type     TEXT    NOT NULL DEFAULT 'Pending',
+    court            TEXT,
+    judge            TEXT,
+    decree_amount_pkr REAL,
+    appeal_filed     INTEGER NOT NULL DEFAULT 0,
+    appeal_deadline  TEXT,
+    notes            TEXT,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by       TEXT    NOT NULL DEFAULT 'system',
+    modified_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by      TEXT    NOT NULL DEFAULT 'system'
+);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -3705,3 +3723,66 @@ def delete_matter_relief(relief_id: str, org_id: str, actor: str = SYSTEM):
             "WHERE relief_id=? AND org_id=?",
             (now, actor, relief_id, org_id),
         )
+
+
+# ── Matter Outcome & Disposal (Task #146) ────────────────────────────────────
+
+OUTCOME_TYPES = (
+    "Pending", "Decree", "Acquittal", "Conviction", "Compromise",
+    "Dismissed", "Withdrawn", "Settlement", "Other",
+)
+
+
+def get_matter_outcome(matter_id: str, org_id: str) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_outcomes WHERE matter_id=? AND org_id=?",
+            (matter_id, org_id),
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def upsert_matter_outcome(
+    org_id: str,
+    matter_id: str,
+    outcome_type: str = "Pending",
+    disposal_date: str | None = None,
+    court: str | None = None,
+    judge: str | None = None,
+    decree_amount_pkr: float | None = None,
+    appeal_filed: int = 0,
+    appeal_deadline: str | None = None,
+    notes: str | None = None,
+    actor: str = SYSTEM,
+) -> dict:
+    now = _now()
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT outcome_id FROM matter_outcomes WHERE matter_id=? AND org_id=?",
+            (matter_id, org_id),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE matter_outcomes SET outcome_type=?, disposal_date=?, court=?, judge=?, "
+                "decree_amount_pkr=?, appeal_filed=?, appeal_deadline=?, notes=?, "
+                "modified_at=?, modified_by=? WHERE matter_id=? AND org_id=?",
+                (outcome_type, disposal_date, court, judge, decree_amount_pkr,
+                 appeal_filed, appeal_deadline, notes, now, actor, matter_id, org_id),
+            )
+        else:
+            outcome_id = secrets.token_hex(10)
+            conn.execute(
+                "INSERT INTO matter_outcomes (outcome_id, org_id, matter_id, outcome_type, "
+                "disposal_date, court, judge, decree_amount_pkr, appeal_filed, appeal_deadline, "
+                "notes, created_at, created_by, modified_at, modified_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (outcome_id, org_id, matter_id, outcome_type, disposal_date, court, judge,
+                 decree_amount_pkr, appeal_filed, appeal_deadline, notes,
+                 now, actor, now, actor),
+            )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_outcomes WHERE matter_id=? AND org_id=?",
+            (matter_id, org_id),
+        ).fetchone()
+    return dict(row) if row else {}

@@ -187,6 +187,20 @@ interface MatterCorrespondence {
     created_at:   string;
 }
 
+interface MatterOutcome {
+    outcome_id:        string;
+    matter_id:         string;
+    disposal_date:     string | null;
+    outcome_type:      string;
+    court:             string | null;
+    judge:             string | null;
+    decree_amount_pkr: number | null;
+    appeal_filed:      number;
+    appeal_deadline:   string | null;
+    notes:             string | null;
+    modified_at:       string;
+}
+
 interface MatterRelief {
     relief_id:         string;
     matter_id:         string;
@@ -897,7 +911,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -1011,6 +1025,15 @@ const MattersPanel = () => {
     const [reliefForm,        setReliefForm]        = useState<{ application_date: string; relief_type: string; court: string; judge: string; status: string; conditions: string; surety_amount_pkr: string; surety_name: string; notes: string }>({ ...BLANK_RELIEF });
     const [reliefSaving,      setReliefSaving]      = useState(false);
     const [reliefErr,         setReliefErr]         = useState("");
+    // Outcome — Task #146
+    const OUTCOME_TYPES_UI = ["Pending", "Decree", "Acquittal", "Conviction", "Compromise", "Dismissed", "Withdrawn", "Settlement", "Other"];
+    const BLANK_OUTCOME = { outcome_type: "Pending", disposal_date: "", court: "", judge: "", decree_amount_pkr: "", appeal_filed: false, appeal_deadline: "", notes: "" };
+    const [matterOutcome,     setMatterOutcome]     = useState<MatterOutcome | null>(null);
+    const [outcomeLoading,    setOutcomeLoading]    = useState(false);
+    const [outcomeForm,       setOutcomeForm]       = useState<{ outcome_type: string; disposal_date: string; court: string; judge: string; decree_amount_pkr: string; appeal_filed: boolean; appeal_deadline: string; notes: string }>({ ...BLANK_OUTCOME });
+    const [outcomeSaving,     setOutcomeSaving]     = useState(false);
+    const [outcomeErr,        setOutcomeErr]        = useState("");
+    const [outcomeSaved,      setOutcomeSaved]      = useState(false);
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1513,6 +1536,51 @@ const MattersPanel = () => {
         if (!detail || !confirm("Delete this relief record?")) return;
         fetch(`/matters/${detail.matter_id}/relief/${reliefId}`, { method: "DELETE", headers: authHeaders() })
             .then(() => loadRelief(detail.matter_id));
+    };
+
+    // ── Outcome (Task #146) ───────────────────────────────────────────────────
+    const loadOutcome = (matterId: string) => {
+        setOutcomeLoading(true);
+        fetch(`/matters/${matterId}/outcome`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => {
+                const o: MatterOutcome | null = d.outcome && d.outcome.outcome_id ? d.outcome : null;
+                setMatterOutcome(o);
+                setOutcomeForm({
+                    outcome_type: o?.outcome_type ?? "Pending",
+                    disposal_date: o?.disposal_date ?? "",
+                    court: o?.court ?? "",
+                    judge: o?.judge ?? "",
+                    decree_amount_pkr: o?.decree_amount_pkr !== null && o?.decree_amount_pkr !== undefined ? String(o.decree_amount_pkr) : "",
+                    appeal_filed: o?.appeal_filed === 1,
+                    appeal_deadline: o?.appeal_deadline ?? "",
+                    notes: o?.notes ?? "",
+                });
+            })
+            .finally(() => setOutcomeLoading(false));
+    };
+
+    const saveOutcome = async () => {
+        if (!detail) return;
+        setOutcomeSaving(true); setOutcomeErr(""); setOutcomeSaved(false);
+        const body = {
+            ...outcomeForm,
+            decree_amount_pkr: outcomeForm.decree_amount_pkr ? parseFloat(outcomeForm.decree_amount_pkr) : null,
+            appeal_filed: outcomeForm.appeal_filed ? 1 : 0,
+        };
+        try {
+            const r = await fetch(`/matters/${detail.matter_id}/outcome`, {
+                method: "PUT",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            if (!r.ok) { const e = await r.json(); setOutcomeErr(e.error ?? "Save failed."); return; }
+            const saved = await r.json();
+            setMatterOutcome(saved);
+            setOutcomeSaved(true);
+            setTimeout(() => setOutcomeSaved(false), 2500);
+        } catch { setOutcomeErr("Network error."); }
+        finally { setOutcomeSaving(false); }
     };
 
     const fmtElapsed = (secs: number) => {
@@ -2201,6 +2269,10 @@ const MattersPanel = () => {
                     <button className={`${styles.detailTabBtn}${detailTab === "relief" ? " " + styles.detailTabBtnActive : ""}`}
                         onClick={() => { setDetailTab("relief"); if (detail) loadRelief(detail.matter_id); }}>
                         Relief ({matterRelief.filter(r => r.status === "Pending" || r.status === "Granted").length} active)
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "outcome" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("outcome"); if (detail) loadOutcome(detail.matter_id); }}>
+                        Outcome {matterOutcome && matterOutcome.outcome_type !== "Pending" ? `(${matterOutcome.outcome_type})` : ""}
                     </button>
                 </div>
 
@@ -3017,6 +3089,63 @@ const MattersPanel = () => {
                         </table>
                     )}
                 </>)}
+
+                {/* ── Outcome tab ── */}
+                {detailTab === "outcome" && (
+                    <div style={{ maxWidth: 560, marginTop: "0.75rem" }}>
+                        {outcomeLoading ? (
+                            <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                        ) : (<>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Outcome Type</label>
+                                    <select className={styles.formInput} value={outcomeForm.outcome_type} onChange={e => setOutcomeForm(f => ({ ...f, outcome_type: e.target.value }))}>
+                                        {OUTCOME_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Disposal Date</label>
+                                    <input type="date" className={styles.formInput} value={outcomeForm.disposal_date} onChange={e => setOutcomeForm(f => ({ ...f, disposal_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Decree Amount (PKR)</label>
+                                    <input type="number" min="0" className={styles.formInput} value={outcomeForm.decree_amount_pkr} onChange={e => setOutcomeForm(f => ({ ...f, decree_amount_pkr: e.target.value }))} placeholder="If applicable" />
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Court</label>
+                                    <input className={styles.formInput} value={outcomeForm.court} onChange={e => setOutcomeForm(f => ({ ...f, court: e.target.value }))} placeholder="e.g. Supreme Court of Pakistan" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Judge</label>
+                                    <input className={styles.formInput} value={outcomeForm.judge} onChange={e => setOutcomeForm(f => ({ ...f, judge: e.target.value }))} placeholder="Optional" />
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", alignItems: "center" }}>
+                                <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: 0 }}>
+                                    <input type="checkbox" id="appeal-filed" checked={outcomeForm.appeal_filed} onChange={e => setOutcomeForm(f => ({ ...f, appeal_filed: e.target.checked }))} />
+                                    <label htmlFor="appeal-filed" style={{ fontSize: "0.85rem" }}>Appeal Filed</label>
+                                </div>
+                                {outcomeForm.appeal_filed && (
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Appeal Deadline</label>
+                                        <input type="date" className={styles.formInput} value={outcomeForm.appeal_deadline} onChange={e => setOutcomeForm(f => ({ ...f, appeal_deadline: e.target.value }))} />
+                                    </div>
+                                )}
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={3} value={outcomeForm.notes} onChange={e => setOutcomeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Summary of judgment, settlement terms, or other relevant details…" />
+                            </div>
+                            {outcomeErr && <div className={styles.formError}>{outcomeErr}</div>}
+                            {outcomeSaved && <div style={{ color: "#16a34a", fontSize: "0.85rem", marginBottom: "0.5rem" }}>Saved successfully.</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                                <button className={styles.btnPrimary} onClick={saveOutcome} disabled={outcomeSaving}>{outcomeSaving ? "Saving…" : "Save Outcome"}</button>
+                            </div>
+                        </>)}
+                    </div>
+                )}
 
                 {/* ── Relief add/edit modal ── */}
                 {showReliefModal && (

@@ -392,6 +392,8 @@ from db import (
     # Bail & Interim Relief — Task #145
     RELIEF_TYPES, RELIEF_STATUSES, get_matter_relief, create_matter_relief,
     update_matter_relief, delete_matter_relief,
+    # Matter Outcome — Task #146
+    OUTCOME_TYPES, get_matter_outcome, upsert_matter_outcome,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2772,6 +2774,39 @@ async def remove_matter_relief(matter_id: str, relief_id: str):
     delete_matter_relief(relief_id, session.get("org") or "",
                          actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
+
+
+# ─── Matter Outcome — Task #146 ──────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/outcome", methods=["GET"])
+async def get_outcome(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    outcome = get_matter_outcome(matter_id, session.get("org") or "")
+    return jsonify({"outcome": outcome, "outcome_types": list(OUTCOME_TYPES)})
+
+
+@bp.route("/matters/<matter_id>/outcome", methods=["PUT"])
+async def save_outcome(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    outcome = upsert_matter_outcome(
+        org_id=session.get("org") or "",
+        matter_id=matter_id,
+        outcome_type=data.get("outcome_type", "Pending"),
+        disposal_date=data.get("disposal_date") or None,
+        court=data.get("court") or None,
+        judge=data.get("judge") or None,
+        decree_amount_pkr=float(data["decree_amount_pkr"]) if data.get("decree_amount_pkr") is not None else None,
+        appeal_filed=int(bool(data.get("appeal_filed", False))),
+        appeal_deadline=data.get("appeal_deadline") or None,
+        notes=data.get("notes") or None,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(outcome)
 
 
 # ─── PROJECT EASE: Plan & Upgrade API ───────────────────────────────────────
