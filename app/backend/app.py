@@ -389,6 +389,9 @@ from db import (
     # Matter Correspondence — Task #144
     CORR_DIRECTIONS, CORR_TYPES, get_matter_correspondence, create_matter_correspondence,
     update_matter_correspondence, delete_matter_correspondence,
+    # Bail & Interim Relief — Task #145
+    RELIEF_TYPES, RELIEF_STATUSES, get_matter_relief, create_matter_relief,
+    update_matter_relief, delete_matter_relief,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2706,6 +2709,68 @@ async def remove_matter_correspondence(matter_id: str, corr_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_matter_correspondence(corr_id, session.get("org") or "",
                                  actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Bail & Interim Relief — Task #145 ───────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/relief", methods=["GET"])
+async def list_matter_relief(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    items = get_matter_relief(matter_id, session.get("org") or "")
+    return jsonify({"relief": items, "types": list(RELIEF_TYPES), "statuses": list(RELIEF_STATUSES)})
+
+
+@bp.route("/matters/<matter_id>/relief", methods=["POST"])
+async def add_matter_relief(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("application_date"):
+        return jsonify({"error": "application_date required"}), 400
+    item = create_matter_relief(
+        org_id=session.get("org") or "",
+        matter_id=matter_id,
+        application_date=data["application_date"],
+        relief_type=data.get("relief_type", "Bail"),
+        court=data.get("court"),
+        judge=data.get("judge"),
+        status=data.get("status", "Pending"),
+        conditions=data.get("conditions"),
+        surety_amount_pkr=float(data["surety_amount_pkr"]) if data.get("surety_amount_pkr") is not None else None,
+        surety_name=data.get("surety_name"),
+        notes=data.get("notes"),
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(item), 201
+
+
+@bp.route("/matters/<matter_id>/relief/<relief_id>", methods=["PATCH"])
+async def edit_matter_relief(matter_id: str, relief_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    updated = update_matter_relief(
+        relief_id, session.get("org") or "",
+        actor=session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"application_date", "relief_type", "court", "judge", "status",
+                    "conditions", "surety_amount_pkr", "surety_name", "notes"}},
+    )
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/relief/<relief_id>", methods=["DELETE"])
+async def remove_matter_relief(matter_id: str, relief_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_relief(relief_id, session.get("org") or "",
+                         actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 

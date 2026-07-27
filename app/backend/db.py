@@ -545,6 +545,27 @@ CREATE TABLE IF NOT EXISTS matter_correspondence (
     modified_by  TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_matter_correspondence ON matter_correspondence(matter_id, corr_date);
+
+CREATE TABLE IF NOT EXISTS matter_relief (
+    relief_id        TEXT    PRIMARY KEY,
+    org_id           TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id        TEXT    NOT NULL REFERENCES matters(matter_id),
+    application_date TEXT    NOT NULL,
+    relief_type      TEXT    NOT NULL DEFAULT 'Bail',
+    court            TEXT,
+    judge            TEXT,
+    status           TEXT    NOT NULL DEFAULT 'Pending',
+    conditions       TEXT,
+    surety_amount_pkr REAL,
+    surety_name      TEXT,
+    notes            TEXT,
+    is_active        INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by       TEXT    NOT NULL DEFAULT 'system',
+    modified_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by      TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_matter_relief ON matter_relief(matter_id, application_date);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -3598,4 +3619,89 @@ def delete_matter_correspondence(corr_id: str, org_id: str, actor: str = SYSTEM)
             "UPDATE matter_correspondence SET is_active=0, modified_at=?, modified_by=? "
             "WHERE corr_id=? AND org_id=?",
             (now, actor, corr_id, org_id),
+        )
+
+
+# ── Matter Bail & Interim Relief (Task #145) ─────────────────────────────────
+
+RELIEF_TYPES   = ("Bail", "Stay Order", "Injunction", "Ad-interim Relief", "Anticipatory Bail", "Other")
+RELIEF_STATUSES = ("Pending", "Granted", "Rejected", "Recalled", "Expired", "Withdrawn")
+
+
+def get_matter_relief(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM matter_relief WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY application_date DESC",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_matter_relief(
+    org_id: str,
+    matter_id: str,
+    application_date: str,
+    relief_type: str = "Bail",
+    court: str | None = None,
+    judge: str | None = None,
+    status: str = "Pending",
+    conditions: str | None = None,
+    surety_amount_pkr: float | None = None,
+    surety_name: str | None = None,
+    notes: str | None = None,
+    actor: str = SYSTEM,
+) -> dict:
+    relief_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO matter_relief (relief_id, org_id, matter_id, application_date, "
+            "relief_type, court, judge, status, conditions, surety_amount_pkr, surety_name, notes, "
+            "created_at, created_by, modified_at, modified_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (relief_id, org_id, matter_id, application_date, relief_type, court, judge,
+             status, conditions, surety_amount_pkr, surety_name, notes, now, actor, now, actor),
+        )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_relief WHERE relief_id=?", (relief_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_matter_relief(
+    relief_id: str,
+    org_id: str,
+    actor: str = SYSTEM,
+    **kwargs,
+) -> dict:
+    allowed = {"application_date", "relief_type", "court", "judge", "status",
+               "conditions", "surety_amount_pkr", "surety_name", "notes"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return {}
+    now = _now()
+    fields["modified_at"] = now
+    fields["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in fields)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_relief SET {set_clause} WHERE relief_id=? AND org_id=?",
+            (*fields.values(), relief_id, org_id),
+        )
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM matter_relief WHERE relief_id=?", (relief_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_matter_relief(relief_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_relief SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE relief_id=? AND org_id=?",
+            (now, actor, relief_id, org_id),
         )

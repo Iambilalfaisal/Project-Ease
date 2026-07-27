@@ -187,6 +187,21 @@ interface MatterCorrespondence {
     created_at:   string;
 }
 
+interface MatterRelief {
+    relief_id:         string;
+    matter_id:         string;
+    application_date:  string;
+    relief_type:       string;
+    court:             string | null;
+    judge:             string | null;
+    status:            string;
+    conditions:        string | null;
+    surety_amount_pkr: number | null;
+    surety_name:       string | null;
+    notes:             string | null;
+    created_at:        string;
+}
+
 interface Witness {
     witness_id:      string;
     matter_id:       string;
@@ -882,7 +897,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -985,6 +1000,17 @@ const MattersPanel = () => {
     const [corrForm,          setCorrForm]          = useState({ ...BLANK_CORR });
     const [corrSaving,        setCorrSaving]        = useState(false);
     const [corrErr,           setCorrErr]           = useState("");
+    // Relief — Task #145
+    const RELIEF_TYPES_UI    = ["Bail", "Stay Order", "Injunction", "Ad-interim Relief", "Anticipatory Bail", "Other"];
+    const RELIEF_STATUSES_UI = ["Pending", "Granted", "Rejected", "Recalled", "Expired", "Withdrawn"];
+    const BLANK_RELIEF = { application_date: new Date().toISOString().slice(0, 10), relief_type: "Bail", court: "", judge: "", status: "Pending", conditions: "", surety_amount_pkr: "", surety_name: "", notes: "" };
+    const [matterRelief,      setMatterRelief]      = useState<MatterRelief[]>([]);
+    const [reliefLoading,     setReliefLoading]     = useState(false);
+    const [showReliefModal,   setShowReliefModal]   = useState(false);
+    const [editRelief,        setEditRelief]        = useState<MatterRelief | null>(null);
+    const [reliefForm,        setReliefForm]        = useState<{ application_date: string; relief_type: string; court: string; judge: string; status: string; conditions: string; surety_amount_pkr: string; surety_name: string; notes: string }>({ ...BLANK_RELIEF });
+    const [reliefSaving,      setReliefSaving]      = useState(false);
+    const [reliefErr,         setReliefErr]         = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1424,6 +1450,69 @@ const MattersPanel = () => {
         if (!detail || !confirm("Delete this correspondence record?")) return;
         fetch(`/matters/${detail.matter_id}/correspondence/${corrId}`, { method: "DELETE", headers: authHeaders() })
             .then(() => loadCorrespondence(detail.matter_id));
+    };
+
+    // ── Bail & Interim Relief (Task #145) ────────────────────────────────────
+    const loadRelief = (matterId: string) => {
+        setReliefLoading(true);
+        fetch(`/matters/${matterId}/relief`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setMatterRelief(d.relief ?? []))
+            .finally(() => setReliefLoading(false));
+    };
+
+    const openReliefModal = (item?: MatterRelief) => {
+        if (item) {
+            setEditRelief(item);
+            setReliefForm({
+                application_date: item.application_date,
+                relief_type: item.relief_type,
+                court: item.court ?? "",
+                judge: item.judge ?? "",
+                status: item.status,
+                conditions: item.conditions ?? "",
+                surety_amount_pkr: item.surety_amount_pkr !== null ? String(item.surety_amount_pkr) : "",
+                surety_name: item.surety_name ?? "",
+                notes: item.notes ?? "",
+            });
+        } else {
+            setEditRelief(null);
+            setReliefForm({ ...BLANK_RELIEF });
+        }
+        setReliefErr(""); setShowReliefModal(true);
+    };
+
+    const saveRelief = async () => {
+        if (!detail) return;
+        if (!reliefForm.application_date) { setReliefErr("Application date is required."); return; }
+        setReliefSaving(true); setReliefErr("");
+        const url = editRelief
+            ? `/matters/${detail.matter_id}/relief/${editRelief.relief_id}`
+            : `/matters/${detail.matter_id}/relief`;
+        const method = editRelief ? "PATCH" : "POST";
+        const suretyAmt = reliefForm.surety_amount_pkr ? parseFloat(reliefForm.surety_amount_pkr) : null;
+        const body = {
+            ...reliefForm,
+            court: reliefForm.court || null,
+            judge: reliefForm.judge || null,
+            conditions: reliefForm.conditions || null,
+            surety_amount_pkr: suretyAmt,
+            surety_name: reliefForm.surety_name || null,
+            notes: reliefForm.notes || null,
+        };
+        try {
+            const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const e = await r.json(); setReliefErr(e.error ?? "Save failed."); return; }
+            setShowReliefModal(false);
+            loadRelief(detail.matter_id);
+        } catch { setReliefErr("Network error."); }
+        finally { setReliefSaving(false); }
+    };
+
+    const deleteReliefUI = (reliefId: string) => {
+        if (!detail || !confirm("Delete this relief record?")) return;
+        fetch(`/matters/${detail.matter_id}/relief/${reliefId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadRelief(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -2108,6 +2197,10 @@ const MattersPanel = () => {
                     <button className={`${styles.detailTabBtn}${detailTab === "correspondence" ? " " + styles.detailTabBtnActive : ""}`}
                         onClick={() => { setDetailTab("correspondence"); if (detail) loadCorrespondence(detail.matter_id); }}>
                         Correspondence ({correspondence.length})
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "relief" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("relief"); if (detail) loadRelief(detail.matter_id); }}>
+                        Relief ({matterRelief.filter(r => r.status === "Pending" || r.status === "Granted").length} active)
                     </button>
                 </div>
 
@@ -2873,6 +2966,117 @@ const MattersPanel = () => {
                         </table>
                     )}
                 </>)}
+
+                {/* ── Relief tab ── */}
+                {detailTab === "relief" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                            {matterRelief.filter(r => r.status === "Granted").length} granted · {matterRelief.filter(r => r.status === "Pending").length} pending · {matterRelief.filter(r => r.status === "Rejected").length} rejected
+                        </span>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openReliefModal()}>+ Add Application</button>
+                    </div>
+                    {reliefLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : matterRelief.length === 0 ? (
+                        <div className={styles.emptyHint}>No bail or interim relief applications recorded. Add bail, stay orders, injunctions, and other interim orders here.</div>
+                    ) : (
+                        <table className={styles.feeTable}>
+                            <thead><tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Court / Judge</th>
+                                <th>Status</th>
+                                <th>Surety (PKR)</th>
+                                <th style={{ width: 80 }}></th>
+                            </tr></thead>
+                            <tbody>
+                                {matterRelief.map(r => {
+                                    const statusColour = r.status === "Granted" ? "#16a34a" : r.status === "Rejected" || r.status === "Recalled" ? "#dc2626" : r.status === "Pending" ? "var(--gold)" : "var(--text-2)";
+                                    return (
+                                        <tr key={r.relief_id}>
+                                            <td style={{ whiteSpace: "nowrap" }}>{r.application_date}</td>
+                                            <td style={{ fontSize: "0.82rem" }}>{r.relief_type}</td>
+                                            <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>
+                                                {r.court || "—"}{r.judge ? ` / ${r.judge}` : ""}
+                                            </td>
+                                            <td>
+                                                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: statusColour }}>{r.status}</span>
+                                            </td>
+                                            <td style={{ fontSize: "0.82rem", fontVariantNumeric: "tabular-nums" }}>
+                                                {r.surety_amount_pkr !== null ? r.surety_amount_pkr.toLocaleString() : "—"}
+                                                {r.surety_name ? <span style={{ color: "var(--text-2)", fontSize: "0.75rem" }}> ({r.surety_name})</span> : null}
+                                            </td>
+                                            <td style={{ display: "flex", gap: 4 }}>
+                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openReliefModal(r)}>Edit</button>
+                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteReliefUI(r.relief_id)}>Del</button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                </>)}
+
+                {/* ── Relief add/edit modal ── */}
+                {showReliefModal && (
+                    <div className={styles.overlay} onClick={() => setShowReliefModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+                            <div className={styles.modalTitle}>{editRelief ? "Edit Relief Application" : "Add Relief Application"}</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Date *</label>
+                                    <input type="date" className={styles.formInput} value={reliefForm.application_date} onChange={e => setReliefForm(f => ({ ...f, application_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Type</label>
+                                    <select className={styles.formInput} value={reliefForm.relief_type} onChange={e => setReliefForm(f => ({ ...f, relief_type: e.target.value }))}>
+                                        {RELIEF_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Status</label>
+                                    <select className={styles.formInput} value={reliefForm.status} onChange={e => setReliefForm(f => ({ ...f, status: e.target.value }))}>
+                                        {RELIEF_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Court</label>
+                                    <input className={styles.formInput} value={reliefForm.court} onChange={e => setReliefForm(f => ({ ...f, court: e.target.value }))} placeholder="e.g. Lahore High Court" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Judge</label>
+                                    <input className={styles.formInput} value={reliefForm.judge} onChange={e => setReliefForm(f => ({ ...f, judge: e.target.value }))} placeholder="Optional" />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Conditions</label>
+                                <textarea className={styles.formInput} rows={2} value={reliefForm.conditions} onChange={e => setReliefForm(f => ({ ...f, conditions: e.target.value }))} placeholder="Bail/order conditions, if any…" />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Surety Amount (PKR)</label>
+                                    <input type="number" min="0" className={styles.formInput} value={reliefForm.surety_amount_pkr} onChange={e => setReliefForm(f => ({ ...f, surety_amount_pkr: e.target.value }))} placeholder="0" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Surety Name</label>
+                                    <input className={styles.formInput} value={reliefForm.surety_name} onChange={e => setReliefForm(f => ({ ...f, surety_name: e.target.value }))} placeholder="Optional" />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={2} value={reliefForm.notes} onChange={e => setReliefForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional context…" />
+                            </div>
+                            {reliefErr && <div className={styles.formError}>{reliefErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowReliefModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveRelief} disabled={reliefSaving}>{reliefSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Correspondence add/edit modal ── */}
                 {showCorrModal && (
