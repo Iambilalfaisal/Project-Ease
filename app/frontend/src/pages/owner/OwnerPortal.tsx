@@ -129,6 +129,18 @@ interface Invoice {
     fees?:          Fee[];
 }
 
+interface AdverseParty {
+    party_id:     string;
+    matter_id:    string;
+    party_name:   string;
+    party_type:   string;
+    counsel_name:  string | null;
+    counsel_phone: string | null;
+    counsel_firm:  string | null;
+    notes:         string | null;
+    created_at:    string;
+}
+
 interface CourtOrder {
     order_id:     string;
     matter_id:    string;
@@ -738,6 +750,14 @@ const MattersPanel = () => {
     const [orderForm,      setOrderForm]      = useState({ hearing_date: "", court_name: "", order_brief: "", next_date: "", outcome: "Adjourned" });
     const [orderSaving,    setOrderSaving]    = useState(false);
     const [orderErr,       setOrderErr]       = useState("");
+    // Adverse Parties — Task #131
+    const BLANK_PARTY = { party_name: "", party_type: "Individual", counsel_name: "", counsel_phone: "", counsel_firm: "", notes: "" };
+    const [adverseParties,   setAdverseParties]   = useState<AdverseParty[]>([]);
+    const [showPartyModal,   setShowPartyModal]   = useState(false);
+    const [editParty,        setEditParty]        = useState<AdverseParty | null>(null);
+    const [partyForm,        setPartyForm]        = useState({ ...BLANK_PARTY });
+    const [partySaving,      setPartySaving]      = useState(false);
+    const [partyErr,         setPartyErr]         = useState("");
 
     const allCourts = [...DEFAULT_COURTS, ...customCourts.map(c => c.name)];
 
@@ -808,13 +828,63 @@ const MattersPanel = () => {
         loadOrders(detail.matter_id);
     };
 
+    const loadAdverseParties = (matterId: string) => {
+        fetch(`/matters/${matterId}/adverse-parties`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setAdverseParties(d.parties ?? []))
+            .catch(() => {});
+    };
+
+    const openPartyModal = (party?: AdverseParty) => {
+        if (party) {
+            setEditParty(party);
+            setPartyForm({ party_name: party.party_name, party_type: party.party_type, counsel_name: party.counsel_name ?? "", counsel_phone: party.counsel_phone ?? "", counsel_firm: party.counsel_firm ?? "", notes: party.notes ?? "" });
+        } else {
+            setEditParty(null);
+            setPartyForm({ ...BLANK_PARTY });
+        }
+        setPartyErr(""); setShowPartyModal(true);
+    };
+
+    const saveParty = async () => {
+        if (!partyForm.party_name.trim()) { setPartyErr("Party name is required."); return; }
+        if (!detail) return;
+        setPartySaving(true); setPartyErr("");
+        const body = {
+            party_name:   partyForm.party_name.trim(),
+            party_type:   partyForm.party_type,
+            counsel_name:  partyForm.counsel_name.trim() || undefined,
+            counsel_phone: partyForm.counsel_phone.trim() || undefined,
+            counsel_firm:  partyForm.counsel_firm.trim() || undefined,
+            notes:         partyForm.notes.trim() || undefined,
+        };
+        try {
+            const url = editParty
+                ? `/matters/${detail.matter_id}/adverse-parties/${editParty.party_id}`
+                : `/matters/${detail.matter_id}/adverse-parties`;
+            const method = editParty ? "PATCH" : "POST";
+            const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const d = await r.json().catch(() => ({})); setPartyErr(d.error ?? "Save failed."); }
+            else { setShowPartyModal(false); loadAdverseParties(detail.matter_id); }
+        } catch { setPartyErr("Network error."); }
+        finally { setPartySaving(false); }
+    };
+
+    const deleteParty = async (party: AdverseParty) => {
+        if (!detail || !confirm(`Remove "${party.party_name}" from this matter?`)) return;
+        await fetch(`/matters/${detail.matter_id}/adverse-parties/${party.party_id}`, { method: "DELETE", headers: authHeaders() });
+        loadAdverseParties(detail.matter_id);
+    };
+
     const openDetail = (m: Matter) => {
         setDetailTab("documents");
         setFees([]);
         setOrders([]);
+        setAdverseParties([]);
         fetch(`/matters/${m.matter_id}`, { headers: authHeaders() })
             .then(r => r.json())
             .then(d => { setDetail(d); setEditDetail(false); });
+        loadAdverseParties(m.matter_id);
     };
 
     const loadFees = (matterId: string) => {
@@ -1122,6 +1192,82 @@ const MattersPanel = () => {
                             {detail.filing_date   && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Filed</span><span>{detail.filing_date}</span></div>}
                             {detail.opposing_party && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Opposing Party</span><span>{detail.opposing_party}</span></div>}
                             {detail.notes         && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Adverse Parties section ── */}
+                <div className={styles.adversePartiesSection}>
+                    <div className={styles.adversePartiesSectionHeader}>
+                        <span className={styles.adversePartiesSectionTitle}>⚖ Opposing Parties</span>
+                        <button className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.25rem 0.65rem" }} onClick={() => openPartyModal()}>+ Add</button>
+                    </div>
+                    {adverseParties.length === 0 ? (
+                        <span className={styles.muted} style={{ fontSize: "0.8rem" }}>None recorded.</span>
+                    ) : (
+                        <div className={styles.adversePartyList}>
+                            {adverseParties.map(p => (
+                                <div key={p.party_id} className={styles.adversePartyCard}>
+                                    <div className={styles.adversePartyCardMain}>
+                                        <span className={styles.adversePartyName}>{p.party_name}</span>
+                                        <span className={styles.badgeGray} style={{ fontSize: "0.68rem" }}>{p.party_type}</span>
+                                    </div>
+                                    {(p.counsel_name || p.counsel_firm) && (
+                                        <div className={styles.adversePartyMeta}>
+                                            {p.counsel_name && <span>Counsel: <strong>{p.counsel_name}</strong></span>}
+                                            {p.counsel_firm && <span> · {p.counsel_firm}</span>}
+                                            {p.counsel_phone && <span> · {p.counsel_phone}</span>}
+                                        </div>
+                                    )}
+                                    {p.notes && <div className={styles.adversePartyNotes}>{p.notes}</div>}
+                                    <div className={styles.adversePartyActions}>
+                                        <button className={styles.actionBtn} onClick={() => openPartyModal(p)}>Edit</button>
+                                        <button className={styles.actionBtnDanger} onClick={() => deleteParty(p)}>Remove</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* ── Adverse Party modal ── */}
+                {showPartyModal && (
+                    <div className={styles.overlay} onClick={() => setShowPartyModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+                            <div className={styles.modalTitle}>{editParty ? "Edit Opposing Party" : "Add Opposing Party"}</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                                    <label className={styles.formLabel}>Party Name *</label>
+                                    <input className={styles.formInput} value={partyForm.party_name} onChange={e => setPartyForm(f => ({ ...f, party_name: e.target.value }))} placeholder="e.g. Muhammad Arif Khan" autoFocus />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Party Type</label>
+                                    <select className={styles.formSelect} value={partyForm.party_type} onChange={e => setPartyForm(f => ({ ...f, party_type: e.target.value }))}>
+                                        {["Individual", "Company", "Government", "Other"].map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Counsel Name</label>
+                                    <input className={styles.formInput} value={partyForm.counsel_name} onChange={e => setPartyForm(f => ({ ...f, counsel_name: e.target.value }))} placeholder="Opposing advocate" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Counsel Phone</label>
+                                    <input className={styles.formInput} value={partyForm.counsel_phone} onChange={e => setPartyForm(f => ({ ...f, counsel_phone: e.target.value }))} placeholder="+92 300 0000000" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Counsel Firm</label>
+                                    <input className={styles.formInput} value={partyForm.counsel_firm} onChange={e => setPartyForm(f => ({ ...f, counsel_firm: e.target.value }))} placeholder="Law firm name" />
+                                </div>
+                                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                                    <label className={styles.formLabel}>Notes</label>
+                                    <input className={styles.formInput} value={partyForm.notes} onChange={e => setPartyForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any relevant notes…" />
+                                </div>
+                            </div>
+                            {partyErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{partyErr}</div>}
+                            <div className={styles.modalActions}>
+                                <button className={styles.btnGhost} onClick={() => setShowPartyModal(false)} disabled={partySaving}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveParty} disabled={partySaving}>{partySaving ? "Saving…" : editParty ? "Save Changes" : "Add Party"}</button>
+                            </div>
                         </div>
                     </div>
                 )}

@@ -381,6 +381,25 @@ CREATE TABLE IF NOT EXISTS court_orders (
     modified_by  TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_court_orders_matter ON court_orders(matter_id, hearing_date DESC);
+
+-- Task #131: adverse parties per matter
+CREATE TABLE IF NOT EXISTS adverse_parties (
+    party_id     TEXT    PRIMARY KEY,
+    org_id       TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id    TEXT    NOT NULL REFERENCES matters(matter_id),
+    party_name   TEXT    NOT NULL,
+    party_type   TEXT    NOT NULL DEFAULT 'Individual',
+    counsel_name TEXT,
+    counsel_phone TEXT,
+    counsel_firm TEXT,
+    notes        TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by   TEXT    NOT NULL DEFAULT 'system',
+    modified_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by  TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_adverse_parties_matter ON adverse_parties(matter_id);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -2431,6 +2450,81 @@ def delete_court_order(order_id: str, org_id: str, actor: str = SYSTEM):
         conn.execute(
             "UPDATE court_orders SET is_active=0, modified_at=?, modified_by=? WHERE order_id=? AND org_id=?",
             (now, actor, order_id, org_id),
+        )
+
+
+# ── Adverse Parties (Task #131) ───────────────────────────────────────────────
+
+def get_adverse_parties(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM adverse_parties
+               WHERE matter_id=? AND org_id=? AND is_active=1
+               ORDER BY created_at""",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_adverse_party(
+    matter_id: str, org_id: str, party_name: str,
+    party_type: str = "Individual",
+    counsel_name: Optional[str] = None,
+    counsel_phone: Optional[str] = None,
+    counsel_firm: Optional[str] = None,
+    notes: Optional[str] = None,
+    actor: str = SYSTEM,
+) -> dict:
+    party_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO adverse_parties
+               (party_id, org_id, matter_id, party_name, party_type,
+                counsel_name, counsel_phone, counsel_firm, notes,
+                created_at, created_by, modified_at, modified_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (party_id, org_id, matter_id, party_name, party_type,
+             counsel_name, counsel_phone, counsel_firm, notes,
+             now, actor, now, actor),
+        )
+    return {
+        "party_id": party_id, "org_id": org_id, "matter_id": matter_id,
+        "party_name": party_name, "party_type": party_type,
+        "counsel_name": counsel_name, "counsel_phone": counsel_phone,
+        "counsel_firm": counsel_firm, "notes": notes, "created_at": now,
+    }
+
+
+def update_adverse_party(
+    party_id: str, org_id: str, actor: str = SYSTEM, **fields
+) -> Optional[dict]:
+    allowed = {"party_name", "party_type", "counsel_name", "counsel_phone", "counsel_firm", "notes"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return None
+    now = _now()
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE adverse_parties SET {set_clause} WHERE party_id=? AND org_id=?",
+            (*updates.values(), party_id, org_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM adverse_parties WHERE party_id=? AND org_id=?",
+            (party_id, org_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_adverse_party(party_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE adverse_parties SET is_active=0, modified_at=?, modified_by=? WHERE party_id=? AND org_id=?",
+            (now, actor, party_id, org_id),
         )
 
 

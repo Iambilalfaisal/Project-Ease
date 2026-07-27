@@ -361,6 +361,8 @@ from db import (
     list_client_tokens, revoke_client_token,
     # Court Orders — Task #130
     get_court_orders, create_court_order, update_court_order, delete_court_order,
+    # Adverse Parties — Task #131
+    get_adverse_parties, create_adverse_party, update_adverse_party, delete_adverse_party,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2074,6 +2076,67 @@ async def remove_court_order(matter_id: str, order_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_court_order(order_id, session.get("org") or "",
                        actor=session.get("user_id") or SYSTEM)
+    return jsonify({"success": True})
+
+
+# ─── Adverse Parties (Task #131) ─────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/adverse-parties", methods=["GET"])
+async def list_adverse_parties(matter_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    parties = get_adverse_parties(matter_id, session.get("org") or "")
+    return jsonify({"parties": parties})
+
+
+@bp.route("/matters/<matter_id>/adverse-parties", methods=["POST"])
+async def add_adverse_party(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json() or {}
+    party_name = (data.get("party_name") or "").strip()
+    if not party_name:
+        return jsonify({"error": "party_name is required"}), 400
+    party = create_adverse_party(
+        matter_id=matter_id,
+        org_id=session.get("org") or "",
+        party_name=party_name,
+        party_type=data.get("party_type", "Individual"),
+        counsel_name=data.get("counsel_name") or None,
+        counsel_phone=data.get("counsel_phone") or None,
+        counsel_firm=data.get("counsel_firm") or None,
+        notes=data.get("notes") or None,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(party), 201
+
+
+@bp.route("/matters/<matter_id>/adverse-parties/<party_id>", methods=["PATCH"])
+async def edit_adverse_party(matter_id: str, party_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json() or {}
+    updated = update_adverse_party(
+        party_id, session.get("org") or "",
+        actor=session.get("user_id") or SYSTEM,
+        **{k: v for k, v in data.items()
+           if k in {"party_name", "party_type", "counsel_name", "counsel_phone", "counsel_firm", "notes"}},
+    )
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/adverse-parties/<party_id>", methods=["DELETE"])
+async def remove_adverse_party(matter_id: str, party_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_adverse_party(party_id, session.get("org") or "",
+                         actor=session.get("user_id") or SYSTEM)
     return jsonify({"success": True})
 
 
