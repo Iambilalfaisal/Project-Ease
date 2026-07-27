@@ -397,6 +397,8 @@ from db import (
     # Matter Charges — Task #147
     PLEA_OPTIONS, get_matter_charges, create_matter_charge,
     update_matter_charge, delete_matter_charge,
+    # Matter FIR — Task #148
+    get_matter_fir, create_matter_fir, update_matter_fir, delete_matter_fir,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2869,6 +2871,55 @@ async def remove_matter_charge(matter_id: str, charge_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_matter_charge(charge_id, session.get("org") or "",
                          actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ─── Matter FIR — Task #148 ───────────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/fir", methods=["GET"])
+async def list_matter_fir(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    records = get_matter_fir(matter_id, session.get("org") or "")
+    return jsonify({"fir": records})
+
+
+@bp.route("/matters/<matter_id>/fir", methods=["POST"])
+async def add_matter_fir(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    if not data.get("fir_number") or not data.get("police_station"):
+        return jsonify({"error": "fir_number and police_station are required"}), 400
+    record = create_matter_fir(
+        matter_id=matter_id,
+        org_id=session.get("org") or "",
+        data=data,
+        actor=session.get("user_id") or SYSTEM,
+    )
+    return jsonify(record), 201
+
+
+@bp.route("/matters/<matter_id>/fir/<fir_id>", methods=["PATCH"])
+async def edit_matter_fir(matter_id: str, fir_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    updated = update_matter_fir(fir_id, session.get("org") or "", data,
+                                actor=session.get("user_id") or SYSTEM)
+    return jsonify(updated)
+
+
+@bp.route("/matters/<matter_id>/fir/<fir_id>", methods=["DELETE"])
+async def remove_matter_fir(matter_id: str, fir_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_matter_fir(fir_id, session.get("org") or "",
+                      actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
 
 

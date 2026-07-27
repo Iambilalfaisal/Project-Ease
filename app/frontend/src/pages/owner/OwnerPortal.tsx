@@ -187,6 +187,22 @@ interface MatterCorrespondence {
     created_at:   string;
 }
 
+interface MatterFir {
+    fir_id:                   string;
+    matter_id:                string;
+    fir_number:               string;
+    police_station:           string;
+    district:                 string | null;
+    io_name:                  string | null;
+    complainant:              string | null;
+    arrest_date:              string | null;
+    sections_at_fir:          string | null;
+    sections_after_challan:   string | null;
+    fir_date:                 string | null;
+    notes:                    string | null;
+    created_at:               string;
+}
+
 interface MatterCharge {
     charge_id:          string;
     matter_id:          string;
@@ -924,7 +940,7 @@ const MattersPanel = () => {
     const [newCourtName, setNewCourtName] = useState("");
     const [addingCourt,  setAddingCourt]  = useState(false);
     // Detail tabs & fees
-    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome" | "charges">("documents");
+    const [detailTab,  setDetailTab]  = useState<"documents" | "fees" | "orders" | "time" | "notes" | "docreqs" | "witnesses" | "deadlines" | "expenses" | "correspondence" | "relief" | "outcome" | "charges" | "fir">("documents");
     const [fees,       setFees]       = useState<Fee[]>([]);
     const [feesLoading, setFeesLoading] = useState(false);
     const [showFeeModal, setShowFeeModal] = useState(false);
@@ -1057,6 +1073,15 @@ const MattersPanel = () => {
     const [chargeForm,        setChargeForm]        = useState<{ section_no: string; description: string; plea: string; charge_framed: boolean; charge_framed_date: string; court: string; notes: string }>({ ...BLANK_CHARGE });
     const [chargeSaving,      setChargeSaving]      = useState(false);
     const [chargeErr,         setChargeErr]         = useState("");
+    // FIR — Task #148
+    const BLANK_FIR = { fir_number: "", police_station: "", district: "", io_name: "", complainant: "", arrest_date: "", sections_at_fir: "", sections_after_challan: "", fir_date: "", notes: "" };
+    const [matterFirList,   setMatterFirList]   = useState<MatterFir[]>([]);
+    const [firLoading,      setFirLoading]      = useState(false);
+    const [showFirModal,    setShowFirModal]    = useState(false);
+    const [editFir,         setEditFir]         = useState<MatterFir | null>(null);
+    const [firForm,         setFirForm]         = useState<typeof BLANK_FIR>({ ...BLANK_FIR });
+    const [firSaving,       setFirSaving]       = useState(false);
+    const [firErr,          setFirErr]          = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1663,6 +1688,46 @@ const MattersPanel = () => {
         if (!detail || !confirm("Delete this charge?")) return;
         fetch(`/matters/${detail.matter_id}/charges/${chargeId}`, { method: "DELETE", headers: authHeaders() })
             .then(() => loadCharges(detail.matter_id));
+    };
+
+    // ── FIR functions — Task #148 ──────────────────────────────────────────
+    const BLANK_FIR_FN = { fir_number: "", police_station: "", district: "", io_name: "", complainant: "", arrest_date: "", sections_at_fir: "", sections_after_challan: "", fir_date: "", notes: "" };
+    const loadFir = (matterId: string) => {
+        setFirLoading(true);
+        fetch(`/matters/${matterId}/fir`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setMatterFirList(d.fir || []); setFirLoading(false); })
+            .catch(() => setFirLoading(false));
+    };
+    const openFirModal = (f?: MatterFir) => {
+        setEditFir(f || null);
+        setFirErr("");
+        setFirForm(f ? {
+            fir_number: f.fir_number, police_station: f.police_station,
+            district: f.district || "", io_name: f.io_name || "",
+            complainant: f.complainant || "", arrest_date: f.arrest_date || "",
+            sections_at_fir: f.sections_at_fir || "",
+            sections_after_challan: f.sections_after_challan || "",
+            fir_date: f.fir_date || "", notes: f.notes || "",
+        } : { ...BLANK_FIR_FN });
+        setShowFirModal(true);
+    };
+    const saveFir = async () => {
+        if (!detail) return;
+        if (!firForm.fir_number.trim()) { setFirErr("FIR number is required"); return; }
+        if (!firForm.police_station.trim()) { setFirErr("Police station is required"); return; }
+        setFirSaving(true); setFirErr("");
+        const url = editFir ? `/matters/${detail.matter_id}/fir/${editFir.fir_id}` : `/matters/${detail.matter_id}/fir`;
+        const method = editFir ? "PATCH" : "POST";
+        const res = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(firForm) });
+        setFirSaving(false);
+        if (res.ok) { setShowFirModal(false); loadFir(detail.matter_id); }
+        else { const d = await res.json(); setFirErr(d.error || "Save failed"); }
+    };
+    const deleteFirUI = (firId: string) => {
+        if (!detail || !confirm("Delete this FIR record?")) return;
+        fetch(`/matters/${detail.matter_id}/fir/${firId}`, { method: "DELETE", headers: authHeaders() })
+            .then(() => loadFir(detail.matter_id));
     };
 
     const fmtElapsed = (secs: number) => {
@@ -2359,6 +2424,10 @@ const MattersPanel = () => {
                     <button className={`${styles.detailTabBtn}${detailTab === "charges" ? " " + styles.detailTabBtnActive : ""}`}
                         onClick={() => { setDetailTab("charges"); if (detail) loadCharges(detail.matter_id); }}>
                         Charges ({matterCharges.length})
+                    </button>
+                    <button className={`${styles.detailTabBtn}${detailTab === "fir" ? " " + styles.detailTabBtnActive : ""}`}
+                        onClick={() => { setDetailTab("fir"); if (detail) loadFir(detail.matter_id); }}>
+                        FIR ({matterFirList.length})
                     </button>
                 </div>
 
@@ -3175,6 +3244,105 @@ const MattersPanel = () => {
                         </table>
                     )}
                 </>)}
+
+                {/* ── FIR tab ── */}
+                {detailTab === "fir" && (<>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>First Information Reports &amp; police station records</span>
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openFirModal()}>+ Add FIR</button>
+                    </div>
+                    {firLoading ? (
+                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
+                    ) : matterFirList.length === 0 ? (
+                        <div className={styles.emptyHint}>No FIR records yet. Add FIR details for criminal matters — police station, IO, complainant, and arrest date.</div>
+                    ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                            {matterFirList.map(f => (
+                                <div key={f.fir_id} style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.9rem 1rem" }}>
+                                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.5rem" }}>
+                                        <div>
+                                            <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>FIR No. {f.fir_number}</span>
+                                            <span style={{ color: "var(--text-2)", fontSize: "0.82rem", marginLeft: "0.75rem" }}>P/S {f.police_station}{f.district ? `, ${f.district}` : ""}</span>
+                                        </div>
+                                        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openFirModal(f)}>Edit</button>
+                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteFirUI(f.fir_id)}>Del</button>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "0.4rem 1rem", marginTop: "0.6rem", fontSize: "0.8rem", color: "var(--text-2)" }}>
+                                        {f.fir_date && <span><strong>Date:</strong> {f.fir_date}</span>}
+                                        {f.arrest_date && <span><strong>Arrest:</strong> {f.arrest_date}</span>}
+                                        {f.io_name && <span><strong>IO:</strong> {f.io_name}</span>}
+                                        {f.complainant && <span><strong>Complainant:</strong> {f.complainant}</span>}
+                                        {f.sections_at_fir && <span><strong>Sections (FIR):</strong> {f.sections_at_fir}</span>}
+                                        {f.sections_after_challan && <span><strong>Sections (Challan):</strong> {f.sections_after_challan}</span>}
+                                    </div>
+                                    {f.notes && <div style={{ marginTop: "0.4rem", fontSize: "0.78rem", color: "var(--text-3)", fontStyle: "italic" }}>{f.notes}</div>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </>)}
+
+                {/* ── FIR modal ── */}
+                {showFirModal && (
+                    <div className={styles.overlay} onClick={() => setShowFirModal(false)}>
+                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+                            <div className={styles.modalTitle}>{editFir ? "Edit FIR Record" : "Add FIR Record"}</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>FIR Number *</label>
+                                    <input className={styles.formInput} value={firForm.fir_number} onChange={e => setFirForm(f => ({ ...f, fir_number: e.target.value }))} placeholder="e.g. 123/2024" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>FIR Date</label>
+                                    <input type="date" className={styles.formInput} value={firForm.fir_date} onChange={e => setFirForm(f => ({ ...f, fir_date: e.target.value }))} />
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Police Station *</label>
+                                    <input className={styles.formInput} value={firForm.police_station} onChange={e => setFirForm(f => ({ ...f, police_station: e.target.value }))} placeholder="e.g. Gulberg" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>District</label>
+                                    <input className={styles.formInput} value={firForm.district} onChange={e => setFirForm(f => ({ ...f, district: e.target.value }))} placeholder="e.g. Lahore" />
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Investigating Officer</label>
+                                    <input className={styles.formInput} value={firForm.io_name} onChange={e => setFirForm(f => ({ ...f, io_name: e.target.value }))} placeholder="IO Name / Rank" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Arrest Date</label>
+                                    <input type="date" className={styles.formInput} value={firForm.arrest_date} onChange={e => setFirForm(f => ({ ...f, arrest_date: e.target.value }))} />
+                                </div>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Complainant</label>
+                                <input className={styles.formInput} value={firForm.complainant} onChange={e => setFirForm(f => ({ ...f, complainant: e.target.value }))} placeholder="Name of complainant" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Sections at time of FIR</label>
+                                <input className={styles.formInput} value={firForm.sections_at_fir} onChange={e => setFirForm(f => ({ ...f, sections_at_fir: e.target.value }))} placeholder="e.g. 302, 324 PPC" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Sections after Challan</label>
+                                <input className={styles.formInput} value={firForm.sections_after_challan} onChange={e => setFirForm(f => ({ ...f, sections_after_challan: e.target.value }))} placeholder="e.g. 302, 109 PPC (if changed)" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <textarea className={styles.formInput} rows={2} value={firForm.notes} onChange={e => setFirForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                            </div>
+                            {firErr && <div className={styles.formError}>{firErr}</div>}
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+                                <button className={styles.btnGhost} onClick={() => setShowFirModal(false)}>Cancel</button>
+                                <button className={styles.btnPrimary} onClick={saveFir} disabled={firSaving}>{firSaving ? "Saving…" : "Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Charges tab ── */}
                 {detailTab === "charges" && (<>

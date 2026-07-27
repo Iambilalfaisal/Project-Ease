@@ -603,6 +603,47 @@ CREATE TABLE IF NOT EXISTS matter_charges (
     modified_by      TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_matter_charges ON matter_charges(matter_id);
+
+CREATE TABLE IF NOT EXISTS matter_fir (
+    fir_id           TEXT    PRIMARY KEY,
+    org_id           TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id        TEXT    NOT NULL REFERENCES matters(matter_id),
+    fir_number       TEXT    NOT NULL,
+    police_station   TEXT    NOT NULL,
+    district         TEXT,
+    io_name          TEXT,
+    complainant      TEXT,
+    arrest_date      TEXT,
+    sections_at_fir  TEXT,
+    sections_after_challan TEXT,
+    fir_date         TEXT,
+    notes            TEXT,
+    is_active        INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by       TEXT    NOT NULL DEFAULT 'system',
+    modified_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by      TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_matter_fir ON matter_fir(matter_id);
+
+CREATE TABLE IF NOT EXISTS matter_challan (
+    challan_id        TEXT    PRIMARY KEY,
+    org_id            TEXT    NOT NULL REFERENCES organizations(org_id),
+    matter_id         TEXT    NOT NULL REFERENCES matters(matter_id),
+    challan_date      TEXT,
+    challan_type      TEXT    NOT NULL DEFAULT 'Complete',
+    submitted_in_time INTEGER NOT NULL DEFAULT 1,
+    witnesses_count   INTEGER NOT NULL DEFAULT 0,
+    challan_court     TEXT,
+    status            TEXT    NOT NULL DEFAULT 'Pending',
+    notes             TEXT,
+    is_active         INTEGER NOT NULL DEFAULT 1,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by        TEXT    NOT NULL DEFAULT 'system',
+    modified_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by       TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_matter_challan ON matter_challan(matter_id);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -3885,4 +3926,125 @@ def delete_matter_charge(charge_id: str, org_id: str, actor: str = SYSTEM):
             "UPDATE matter_charges SET is_active=0, modified_at=?, modified_by=? "
             "WHERE charge_id=? AND org_id=?",
             (now, actor, charge_id, org_id),
+        )
+
+
+# ── Matter FIR — Task #148 ────────────────────────────────────────────────────
+
+def get_matter_fir(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM matter_fir WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY fir_date DESC, created_at DESC",
+            (matter_id, org_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_matter_fir(matter_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    fir_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO matter_fir (fir_id, org_id, matter_id, fir_number, police_station, "
+            "district, io_name, complainant, arrest_date, sections_at_fir, "
+            "sections_after_challan, fir_date, notes, created_at, created_by, modified_at, modified_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (fir_id, org_id, matter_id,
+             data.get("fir_number", ""), data.get("police_station", ""),
+             data.get("district"), data.get("io_name"), data.get("complainant"),
+             data.get("arrest_date"), data.get("sections_at_fir"),
+             data.get("sections_after_challan"), data.get("fir_date"),
+             data.get("notes"), now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM matter_fir WHERE fir_id=?", (fir_id,)).fetchone()
+        return dict(row)
+
+
+def update_matter_fir(fir_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    allowed = {"fir_number", "police_station", "district", "io_name", "complainant",
+               "arrest_date", "sections_at_fir", "sections_after_challan", "fir_date", "notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    now = _now()
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_fir SET {set_clause} WHERE fir_id=? AND org_id=?",
+            (*updates.values(), fir_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM matter_fir WHERE fir_id=?", (fir_id,)).fetchone()
+        return dict(row) if row else {}
+
+
+def delete_matter_fir(fir_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_fir SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE fir_id=? AND org_id=?",
+            (now, actor, fir_id, org_id),
+        )
+
+
+# ── Matter Challan — Task #149 ────────────────────────────────────────────────
+
+CHALLAN_TYPES   = ("Complete", "Incomplete", "Supplementary")
+CHALLAN_STATUSES = ("Pending", "Submitted", "Returned", "Accepted")
+
+def get_matter_challan(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM matter_challan WHERE matter_id=? AND org_id=? AND is_active=1 "
+            "ORDER BY challan_date DESC, created_at DESC",
+            (matter_id, org_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_matter_challan(matter_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    challan_id = secrets.token_hex(10)
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO matter_challan (challan_id, org_id, matter_id, challan_date, challan_type, "
+            "submitted_in_time, witnesses_count, challan_court, status, notes, "
+            "created_at, created_by, modified_at, modified_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (challan_id, org_id, matter_id,
+             data.get("challan_date"), data.get("challan_type", "Complete"),
+             int(bool(data.get("submitted_in_time", True))),
+             int(data.get("witnesses_count", 0)),
+             data.get("challan_court"), data.get("status", "Pending"),
+             data.get("notes"), now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM matter_challan WHERE challan_id=?", (challan_id,)).fetchone()
+        return dict(row)
+
+
+def update_matter_challan(challan_id: str, org_id: str, data: dict, actor: str = SYSTEM) -> dict:
+    allowed = {"challan_date", "challan_type", "submitted_in_time", "witnesses_count",
+               "challan_court", "status", "notes"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    now = _now()
+    updates["modified_at"] = now
+    updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE matter_challan SET {set_clause} WHERE challan_id=? AND org_id=?",
+            (*updates.values(), challan_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM matter_challan WHERE challan_id=?", (challan_id,)).fetchone()
+        return dict(row) if row else {}
+
+
+def delete_matter_challan(challan_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE matter_challan SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE challan_id=? AND org_id=?",
+            (now, actor, challan_id, org_id),
         )
