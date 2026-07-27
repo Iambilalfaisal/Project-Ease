@@ -420,6 +420,25 @@ CREATE TABLE IF NOT EXISTS time_entries (
     modified_by      TEXT    NOT NULL DEFAULT 'system'
 );
 CREATE INDEX IF NOT EXISTS idx_time_entries_matter ON time_entries(matter_id, entry_date DESC);
+
+-- Cause List Integration — Task #137
+CREATE TABLE IF NOT EXISTS cause_list_entries (
+    entry_id    TEXT    PRIMARY KEY,
+    org_id      TEXT    NOT NULL REFERENCES organizations(org_id),
+    list_date   TEXT    NOT NULL,
+    court_name  TEXT,
+    item_no     TEXT,
+    case_number TEXT,
+    parties     TEXT,
+    bench       TEXT,
+    matter_id   TEXT    REFERENCES matters(matter_id),
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by  TEXT    NOT NULL DEFAULT 'system',
+    modified_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    modified_by TEXT    NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_cause_list_date ON cause_list_entries(org_id, list_date DESC);
 """
 
 # Audit columns to add to existing tables (migration-safe)
@@ -2788,3 +2807,193 @@ def get_platform_stats() -> dict:
         "total_bytes": total_bytes,
         "plans": {r["plan"]: r["cnt"] for r in plan_counts},
     }
+
+
+# ── Cause List Integration — Task #137 ───────────────────────────────────────
+
+import re as _re
+
+# Common Pakistani court case number patterns
+_CASE_NUMBER_PATTERNS = [
+    r'W\.?\s*P\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',          # Writ Petition
+    r'C\.?\s*P\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',           # Civil Petition
+    r'C(?:ivil)?\.?\s*S(?:uit)?\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',  # Civil Suit
+    r'Crl?\.?\s*(?:Appeal|Rev(?:ision)?|Misc|Petn?)\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',
+    r'F\.?\s*A\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',           # First Appeal
+    r'R\.?\s*S\.?\s*A\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',    # Regular Second Appeal
+    r'R\.?\s*A\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',           # Regular Appeal
+    r'C\.?\s*M\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',           # Civil Misc
+    r'I\.?\s*C\.?\s*A\.?\s*(?:No\.?)?\s*\d+[\-/]\d{2,4}',    # Intra Court Appeal
+    r'Suit\s+(?:No\.?)?\s*\d+[\-/]\d{2,4}',
+    r'Case\s+(?:No\.?)?\s*\d+[\-/]\d{2,4}',
+]
+
+_CASE_RE = _re.compile(
+    '|'.join(f'(?:{p})' for p in _CASE_NUMBER_PATTERNS),
+    _re.IGNORECASE
+)
+
+_ITEM_RE = _re.compile(r'^\s*(\d+)\s*[.\)]\s*', _re.MULTILINE)
+
+
+def _normalize_case_number(cn: str) -> str:
+    """Strip spaces and punctuation for fuzzy matching."""
+    return _re.sub(r'[\s.\-/]', '', cn).upper()
+
+
+def parse_cause_list_text(text: str, court_name: str = "", list_date: str = "") -> list[dict]:
+    """
+    Parse raw cause list text (pasted or PDF-extracted) into structured entries.
+    Each entry: {item_no, case_number, parties, court_name, list_date}
+    """
+    entries: list[dict] = []
+    lines = text.splitlines()
+    item_no = ""
+    buffer = ""
+
+    for line in lines:
+        m = _ITEM_RE.match(line)
+        if m:
+            # Flush previous buffer
+            if buffer:
+                cases = _CASE_RE.findall(buffer)
+                for cn in cases:
+                    entries.append({
+                        "item_no":    item_no,
+                        "case_number": cn.strip(),
+                        "parties":    buffer.strip()[:300],
+                        "court_name": court_name,
+                        "list_date":  list_date,
+                    })
+                if not cases:
+                    entries.append({
+                        "item_no":    item_no,
+                        "case_number": "",
+                        "parties":    buffer.strip()[:300],
+                        "court_name": court_name,
+                        "list_date":  list_date,
+                    })
+            item_no = m.group(1)
+            buffer = line[m.end():]
+        else:
+            buffer += " " + line.strip()
+
+    # Flush final buffer
+    if buffer.strip():
+        cases = _CASE_RE.findall(buffer)
+        for cn in cases:
+            entries.append({
+                "item_no":    item_no,
+                "case_number": cn.strip(),
+                "parties":    buffer.strip()[:300],
+                "court_name": court_name,
+                "list_date":  list_date,
+            })
+        if not cases and item_no:
+            entries.append({
+                "item_no":    item_no,
+                "case_number": "",
+                "parties":    buffer.strip()[:300],
+                "court_name": court_name,
+                "list_date":  list_date,
+            })
+
+    return entries
+
+
+def _match_entries_to_matters(entries: list[dict], org_id: str) -> list[dict]:
+    """Set matter_id on entries whose case_number matches a matter."""
+    with get_conn() as conn:
+        matters = conn.execute(
+            "SELECT matter_id, case_number FROM matters WHERE org_id=? AND is_active=1 AND case_number IS NOT NULL",
+            (org_id,),
+        ).fetchall()
+    matter_map = {_normalize_case_number(m["case_number"]): m["matter_id"] for m in matters if m["case_number"]}
+    for e in entries:
+        norm = _normalize_case_number(e.get("case_number", ""))
+        e["matter_id"] = matter_map.get(norm)
+    return entries
+
+
+def store_cause_list(org_id: str, entries: list[dict], actor: str = SYSTEM) -> list[dict]:
+    """Persist cause list entries, clearing existing ones for the same date+court first."""
+    if not entries:
+        return []
+    list_date  = entries[0].get("list_date", "")
+    court_name = entries[0].get("court_name", "")
+    now = _now()
+
+    matched = _match_entries_to_matters(entries, org_id)
+    stored  = []
+
+    with get_conn() as conn:
+        # Soft-delete existing entries for same date+court
+        conn.execute(
+            "UPDATE cause_list_entries SET is_active=0, modified_at=?, modified_by=? "
+            "WHERE org_id=? AND list_date=? AND (court_name=? OR (court_name IS NULL AND ?=''))",
+            (now, actor, org_id, list_date, court_name, court_name),
+        )
+        for e in matched:
+            entry_id = secrets.token_hex(10)
+            conn.execute(
+                """INSERT INTO cause_list_entries
+                   (entry_id, org_id, list_date, court_name, item_no, case_number,
+                    parties, matter_id, is_active, created_at, created_by, modified_at, modified_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)""",
+                (entry_id, org_id, e.get("list_date",""), e.get("court_name",""),
+                 e.get("item_no",""), e.get("case_number",""), e.get("parties",""),
+                 e.get("matter_id"), now, actor, now, actor),
+            )
+            stored.append({"entry_id": entry_id, **e})
+    return stored
+
+
+def get_cause_list_entries(org_id: str, list_date: Optional[str] = None) -> list[dict]:
+    where = "e.org_id=? AND e.is_active=1"
+    params: list = [org_id]
+    if list_date:
+        where += " AND e.list_date=?"
+        params.append(list_date)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT e.*, m.title AS matter_title, m.status AS matter_status
+                FROM cause_list_entries e
+                LEFT JOIN matters m ON m.matter_id = e.matter_id
+                WHERE {where}
+                ORDER BY e.list_date DESC, CAST(e.item_no AS INTEGER)""",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def link_cause_list_entry(entry_id: str, org_id: str, matter_id: Optional[str], actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE cause_list_entries SET matter_id=?, modified_at=?, modified_by=? WHERE entry_id=? AND org_id=?",
+            (matter_id, now, actor, entry_id, org_id),
+        )
+
+
+def delete_cause_list_entry(entry_id: str, org_id: str, actor: str = SYSTEM):
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE cause_list_entries SET is_active=0, modified_at=?, modified_by=? WHERE entry_id=? AND org_id=?",
+            (now, actor, entry_id, org_id),
+        )
+
+
+def get_today_cause_list_matches(org_id: str) -> list[dict]:
+    """Return today's cause list entries that are matched to a matter."""
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT e.*, m.title AS matter_title, m.status AS matter_status,
+                      m.court_name AS matter_court
+               FROM cause_list_entries e
+               JOIN matters m ON m.matter_id = e.matter_id
+               WHERE e.org_id=? AND e.list_date=? AND e.is_active=1""",
+            (org_id, today),
+        ).fetchall()
+    return [dict(r) for r in rows]

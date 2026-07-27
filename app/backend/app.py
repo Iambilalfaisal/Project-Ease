@@ -367,6 +367,9 @@ from db import (
     LIMITATION_PERIODS, compute_limitation_date, get_matters_with_approaching_limitation,
     # Time Tracking — Task #133
     get_time_entries, create_time_entry, update_time_entry, delete_time_entry, bill_time_entries,
+    # Cause List — Task #137
+    parse_cause_list_text, store_cause_list, get_cause_list_entries,
+    link_cause_list_entry, delete_cause_list_entry, get_today_cause_list_matches,
 )
 
 # Initialise DB (creates tables + seeds dev data) at import time
@@ -2255,6 +2258,72 @@ async def bill_time_entries_route(matter_id: str):
     if not fee:
         return jsonify({"error": "No billable unbilled entries found"}), 400
     return jsonify(fee), 201
+
+
+# ─── Cause List Integration — Task #137 ─────────────────────────────────────
+
+@bp.route("/cause-list", methods=["GET"])
+async def list_cause_list():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    list_date = request.args.get("date") or None
+    entries   = get_cause_list_entries(session.get("org") or "", list_date)
+    return jsonify({"entries": entries})
+
+
+@bp.route("/cause-list/today-matches", methods=["GET"])
+async def today_cause_list_matches():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    matches = get_today_cause_list_matches(session.get("org") or "")
+    return jsonify({"matches": matches})
+
+
+@bp.route("/cause-list/parse", methods=["POST"])
+async def parse_and_store_cause_list():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data       = await request.get_json(silent=True) or {}
+    raw_text   = (data.get("text") or "").strip()
+    list_date  = (data.get("list_date") or "").strip()
+    court_name = (data.get("court_name") or "").strip()
+    if not raw_text:
+        return jsonify({"error": "Cause list text is required"}), 400
+    if not list_date:
+        import datetime as _dt
+        list_date = _dt.datetime.utcnow().strftime("%Y-%m-%d")
+    entries = parse_cause_list_text(raw_text, court_name=court_name, list_date=list_date)
+    if not entries:
+        return jsonify({"error": "No entries could be parsed from the provided text"}), 400
+    stored  = store_cause_list(session.get("org") or "", entries,
+                               actor=session.get("user_id") or SYSTEM)
+    matched = [e for e in stored if e.get("matter_id")]
+    return jsonify({"entries": stored, "matched_count": len(matched), "total_count": len(stored)}), 201
+
+
+@bp.route("/cause-list/<entry_id>", methods=["PATCH"])
+async def update_cause_list_entry(entry_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data      = await request.get_json(silent=True) or {}
+    matter_id = data.get("matter_id") or None
+    link_cause_list_entry(entry_id, session.get("org") or "", matter_id,
+                          actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+@bp.route("/cause-list/<entry_id>", methods=["DELETE"])
+async def remove_cause_list_entry(entry_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_cause_list_entry(entry_id, session.get("org") or "",
+                            actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
 
 
 # ─── PROJECT EASE: Plan & Upgrade API ───────────────────────────────────────

@@ -4,7 +4,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "invoices" | "team" | "subscription" | "settings" | "audit" | "drafting";
+type Panel = "overview" | "documents" | "clients" | "matters" | "calendar" | "invoices" | "team" | "subscription" | "settings" | "audit" | "drafting" | "causelist";
 
 interface Category {
     category_id: string;
@@ -231,6 +231,7 @@ const NAV: { id: Panel; icon: string; label: string }[] = [
     { id: "invoices",     icon: "I", label: "Invoices"     },
     { id: "team",         icon: "T",  label: "Team"         },
     { id: "drafting",     icon: "Dr", label: "Drafting"     },
+    { id: "causelist",    icon: "CL", label: "Cause List"   },
     { id: "audit",        icon: "A",  label: "Audit Log"    },
     { id: "subscription", icon: "P",  label: "Subscription" },
     { id: "settings",     icon: "S",  label: "Settings"     },
@@ -248,6 +249,7 @@ const PANEL_TITLES: Record<Panel, string> = {
     audit:        "Audit Log",
     subscription: "Plan & Subscription",
     settings:     "Organization Settings",
+    causelist:    "Cause List",
 };
 
 const PANEL_SUBS: Record<Panel, string> = {
@@ -262,6 +264,7 @@ const PANEL_SUBS: Record<Panel, string> = {
     audit:        "Track logins, searches, and document activity",
     subscription: "Your current plan, usage, and billing",
     settings:     "Firm profile and account preferences",
+    causelist:    "Daily court cause list — parse and match to your matters",
 };
 
 // ── Matter / Court constants ──────────────────────────────────────────────────
@@ -858,6 +861,7 @@ const MattersPanel = () => {
     const [showBillModal,  setShowBillModal]  = useState(false);
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
+    const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
 
     const allCourts = [...DEFAULT_COURTS, ...customCourts.map(c => c.name)];
 
@@ -868,12 +872,14 @@ const MattersPanel = () => {
             fetch("/matter-teams",               { headers: authHeaders() }).then(r => r.json()),
             fetch("/courts",                     { headers: authHeaders() }).then(r => r.json()),
             fetch("/matters/limitation-alerts",  { headers: authHeaders() }).then(r => r.json()).catch(() => ({ alerts: [] })),
-        ]).then(([md, cd, td, co, la]) => {
+            fetch("/cause-list/today-matches",   { headers: authHeaders() }).then(r => r.json()).catch(() => ({ matches: [] })),
+        ]).then(([md, cd, td, co, la, cl]) => {
             setMatters(md.matters ?? []);
             setClients(cd.clients ?? []);
             setMatterTeams(td.teams ?? []);
             setCustomCourts(co.custom ?? []);
             setLimAlerts(la.alerts ?? []);
+            setCauseListAlerts(cl.matches ?? []);
             setLoading(false);
         }).catch(() => setLoading(false));
     };
@@ -2095,6 +2101,25 @@ const MattersPanel = () => {
                 )}
             </div>
 
+            {/* Today's cause list alert banner */}
+            {causeListAlerts.length > 0 && (
+                <div className={styles.limAlertBanner} style={{ borderColor: "var(--gold)", background: "rgba(200,160,40,0.06)" }}>
+                    <strong>📋 Today's Cause List — {causeListAlerts.length} matter{causeListAlerts.length !== 1 ? "s" : ""} listed in court</strong>
+                    <div className={styles.limAlertList}>
+                        {causeListAlerts.map(a => (
+                            <div key={a.matter_id} className={styles.limAlertItem}>
+                                <button className={styles.linkBtn} onClick={() => { const m = matters.find(x => x.matter_id === a.matter_id); if (m) openDetail(m); }}>
+                                    {a.matter_title}
+                                </button>
+                                {a.case_number && <span className={styles.muted}> · {a.case_number}</span>}
+                                {a.item_no     && <span className={styles.badgeGold} style={{ fontSize: "0.68rem" }}>Item {a.item_no}</span>}
+                                {a.court_name  && <span className={styles.muted} style={{ fontSize: "0.78rem" }}> · {a.court_name}</span>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Limitation alerts banner */}
             {limAlerts.length > 0 && (
                 <div className={styles.limAlertBanner}>
@@ -2237,6 +2262,270 @@ const EVENT_BADGE: Record<string, string> = {
 };
 
 const ALL_EVENT_TYPES = Object.keys(EVENT_LABELS);
+
+// ── Cause List Panel — Task #137 ─────────────────────────────────────────────
+
+interface CauseListEntry {
+    entry_id:     string;
+    list_date:    string;
+    court_name:   string | null;
+    item_no:      string | null;
+    case_number:  string | null;
+    parties:      string | null;
+    matter_id:    string | null;
+    matter_title: string | null;
+    matter_status: string | null;
+}
+
+const PAKISTAN_COURTS = [
+    "Supreme Court of Pakistan",
+    "Lahore High Court",
+    "Islamabad High Court",
+    "Sindh High Court",
+    "Peshawar High Court",
+    "Balochistan High Court",
+    "Federal Shariat Court",
+    "Sessions Court",
+    "Civil Court",
+    "Other",
+];
+
+const CauseListPanel = () => {
+    const [entries,    setEntries]    = useState<CauseListEntry[]>([]);
+    const [loading,    setLoading]    = useState(false);
+    const [parsing,    setParsing]    = useState(false);
+    const [parseErr,   setParseErr]   = useState("");
+    const [parseResult, setParseResult] = useState<{ total: number; matched: number } | null>(null);
+    const [filterDate, setFilterDate] = useState(new Date().toISOString().slice(0, 10));
+    const [text,       setText]       = useState("");
+    const [listDate,   setListDate]   = useState(new Date().toISOString().slice(0, 10));
+    const [courtName,  setCourtName]  = useState("");
+    const [showInput,  setShowInput]  = useState(false);
+    const [matters,    setMatters]    = useState<{ matter_id: string; title: string; case_number: string | null }[]>([]);
+    const [linkingId,  setLinkingId]  = useState<string | null>(null);
+    const [linkTarget, setLinkTarget] = useState("");
+
+    const loadEntries = (date: string) => {
+        setLoading(true);
+        fetch(`/cause-list?date=${date}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setEntries(d.entries ?? []); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+
+    const loadMatters = () => {
+        fetch("/matters", { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setMatters((d.matters ?? []).map((m: any) => ({ matter_id: m.matter_id, title: m.title, case_number: m.case_number }))));
+    };
+
+    useEffect(() => { loadEntries(filterDate); loadMatters(); }, []);
+
+    const parseCauseList = async () => {
+        if (!text.trim()) { setParseErr("Please paste the cause list text first."); return; }
+        setParsing(true); setParseErr(""); setParseResult(null);
+        try {
+            const r = await fetch("/cause-list/parse", {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ text, list_date: listDate, court_name: courtName }),
+            });
+            const d = await r.json();
+            if (!r.ok) { setParseErr(d.error ?? "Parse failed."); }
+            else {
+                setParseResult({ total: d.total_count, matched: d.matched_count });
+                setShowInput(false); setText("");
+                setFilterDate(listDate);
+                loadEntries(listDate);
+            }
+        } catch { setParseErr("Network error."); }
+        finally { setParsing(false); }
+    };
+
+    const deleteEntry = async (entry: CauseListEntry) => {
+        await fetch(`/cause-list/${entry.entry_id}`, { method: "DELETE", headers: authHeaders() });
+        loadEntries(filterDate);
+    };
+
+    const saveLink = async (entry: CauseListEntry) => {
+        await fetch(`/cause-list/${entry.entry_id}`, {
+            method: "PATCH",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ matter_id: linkTarget || null }),
+        });
+        setLinkingId(null); setLinkTarget("");
+        loadEntries(filterDate);
+    };
+
+    const matched   = entries.filter(e => e.matter_id);
+    const unmatched = entries.filter(e => !e.matter_id);
+
+    return (
+        <div className={styles.panelContent}>
+            <div className={styles.panelToolbar}>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <input type="date" className={styles.formInput} style={{ width: "auto", fontSize: "0.85rem" }}
+                        value={filterDate} onChange={e => { setFilterDate(e.target.value); loadEntries(e.target.value); }} />
+                    <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{entries.length} entries</span>
+                    {matched.length > 0 && (
+                        <span className={styles.badgeGreen} style={{ fontSize: "0.72rem" }}>{matched.length} matched</span>
+                    )}
+                </div>
+                <button className={styles.btnPrimary} onClick={() => { setShowInput(!showInput); setParseErr(""); setParseResult(null); }}>
+                    {showInput ? "Cancel" : "+ Import Cause List"}
+                </button>
+            </div>
+
+            {/* Parse result banner */}
+            {parseResult && (
+                <div className={styles.limAlertBanner} style={{ background: "var(--bg-1)", borderColor: "var(--gold)", marginBottom: "0.75rem" }}>
+                    Parsed {parseResult.total} entries — <strong>{parseResult.matched} matched</strong> to your matters.
+                    {parseResult.matched === 0 && " Check that matter case numbers are filled in."}
+                </div>
+            )}
+
+            {/* Import form */}
+            {showInput && (
+                <div className={styles.settingsCard} style={{ marginBottom: "1.25rem" }}>
+                    <div className={styles.settingsCardTitle}>Import Cause List</div>
+                    <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.75rem" }}>
+                        Paste the plain text of any Pakistani court's cause list. Case numbers will be detected automatically and matched against your matters.
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Cause List Date</label>
+                            <input type="date" className={styles.formInput} value={listDate} onChange={e => setListDate(e.target.value)} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Court</label>
+                            <select className={styles.formSelect} value={courtName} onChange={e => setCourtName(e.target.value)}>
+                                <option value="">Select court…</option>
+                                {PAKISTAN_COURTS.map(c => <option key={c}>{c}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Cause List Text</label>
+                        <textarea className={styles.formInput} rows={10} style={{ resize: "vertical", fontFamily: "monospace", fontSize: "0.8rem" }}
+                            value={text} onChange={e => setText(e.target.value)}
+                            placeholder={"Paste cause list text here…\n\nExample:\n1. W.P. No. 1234/2024 — Muhammad Ali v Federation of Pakistan\n2. C.S. No. 89/2023 — ABC Ltd v XYZ Ltd"} />
+                    </div>
+                    {parseErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{parseErr}</div>}
+                    <div className={styles.modalActions}>
+                        <button className={styles.btnGhost} onClick={() => { setShowInput(false); setText(""); }}>Cancel</button>
+                        <button className={styles.btnPrimary} onClick={parseCauseList} disabled={parsing}>{parsing ? "Parsing…" : "Parse & Match"}</button>
+                    </div>
+                </div>
+            )}
+
+            {/* Entries */}
+            {loading ? (
+                <div className={styles.emptyHint}>Loading…</div>
+            ) : entries.length === 0 ? (
+                <div className={styles.emptyHint}>No cause list entries for this date. Click "+ Import Cause List" to paste a court cause list.</div>
+            ) : (
+                <>
+                    {/* Matched matters */}
+                    {matched.length > 0 && (
+                        <>
+                            <div className={styles.sectionTitle} style={{ color: "#2d8a4e", marginBottom: "0.5rem" }}>
+                                Matched to Your Matters ({matched.length})
+                            </div>
+                            <div className={styles.tableWrap} style={{ marginBottom: "1.5rem" }}>
+                                <table className={styles.table}>
+                                    <thead><tr>
+                                        <th>Item</th><th>Case Number</th><th>Parties</th><th>Matter</th><th>Court</th><th>Actions</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {matched.map(e => (
+                                            <tr key={e.entry_id} style={{ background: "rgba(45,138,78,0.06)" }}>
+                                                <td className={styles.muted}>{e.item_no || "—"}</td>
+                                                <td><strong style={{ fontSize: "0.82rem" }}>{e.case_number || "—"}</strong></td>
+                                                <td className={styles.muted} style={{ fontSize: "0.78rem", maxWidth: 200 }}>{e.parties || "—"}</td>
+                                                <td>
+                                                    <span className={styles.badgeGreen} style={{ fontSize: "0.72rem" }}>{e.matter_title}</span>
+                                                </td>
+                                                <td className={styles.muted} style={{ fontSize: "0.78rem" }}>{e.court_name || "—"}</td>
+                                                <td style={{ display: "flex", gap: "0.35rem" }}>
+                                                    {linkingId === e.entry_id ? (
+                                                        <>
+                                                            <select className={styles.formSelect} style={{ fontSize: "0.78rem", padding: "0.2rem" }}
+                                                                value={linkTarget} onChange={ev => setLinkTarget(ev.target.value)}>
+                                                                <option value="">Unlink</option>
+                                                                {matters.map(m => <option key={m.matter_id} value={m.matter_id}>{m.title}{m.case_number ? ` (${m.case_number})` : ""}</option>)}
+                                                            </select>
+                                                            <button className={styles.actionBtn} onClick={() => saveLink(e)}>Save</button>
+                                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem" }} onClick={() => setLinkingId(null)}>✕</button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <button className={styles.actionBtn} onClick={() => { setLinkingId(e.entry_id); setLinkTarget(e.matter_id ?? ""); }}>Relink</button>
+                                                            <button className={styles.actionBtnDanger} onClick={() => deleteEntry(e)}>✕</button>
+                                                        </>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Unmatched entries */}
+                    {unmatched.length > 0 && (
+                        <>
+                            <div className={styles.sectionTitle} style={{ marginBottom: "0.5rem" }}>
+                                Unmatched Entries ({unmatched.length})
+                                <span className={styles.muted} style={{ fontSize: "0.78rem", fontWeight: 400, marginLeft: "0.5rem" }}>
+                                    — link manually or ensure case numbers are set on your matters
+                                </span>
+                            </div>
+                            <div className={styles.tableWrap}>
+                                <table className={styles.table}>
+                                    <thead><tr>
+                                        <th>Item</th><th>Case Number</th><th>Parties</th><th>Court</th><th>Link to Matter</th><th></th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {unmatched.map(e => (
+                                            <tr key={e.entry_id}>
+                                                <td className={styles.muted}>{e.item_no || "—"}</td>
+                                                <td style={{ fontSize: "0.82rem" }}>{e.case_number || <span className={styles.muted}>not detected</span>}</td>
+                                                <td className={styles.muted} style={{ fontSize: "0.78rem", maxWidth: 220 }}>{e.parties || "—"}</td>
+                                                <td className={styles.muted} style={{ fontSize: "0.78rem" }}>{e.court_name || "—"}</td>
+                                                <td>
+                                                    {linkingId === e.entry_id ? (
+                                                        <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                                                            <select className={styles.formSelect} style={{ fontSize: "0.78rem", padding: "0.2rem" }}
+                                                                value={linkTarget} onChange={ev => setLinkTarget(ev.target.value)}>
+                                                                <option value="">No link</option>
+                                                                {matters.map(m => <option key={m.matter_id} value={m.matter_id}>{m.title}{m.case_number ? ` (${m.case_number})` : ""}</option>)}
+                                                            </select>
+                                                            <button className={styles.actionBtn} onClick={() => saveLink(e)}>Save</button>
+                                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem" }} onClick={() => setLinkingId(null)}>✕</button>
+                                                        </div>
+                                                    ) : (
+                                                        <button className={styles.btnGhost} style={{ fontSize: "0.78rem" }}
+                                                            onClick={() => { setLinkingId(e.entry_id); setLinkTarget(""); }}>
+                                                            Link…
+                                                        </button>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    <button className={styles.actionBtnDanger} onClick={() => deleteEntry(e)}>✕</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
+                </>
+            )}
+        </div>
+    );
+};
 
 const AuditPanel = () => {
     const [logs,       setLogs]       = useState<AuditLog[]>([]);
@@ -5519,6 +5808,7 @@ const OwnerPortal = () => {
                             {panel === "invoices"      && <InvoicesPanel />}
                             {panel === "team"          && <TeamPanel team={team} setTeam={setTeam} maxUsers={maxUsers} onUpgrade={() => setPanel("subscription")} />}
                             {panel === "drafting"      && <DraftingPanel />}
+                            {panel === "causelist"     && <CauseListPanel />}
                             {panel === "audit"         && <AuditPanel />}
                             {panel === "subscription"  && (
                                 <SubscriptionPanel
