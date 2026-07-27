@@ -85,6 +85,17 @@ interface Matter {
     documents?:      MatterDoc[];
 }
 
+interface ClientToken {
+    token_id:   string;
+    token:      string;
+    client_id:  string;
+    matter_id:  string | null;
+    label:      string | null;
+    expires_at: string | null;
+    is_active:  number;
+    created_at: string;
+}
+
 interface Fee {
     fee_id:       string;
     matter_id:    string | null;
@@ -293,6 +304,17 @@ const ClientsPanel = () => {
     const [formErr,  setFormErr]  = useState<string | null>(null);
     const [removing, setRemoving] = useState<string | null>(null);
 
+    // ─ Portal sharing state ─
+    const [portalClient,  setPortalClient]  = useState<Client | null>(null);
+    const [portalTokens,  setPortalTokens]  = useState<ClientToken[]>([]);
+    const [portalMatters, setPortalMatters] = useState<Matter[]>([]);
+    const [portalLoading, setPortalLoading] = useState(false);
+    const [portalForm,    setPortalForm]    = useState({ matter_id: "", label: "", expires_days: "30" });
+    const [portalCreating, setPortalCreating] = useState(false);
+    const [newTokenUrl,   setNewTokenUrl]   = useState<string | null>(null);
+    const [revoking,      setRevoking]      = useState<string | null>(null);
+    const [copied,        setCopied]        = useState(false);
+
     const loadClients = () => {
         fetch("/clients", { headers: authHeaders() })
             .then(r => r.json())
@@ -351,6 +373,156 @@ const ClientsPanel = () => {
         if (detail?.client_id === c.client_id) setDetail(null);
         setRemoving(null);
     };
+
+    const openPortal = async (c: Client) => {
+        setPortalClient(c);
+        setPortalForm({ matter_id: "", label: "", expires_days: "30" });
+        setNewTokenUrl(null);
+        setCopied(false);
+        setPortalLoading(true);
+        const [tokRes, matRes] = await Promise.all([
+            fetch(`/client-tokens?client_id=${c.client_id}`, { headers: authHeaders() }),
+            fetch(`/clients/${c.client_id}`, { headers: authHeaders() }),
+        ]);
+        if (tokRes.ok)  setPortalTokens((await tokRes.json()).tokens ?? []);
+        if (matRes.ok)  setPortalMatters((await matRes.json()).matters ?? []);
+        setPortalLoading(false);
+    };
+
+    const createPortalLink = async () => {
+        if (!portalClient) return;
+        setPortalCreating(true); setNewTokenUrl(null);
+        try {
+            const body: Record<string, string> = { client_id: portalClient.client_id };
+            if (portalForm.matter_id)   body.matter_id   = portalForm.matter_id;
+            if (portalForm.label)       body.label        = portalForm.label;
+            if (portalForm.expires_days) body.expires_days = portalForm.expires_days;
+            const res = await fetch("/client-tokens", {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) {
+                const d = await res.json();
+                const url = `${window.location.origin}${window.location.pathname}#/portal?token=${d.token}`;
+                setNewTokenUrl(url);
+                setPortalTokens(prev => [d as ClientToken, ...prev]);
+                setPortalForm({ matter_id: "", label: "", expires_days: "30" });
+            }
+        } finally {
+            setPortalCreating(false);
+        }
+    };
+
+    const revokePortalToken = async (tokenId: string) => {
+        if (!confirm("Revoke this portal link? The client will no longer be able to access their portal via this link.")) return;
+        setRevoking(tokenId);
+        await fetch(`/client-tokens/${tokenId}`, { method: "DELETE", headers: authHeaders() });
+        setPortalTokens(prev => prev.filter(t => t.token_id !== tokenId));
+        setRevoking(null);
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    };
+
+    const PortalModal = () => (
+        <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setPortalClient(null); }}>
+            <div className={styles.modal} style={{ maxWidth: 560 }}>
+                <h3 className={styles.modalTitle}>🔗 Share Portal — {portalClient?.name}</h3>
+                <p style={{ fontSize: "0.82rem", color: "var(--text-3)", marginBottom: "1rem", lineHeight: 1.5 }}>
+                    Generate a secure link for your client to view their documents online. Links expire automatically.
+                </p>
+
+                {/* Generate new link form */}
+                <div className={styles.portalForm}>
+                    <h4 className={styles.portalFormTitle}>Generate New Link</h4>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Matter (optional)</label>
+                            <select className={styles.formSelect} value={portalForm.matter_id} onChange={e => setPortalForm({ ...portalForm, matter_id: e.target.value })}>
+                                <option value="">— All matters —</option>
+                                {portalMatters.map(m => (
+                                    <option key={m.matter_id} value={m.matter_id}>{m.title}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Expires in (days)</label>
+                            <select className={styles.formSelect} value={portalForm.expires_days} onChange={e => setPortalForm({ ...portalForm, expires_days: e.target.value })}>
+                                <option value="7">7 days</option>
+                                <option value="30">30 days</option>
+                                <option value="90">90 days</option>
+                                <option value="365">1 year</option>
+                                <option value="">Never expires</option>
+                            </select>
+                        </div>
+                        <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                            <label className={styles.formLabel}>Label (optional)</label>
+                            <input className={styles.formInput} value={portalForm.label} onChange={e => setPortalForm({ ...portalForm, label: e.target.value })} placeholder="e.g. Court documents — July 2026" />
+                        </div>
+                    </div>
+                    <button className={styles.btnPrimary} style={{ marginTop: "0.75rem" }} onClick={createPortalLink} disabled={portalCreating}>
+                        {portalCreating ? "Generating…" : "Generate Link"}
+                    </button>
+                </div>
+
+                {/* Newly created link */}
+                {newTokenUrl && (
+                    <div className={styles.portalNewLink}>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.4rem", fontWeight: 600 }}>
+                            ✅ Link generated — copy and send to your client:
+                        </div>
+                        <div className={styles.portalLinkRow}>
+                            <code className={styles.portalLinkCode}>{newTokenUrl}</code>
+                            <button className={styles.portalCopyBtn} onClick={() => copyToClipboard(newTokenUrl)}>
+                                {copied ? "✓ Copied" : "Copy"}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Existing tokens */}
+                <div style={{ marginTop: "1.25rem" }}>
+                    <h4 className={styles.portalFormTitle}>Active Links</h4>
+                    {portalLoading ? (
+                        <div style={{ fontSize: "0.82rem", color: "var(--text-3)" }}>Loading…</div>
+                    ) : portalTokens.filter(t => t.is_active).length === 0 ? (
+                        <div style={{ fontSize: "0.82rem", color: "var(--text-3)" }}>No active portal links yet.</div>
+                    ) : (
+                        <div className={styles.portalTokenList}>
+                            {portalTokens.filter(t => t.is_active).map(t => {
+                                const tUrl = `${window.location.origin}${window.location.pathname}#/portal?token=${t.token}`;
+                                return (
+                                    <div key={t.token_id} className={styles.portalTokenRow}>
+                                        <div className={styles.portalTokenInfo}>
+                                            <span className={styles.portalTokenLabel}>{t.label || "Portal Link"}</span>
+                                            <span className={styles.portalTokenMeta}>
+                                                Created {t.created_at?.slice(0, 10)}
+                                                {t.expires_at && ` · Expires ${t.expires_at.slice(0, 10)}`}
+                                                {t.matter_id && " · Matter-scoped"}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
+                                            <button className={styles.portalCopyBtn} onClick={() => copyToClipboard(tUrl)}>Copy</button>
+                                            <button className={styles.actionBtnDanger} style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+                                                disabled={revoking === t.token_id} onClick={() => revokePortalToken(t.token_id)}>
+                                                {revoking === t.token_id ? "…" : "Revoke"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                <div className={styles.modalActions}>
+                    <button className={styles.btnGhost} onClick={() => setPortalClient(null)}>Close</button>
+                </div>
+            </div>
+        </div>
+    );
 
     const ClientModal = () => (
         <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
@@ -482,9 +654,10 @@ const ClientsPanel = () => {
                                     <td className={styles.muted}>{c.email ?? "—"}</td>
                                     <td className={styles.muted}>{c.phone ?? "—"}</td>
                                     <td className={styles.muted}>{c.matter_count ?? 0}</td>
-                                    <td style={{ display: "flex", gap: "0.4rem" }}>
+                                    <td style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
                                         <button className={styles.actionBtn} onClick={() => openDetail(c)}>View</button>
                                         <button className={styles.actionBtn} onClick={() => openEdit(c)}>Edit</button>
+                                        <button className={styles.actionBtnPortal} onClick={() => openPortal(c)}>Share Portal</button>
                                         <button className={styles.actionBtnDanger} disabled={removing === c.client_id} onClick={() => removeClient(c)}>
                                             {removing === c.client_id ? "…" : "Delete"}
                                         </button>
@@ -496,6 +669,7 @@ const ClientsPanel = () => {
                 </div>
             )}
             {showModal && <ClientModal />}
+            {portalClient && <PortalModal />}
         </div>
     );
 };

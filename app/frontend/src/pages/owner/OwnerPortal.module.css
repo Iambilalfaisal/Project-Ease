@@ -2256,3 +2256,117 @@
     transition: opacity 0.15s;
 }
 .limitUpgradeBtn:hover { opacity: 0.85; }
+
+/* ── Portal sharing (Task #39d) ──────────────────────────────────────────── */
+
+.actionBtnPortal {
+    background: rgba(184,150,76,0.12);
+    color: var(--gold);
+    border: 1px solid rgba(184,150,76,0.3);
+    border-radius: var(--radius);
+    padding: 0.25rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+}
+.actionBtnPortal:hover {
+    background: rgba(184,150,76,0.22);
+    border-color: var(--gold);
+}
+
+.portalForm {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem;
+    margin-bottom: 0.75rem;
+}
+
+.portalFormTitle {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 0.75rem;
+}
+
+.portalNewLink {
+    background: rgba(59,190,133,0.08);
+    border: 1px solid rgba(59,190,133,0.25);
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.portalLinkRow {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.portalLinkCode {
+    flex: 1;
+    font-size: 0.75rem;
+    color: var(--text-1);
+    background: var(--bg-0);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.4rem 0.65rem;
+    word-break: break-all;
+    font-family: monospace;
+}
+
+.portalCopyBtn {
+    background: var(--gold);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.35rem 0.75rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+}
+.portalCopyBtn:hover { opacity: 0.85; }
+
+.portalTokenList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.portalTokenRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.6rem 0.85rem;
+}
+
+.portalTokenInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.portalTokenLabel {
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: var(--text-1);
+}
+
+.portalTokenMeta {
+    font-size: 0.72rem;
+    color: var(--text-3);
+}
