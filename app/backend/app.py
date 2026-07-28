@@ -422,6 +422,21 @@ from db import (
     get_judge_notes, create_judge_note, update_judge_note, delete_judge_note,
     # Feature Flags — Task #162
     FEATURE_KEYS, FEATURE_LABELS, get_org_flags, set_org_flags, get_all_org_flags,
+    # Legal Notices — Task #165
+    NOTICE_TYPES, NOTICE_VIA, NOTICE_STATUSES,
+    get_legal_notices, create_legal_notice, update_legal_notice, delete_legal_notice,
+    # Court Transfers — Task #170
+    get_court_transfers, create_court_transfer, update_court_transfer, delete_court_transfer,
+    # Bail Bonds — Task #167
+    BAIL_TYPES, BAIL_STATUSES,
+    get_bail_bonds, create_bail_bond, update_bail_bond, delete_bail_bond,
+    # Staff Attendance & Salary — Task #171
+    STAFF_ROLES, ATT_STATUSES, SALARY_PAY_MODES,
+    get_staff, create_staff, update_staff, delete_staff,
+    get_attendance, upsert_attendance,
+    get_salary_payments, create_salary_payment, delete_salary_payment,
+    # Outstanding Dues — Task #169
+    get_outstanding_invoices,
 )
 # Note: Conflict check (Task #150) reuses get_clients + get_matters already imported above.
 
@@ -3853,6 +3868,83 @@ async def get_diary(date_str: str):
     return jsonify({"date": date_str, "hearings": hearings, "deadlines": deadlines})
 
 
+@bp.route("/diary/send-brief", methods=["POST"])
+async def send_diary_morning_brief():
+    """Task #172: Send daily court diary as a WhatsApp morning brief.
+
+    Body: { to_number: "+923001234567", date: "YYYY-MM-DD" }
+    The number must include the country code.  Twilio credentials are resolved
+    from TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_WA_FROM environment
+    variables (see PLACEHOLDERS.md).
+    """
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    body       = await request.get_json() or {}
+    to_number  = (body.get("to_number") or "").strip()
+    date_str   = (body.get("date") or "").strip()
+
+    if not to_number:
+        return jsonify({"error": "to_number is required"}), 400
+    if not date_str:
+        import datetime as _dt
+        date_str = _dt.date.today().isoformat()
+
+    org_id    = session.get("org") or ""
+    hearings  = get_hearings(org_id,  from_date=date_str, to_date=date_str)
+    deadlines = get_deadlines(org_id, from_date=date_str, to_date=date_str)
+
+    # Format brief text
+    try:
+        import datetime as _dt
+        d_obj = _dt.date.fromisoformat(date_str)
+        day_label = d_obj.strftime("%A, %d %B %Y")
+    except Exception:
+        day_label = date_str
+
+    lines: list[str] = [f"📅 *Morning Brief — {day_label}*\n"]
+
+    if hearings:
+        lines.append(f"⚖️ *Court Hearings ({len(hearings)})*")
+        for h in hearings:
+            time_part = f"{h['hearing_time']} — " if h.get("hearing_time") else ""
+            court     = f" @ {h['court_name']}"   if h.get("court_name") else ""
+            matter    = f" [{h['matter_title']}]" if h.get("matter_title") else ""
+            lines.append(f"• {time_part}{h['title']}{matter}{court}")
+        lines.append("")
+
+    if deadlines:
+        lines.append(f"⏰ *Deadlines ({len(deadlines)})*")
+        for dl in deadlines:
+            matter = f" [{dl['matter_title']}]" if dl.get("matter_title") else ""
+            lines.append(f"• {dl['title']}{matter}")
+        lines.append("")
+
+    if not hearings and not deadlines:
+        lines.append("✅ No hearings or deadlines today — clear day!")
+
+    lines.append("_Sent via Project Ease_")
+    message = "\n".join(lines)
+
+    # Send via Twilio WhatsApp (placeholder if helper not yet configured)
+    try:
+        from whatsapp_helper import send_whatsapp_text  # type: ignore[import]
+        # Normalise number — Twilio expects "whatsapp:+92..." format internally
+        normalised = to_number if to_number.startswith("+") else f"+{to_number}"
+        import asyncio as _aio
+        await _aio.to_thread(send_whatsapp_text, normalised, message)
+        _audit(session, "diary_brief_sent", resource_type="diary", resource_name=date_str)
+        return jsonify({"sent": True, "to": normalised, "date": date_str})
+    except ImportError:
+        # Twilio not yet configured — return the formatted text so the
+        # caller can fall back to the WhatsApp share link.
+        return jsonify({"sent": False, "reason": "whatsapp_not_configured", "message": message})
+    except Exception as exc:
+        logging.getLogger(__name__).error("send_diary_brief error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Feature Flags — Task #162 ─────────────────────────────────────────────────
 
 @bp.route("/org-flags", methods=["GET"])
@@ -5209,6 +5301,279 @@ async def close_clients():
     if user_blob_manager := current_app.config.get(CONFIG_USER_BLOB_MANAGER):
         await user_blob_manager.close_clients()
     await current_app.config[CONFIG_CREDENTIAL].close()
+
+
+# ── Legal Notices — Task #165 ─────────────────────────────────────────────────
+
+@bp.route("/legal-notices", methods=["GET"])
+async def list_legal_notices():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    matter_id = request.args.get("matter_id") or None
+    notices = get_legal_notices(session.get("org") or "", matter_id=matter_id)
+    return jsonify({"notices": notices, "notice_types": list(NOTICE_TYPES),
+                    "notice_via": list(NOTICE_VIA), "statuses": list(NOTICE_STATUSES)})
+
+
+@bp.route("/legal-notices", methods=["POST"])
+async def add_legal_notice():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    actor = session.get("user_id") or SYSTEM
+    notice = create_legal_notice(
+        org_id=session.get("org") or "", actor=actor,
+        sent_to=b.get("sent_to", ""), sent_date=b.get("sent_date", ""),
+        subject=b.get("subject", ""), notice_type=b.get("notice_type", "General"),
+        sent_via=b.get("sent_via", "Registered Post"), matter_id=b.get("matter_id"),
+        client_id=b.get("client_id"), response_due=b.get("response_due"),
+        content=b.get("content"), tracking_no=b.get("tracking_no"), notes=b.get("notes"),
+    )
+    _audit(session, "legal_notice_create", resource_type="legal_notice", resource_name=b.get("subject",""))
+    return jsonify(notice), 201
+
+
+@bp.route("/legal-notices/<notice_id>", methods=["PATCH"])
+async def edit_legal_notice(notice_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    actor = session.get("user_id") or SYSTEM
+    return jsonify(update_legal_notice(notice_id, session.get("org") or "", actor=actor, **b))
+
+
+@bp.route("/legal-notices/<notice_id>", methods=["DELETE"])
+async def remove_legal_notice(notice_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_legal_notice(notice_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ── Court Transfers — Task #170 ───────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/transfers", methods=["GET"])
+async def list_court_transfers(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify(get_court_transfers(matter_id, session.get("org") or ""))
+
+
+@bp.route("/matters/<matter_id>/transfers", methods=["POST"])
+async def add_court_transfer(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    actor = session.get("user_id") or SYSTEM
+    t = create_court_transfer(
+        matter_id=matter_id, org_id=session.get("org") or "", actor=actor,
+        transfer_date=b.get("transfer_date", ""), to_court=b.get("to_court", ""),
+        from_court=b.get("from_court"), from_judge=b.get("from_judge"),
+        to_judge=b.get("to_judge"), reason=b.get("reason"),
+        order_ref=b.get("order_ref"), notes=b.get("notes"),
+    )
+    return jsonify(t), 201
+
+
+@bp.route("/matters/<matter_id>/transfers/<transfer_id>", methods=["PATCH"])
+async def edit_court_transfer(matter_id: str, transfer_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    return jsonify(update_court_transfer(transfer_id, session.get("org") or "",
+                                         actor=session.get("user_id") or SYSTEM, **b))
+
+
+@bp.route("/matters/<matter_id>/transfers/<transfer_id>", methods=["DELETE"])
+async def remove_court_transfer(matter_id: str, transfer_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_court_transfer(transfer_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ── Bail Bonds — Task #167 ────────────────────────────────────────────────────
+
+@bp.route("/matters/<matter_id>/bail-bonds", methods=["GET"])
+async def list_bail_bonds(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"bonds": get_bail_bonds(matter_id, session.get("org") or ""),
+                    "bail_types": list(BAIL_TYPES), "statuses": list(BAIL_STATUSES)})
+
+
+@bp.route("/matters/<matter_id>/bail-bonds", methods=["POST"])
+async def add_bail_bond(matter_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    actor = session.get("user_id") or SYSTEM
+    bond = create_bail_bond(
+        matter_id=matter_id, org_id=session.get("org") or "", actor=actor,
+        accused_name=b.get("accused_name", ""), surety_name=b.get("surety_name", ""),
+        bail_amount_pkr=float(b.get("bail_amount_pkr") or 0),
+        bail_type=b.get("bail_type", "Post-Arrest"),
+        surety_cnic=b.get("surety_cnic"), surety_address=b.get("surety_address"),
+        surety_property=b.get("surety_property"),
+        property_value=float(b["property_value"]) if b.get("property_value") else None,
+        court=b.get("court"), judge=b.get("judge"),
+        granted_date=b.get("granted_date"), expiry_date=b.get("expiry_date"),
+        status=b.get("status", "Active"), bail_order_ref=b.get("bail_order_ref"),
+        notes=b.get("notes"),
+    )
+    return jsonify(bond), 201
+
+
+@bp.route("/matters/<matter_id>/bail-bonds/<bond_id>", methods=["PATCH"])
+async def edit_bail_bond(matter_id: str, bond_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    return jsonify(update_bail_bond(bond_id, session.get("org") or "",
+                                    actor=session.get("user_id") or SYSTEM, **b))
+
+
+@bp.route("/matters/<matter_id>/bail-bonds/<bond_id>", methods=["DELETE"])
+async def remove_bail_bond(matter_id: str, bond_id: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_bail_bond(bond_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ── Staff & Attendance — Task #171 ────────────────────────────────────────────
+
+@bp.route("/staff", methods=["GET"])
+async def list_staff():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"staff": get_staff(session.get("org") or ""),
+                    "roles": list(STAFF_ROLES)})
+
+
+@bp.route("/staff", methods=["POST"])
+async def add_staff():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    actor = session.get("user_id") or SYSTEM
+    s = create_staff(
+        org_id=session.get("org") or "", actor=actor,
+        name=b.get("name", ""), role=b.get("role", "Munshi"),
+        monthly_salary_pkr=float(b.get("monthly_salary_pkr") or 0),
+        join_date=b.get("join_date"), cnic=b.get("cnic"),
+        phone=b.get("phone"), notes=b.get("notes"),
+    )
+    return jsonify(s), 201
+
+
+@bp.route("/staff/<staff_id>", methods=["PATCH"])
+async def edit_staff(staff_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    return jsonify(update_staff(staff_id, session.get("org") or "",
+                                actor=session.get("user_id") or SYSTEM, **b))
+
+
+@bp.route("/staff/<staff_id>", methods=["DELETE"])
+async def remove_staff(staff_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_staff(staff_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+@bp.route("/staff/attendance", methods=["GET"])
+async def list_attendance():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    staff_id = request.args.get("staff_id") or None
+    month    = request.args.get("month") or None
+    return jsonify({"attendance": get_attendance(session.get("org") or "", staff_id=staff_id, month=month),
+                    "statuses": list(ATT_STATUSES)})
+
+
+@bp.route("/staff/attendance", methods=["POST"])
+async def mark_attendance():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    actor = session.get("user_id") or SYSTEM
+    rec = upsert_attendance(
+        org_id=session.get("org") or "", actor=actor,
+        staff_id=b.get("staff_id", ""), att_date=b.get("att_date", ""),
+        status=b.get("status", "Present"), time_in=b.get("time_in"),
+        time_out=b.get("time_out"), notes=b.get("notes"),
+    )
+    return jsonify(rec)
+
+
+@bp.route("/staff/salary", methods=["GET"])
+async def list_salary():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    staff_id = request.args.get("staff_id") or None
+    return jsonify({"payments": get_salary_payments(session.get("org") or "", staff_id=staff_id),
+                    "pay_modes": list(SALARY_PAY_MODES)})
+
+
+@bp.route("/staff/salary", methods=["POST"])
+async def add_salary_payment():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    b = await request.get_json() or {}
+    actor = session.get("user_id") or SYSTEM
+    p = create_salary_payment(
+        org_id=session.get("org") or "", actor=actor,
+        staff_id=b.get("staff_id", ""), month=b.get("month", ""),
+        gross_pkr=float(b.get("gross_pkr") or 0),
+        advance_deduction=float(b.get("advance_deduction") or 0),
+        absence_deduction=float(b.get("absence_deduction") or 0),
+        paid_date=b.get("paid_date"), payment_mode=b.get("payment_mode", "Cash"),
+        notes=b.get("notes"),
+    )
+    return jsonify(p), 201
+
+
+@bp.route("/staff/salary/<payment_id>", methods=["DELETE"])
+async def remove_salary_payment(payment_id: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    delete_salary_payment(payment_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
+    return jsonify({"ok": True})
+
+
+# ── Outstanding Dues — Task #169 ──────────────────────────────────────────────
+
+@bp.route("/outstanding-dues", methods=["GET"])
+async def list_outstanding_dues():
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    dues = get_outstanding_invoices(session.get("org") or "")
+    return jsonify({"invoices": dues, "total_outstanding": sum(float(d.get("total_amount") or 0) for d in dues)})
 
 
 def create_app():

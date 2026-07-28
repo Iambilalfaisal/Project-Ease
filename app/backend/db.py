@@ -770,6 +770,140 @@ CREATE TABLE IF NOT EXISTS judge_notes (
 );
 CREATE INDEX IF NOT EXISTS idx_judge_notes_org ON judge_notes(org_id);
 
+-- ── Legal Notices (Task #165) ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS legal_notices (
+    notice_id     TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES organizations(org_id),
+    matter_id     TEXT REFERENCES matters(matter_id),
+    client_id     TEXT REFERENCES clients(client_id),
+    notice_type   TEXT NOT NULL DEFAULT 'General',   -- General/Demand/Eviction/Termination/Defamation/Other
+    sent_to       TEXT NOT NULL,   -- recipient name/address
+    sent_via      TEXT NOT NULL DEFAULT 'Registered Post',  -- Registered Post/Courier/Bailiff/Email
+    sent_date     TEXT NOT NULL,
+    response_due  TEXT,            -- auto: sent_date + 30 days
+    response_date TEXT,            -- actual response received
+    status        TEXT NOT NULL DEFAULT 'Sent',  -- Sent/Responded/No Response/Follow-up Required/Withdrawn
+    subject       TEXT NOT NULL,
+    content       TEXT,
+    tracking_no   TEXT,            -- courier/post tracking number
+    notes         TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by    TEXT NOT NULL DEFAULT 'system',
+    modified_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by   TEXT NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_legal_notices_org    ON legal_notices(org_id, sent_date DESC);
+CREATE INDEX IF NOT EXISTS idx_legal_notices_matter ON legal_notices(matter_id);
+
+-- ── Court Transfers / Judge Reassignment (Task #170) ──────────────────────────
+CREATE TABLE IF NOT EXISTS court_transfers (
+    transfer_id   TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES organizations(org_id),
+    matter_id     TEXT NOT NULL REFERENCES matters(matter_id),
+    transfer_date TEXT NOT NULL,
+    from_court    TEXT,
+    to_court      TEXT NOT NULL,
+    from_judge    TEXT,
+    to_judge      TEXT,
+    reason        TEXT,
+    order_ref     TEXT,            -- court order reference / diary number
+    notes         TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by    TEXT NOT NULL DEFAULT 'system',
+    modified_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by   TEXT NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_court_transfers_matter ON court_transfers(matter_id, transfer_date DESC);
+
+-- ── Bail Bond / Surety Register (Task #167) ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS bail_bonds (
+    bond_id         TEXT PRIMARY KEY,
+    org_id          TEXT NOT NULL REFERENCES organizations(org_id),
+    matter_id       TEXT NOT NULL REFERENCES matters(matter_id),
+    accused_name    TEXT NOT NULL,
+    bail_type       TEXT NOT NULL DEFAULT 'Pre-Arrest',  -- Pre-Arrest/Post-Arrest/Interim/Anticipatory
+    bail_amount_pkr REAL NOT NULL DEFAULT 0,
+    surety_name     TEXT NOT NULL,
+    surety_cnic     TEXT,
+    surety_address  TEXT,
+    surety_property TEXT,          -- property offered as collateral
+    property_value  REAL,
+    court           TEXT,
+    judge           TEXT,
+    granted_date    TEXT,
+    expiry_date     TEXT,          -- some bails expire
+    status          TEXT NOT NULL DEFAULT 'Active',  -- Active/Revoked/Expired/Cancelled/Surrendered
+    bail_order_ref  TEXT,
+    notes           TEXT,
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    modified_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by     TEXT NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_bail_bonds_matter ON bail_bonds(matter_id);
+CREATE INDEX IF NOT EXISTS idx_bail_bonds_org    ON bail_bonds(org_id);
+
+-- ── Staff Attendance & Salary (Task #171) ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS staff_members (
+    staff_id      TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES organizations(org_id),
+    name          TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'Munshi',  -- Munshi/Junior Associate/Office Boy/Receptionist/Driver/Other
+    cnic          TEXT,
+    phone         TEXT,
+    monthly_salary_pkr REAL NOT NULL DEFAULT 0,
+    join_date     TEXT,
+    status        TEXT NOT NULL DEFAULT 'Active',  -- Active/Resigned/Terminated
+    notes         TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by    TEXT NOT NULL DEFAULT 'system',
+    modified_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by   TEXT NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_staff_org ON staff_members(org_id);
+
+CREATE TABLE IF NOT EXISTS staff_attendance (
+    att_id        TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES organizations(org_id),
+    staff_id      TEXT NOT NULL REFERENCES staff_members(staff_id),
+    att_date      TEXT NOT NULL,   -- YYYY-MM-DD
+    status        TEXT NOT NULL DEFAULT 'Present',  -- Present/Absent/Half-Day/Leave/Holiday
+    time_in       TEXT,            -- HH:MM
+    time_out      TEXT,
+    notes         TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by    TEXT NOT NULL DEFAULT 'system',
+    modified_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by   TEXT NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_att_staff_date ON staff_attendance(staff_id, att_date DESC);
+CREATE INDEX IF NOT EXISTS idx_att_org_date   ON staff_attendance(org_id, att_date DESC);
+
+CREATE TABLE IF NOT EXISTS salary_payments (
+    payment_id    TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES organizations(org_id),
+    staff_id      TEXT NOT NULL REFERENCES staff_members(staff_id),
+    month         TEXT NOT NULL,   -- YYYY-MM
+    gross_pkr     REAL NOT NULL DEFAULT 0,
+    advance_deduction REAL NOT NULL DEFAULT 0,
+    absence_deduction REAL NOT NULL DEFAULT 0,
+    net_paid_pkr  REAL NOT NULL DEFAULT 0,
+    paid_date     TEXT,
+    payment_mode  TEXT NOT NULL DEFAULT 'Cash',  -- Cash/Bank Transfer/EasyPaisa/JazzCash
+    notes         TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by    TEXT NOT NULL DEFAULT 'system',
+    modified_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    modified_by   TEXT NOT NULL DEFAULT 'system'
+);
+CREATE INDEX IF NOT EXISTS idx_salary_staff_month ON salary_payments(staff_id, month DESC);
+
 -- ── Feature flags per org (Task #162) ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS org_feature_flags (
     org_id      TEXT NOT NULL REFERENCES organizations(org_id),
@@ -919,6 +1053,27 @@ def _run_migrations(conn: sqlite3.Connection):
     ]:
         try:
             conn.execute(f"ALTER TABLE invoices ADD COLUMN {col} {defn}")
+        except sqlite3.OperationalError:
+            pass
+
+    # Task #163 — Adjournment reason + hearing outcome on hearings table
+    for col, defn in [
+        ("adj_reason",      "TEXT"),          # reason for adjournment
+        ("hearing_outcome", "TEXT"),          # Adjourned/Heard/Order/Decided/Part-Heard
+        ("next_date_fixed_by", "TEXT"),       # Court/Consent/Not Fixed
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE hearings ADD COLUMN {col} {defn}")
+        except sqlite3.OperationalError:
+            pass
+
+    # Task #166 — Appeal hierarchy on matters table
+    for col, defn in [
+        ("parent_matter_id", "TEXT"),         # links appeal to original matter
+        ("matter_stage",     "TEXT"),         # Original/Appeal/Revision/Review/Reference
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE matters ADD COLUMN {col} {defn}")
         except sqlite3.OperationalError:
             pass
 
@@ -4753,3 +4908,402 @@ def get_all_org_flags() -> list[dict]:
         {"org_id": o["org_id"], "name": o["name"], "flags": get_org_flags(o["org_id"])}
         for o in orgs
     ]
+
+
+# ── Legal Notices — Task #165 ─────────────────────────────────────────────────
+
+NOTICE_TYPES    = ("General", "Demand", "Eviction", "Termination", "Defamation", "Other")
+NOTICE_VIA      = ("Registered Post", "Courier", "Bailiff", "Email", "Hand Delivery")
+NOTICE_STATUSES = ("Sent", "Responded", "No Response", "Follow-up Required", "Withdrawn")
+
+
+def get_legal_notices(org_id: str, matter_id: str | None = None) -> list[dict]:
+    clauses = ["n.org_id=?", "n.is_active=1"]
+    params: list = [org_id]
+    if matter_id:
+        clauses.append("n.matter_id=?"); params.append(matter_id)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT n.*, m.title AS matter_title, c.full_name AS client_name
+                FROM legal_notices n
+                LEFT JOIN matters m ON m.matter_id = n.matter_id
+                LEFT JOIN clients c ON c.client_id = n.client_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY n.sent_date DESC""",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_legal_notice(org_id: str, sent_to: str, sent_date: str, subject: str,
+                        notice_type: str = "General", sent_via: str = "Registered Post",
+                        matter_id: str | None = None, client_id: str | None = None,
+                        response_due: str | None = None, content: str | None = None,
+                        tracking_no: str | None = None, notes: str | None = None,
+                        actor: str = SYSTEM) -> dict:
+    now = _now()
+    nid = "ntc_" + secrets.token_hex(8)
+    if not response_due and sent_date:
+        import datetime as _dt
+        try:
+            d = _dt.date.fromisoformat(sent_date)
+            response_due = (d + _dt.timedelta(days=30)).isoformat()
+        except Exception:
+            pass
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO legal_notices
+               (notice_id,org_id,matter_id,client_id,notice_type,sent_to,sent_via,
+                sent_date,response_due,subject,content,tracking_no,notes,
+                status,created_at,created_by,modified_at,modified_by)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (nid, org_id, matter_id, client_id, notice_type, sent_to, sent_via,
+             sent_date, response_due, subject, content, tracking_no, notes,
+             "Sent", now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM legal_notices WHERE notice_id=?", (nid,)).fetchone()
+    return dict(row) if row else {}
+
+
+def update_legal_notice(notice_id: str, org_id: str, actor: str = SYSTEM, **fields) -> dict:
+    allowed = {"notice_type","sent_to","sent_via","sent_date","response_due",
+               "response_date","status","subject","content","tracking_no","notes"}
+    now = _now()
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    updates["modified_at"] = now; updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE legal_notices SET {set_clause} WHERE notice_id=? AND org_id=?",
+            (*updates.values(), notice_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM legal_notices WHERE notice_id=?", (notice_id,)).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_legal_notice(notice_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE legal_notices SET is_active=0, modified_at=?, modified_by=? WHERE notice_id=? AND org_id=?",
+            (now, actor, notice_id, org_id),
+        )
+
+
+# ── Court Transfers — Task #170 ───────────────────────────────────────────────
+
+def get_court_transfers(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM court_transfers WHERE matter_id=? AND org_id=? AND is_active=1 ORDER BY transfer_date DESC",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_court_transfer(matter_id: str, org_id: str, transfer_date: str, to_court: str,
+                          from_court: str | None = None, from_judge: str | None = None,
+                          to_judge: str | None = None, reason: str | None = None,
+                          order_ref: str | None = None, notes: str | None = None,
+                          actor: str = SYSTEM) -> dict:
+    now = _now()
+    tid = "ctr_" + secrets.token_hex(8)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO court_transfers
+               (transfer_id,org_id,matter_id,transfer_date,from_court,to_court,
+                from_judge,to_judge,reason,order_ref,notes,
+                created_at,created_by,modified_at,modified_by)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (tid, org_id, matter_id, transfer_date, from_court, to_court,
+             from_judge, to_judge, reason, order_ref, notes, now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM court_transfers WHERE transfer_id=?", (tid,)).fetchone()
+    return dict(row) if row else {}
+
+
+def update_court_transfer(transfer_id: str, org_id: str, actor: str = SYSTEM, **fields) -> dict:
+    allowed = {"transfer_date","from_court","to_court","from_judge","to_judge","reason","order_ref","notes"}
+    now = _now()
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    updates["modified_at"] = now; updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE court_transfers SET {set_clause} WHERE transfer_id=? AND org_id=?",
+            (*updates.values(), transfer_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM court_transfers WHERE transfer_id=?", (transfer_id,)).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_court_transfer(transfer_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE court_transfers SET is_active=0, modified_at=?, modified_by=? WHERE transfer_id=? AND org_id=?",
+            (now, actor, transfer_id, org_id),
+        )
+
+
+# ── Bail Bonds / Surety Register — Task #167 ─────────────────────────────────
+
+BAIL_TYPES     = ("Pre-Arrest", "Post-Arrest", "Interim", "Anticipatory")
+BAIL_STATUSES  = ("Active", "Revoked", "Expired", "Cancelled", "Surrendered")
+
+
+def get_bail_bonds(matter_id: str, org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM bail_bonds WHERE matter_id=? AND org_id=? AND is_active=1 ORDER BY granted_date DESC",
+            (matter_id, org_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_bail_bond(matter_id: str, org_id: str, accused_name: str, surety_name: str,
+                     bail_amount_pkr: float = 0, bail_type: str = "Post-Arrest",
+                     surety_cnic: str | None = None, surety_address: str | None = None,
+                     surety_property: str | None = None, property_value: float | None = None,
+                     court: str | None = None, judge: str | None = None,
+                     granted_date: str | None = None, expiry_date: str | None = None,
+                     status: str = "Active", bail_order_ref: str | None = None,
+                     notes: str | None = None, actor: str = SYSTEM) -> dict:
+    now = _now()
+    bid = "bail_" + secrets.token_hex(8)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO bail_bonds
+               (bond_id,org_id,matter_id,accused_name,bail_type,bail_amount_pkr,
+                surety_name,surety_cnic,surety_address,surety_property,property_value,
+                court,judge,granted_date,expiry_date,status,bail_order_ref,notes,
+                created_at,created_by,modified_at,modified_by)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (bid, org_id, matter_id, accused_name, bail_type, bail_amount_pkr,
+             surety_name, surety_cnic, surety_address, surety_property, property_value,
+             court, judge, granted_date, expiry_date, status, bail_order_ref, notes,
+             now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM bail_bonds WHERE bond_id=?", (bid,)).fetchone()
+    return dict(row) if row else {}
+
+
+def update_bail_bond(bond_id: str, org_id: str, actor: str = SYSTEM, **fields) -> dict:
+    allowed = {"accused_name","bail_type","bail_amount_pkr","surety_name","surety_cnic",
+               "surety_address","surety_property","property_value","court","judge",
+               "granted_date","expiry_date","status","bail_order_ref","notes"}
+    now = _now()
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    updates["modified_at"] = now; updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE bail_bonds SET {set_clause} WHERE bond_id=? AND org_id=?",
+            (*updates.values(), bond_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM bail_bonds WHERE bond_id=?", (bond_id,)).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_bail_bond(bond_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE bail_bonds SET is_active=0, modified_at=?, modified_by=? WHERE bond_id=? AND org_id=?",
+            (now, actor, bond_id, org_id),
+        )
+
+
+# ── Staff Attendance & Salary — Task #171 ────────────────────────────────────
+
+STAFF_ROLES       = ("Munshi", "Junior Associate", "Office Boy", "Receptionist", "Driver", "Other")
+ATT_STATUSES      = ("Present", "Absent", "Half-Day", "Leave", "Holiday")
+SALARY_PAY_MODES  = ("Cash", "Bank Transfer", "EasyPaisa", "JazzCash", "Cheque")
+
+
+def get_staff(org_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM staff_members WHERE org_id=? AND is_active=1 ORDER BY name",
+            (org_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_staff(org_id: str, name: str, role: str = "Munshi",
+                 monthly_salary_pkr: float = 0, join_date: str | None = None,
+                 cnic: str | None = None, phone: str | None = None,
+                 notes: str | None = None, actor: str = SYSTEM) -> dict:
+    now = _now()
+    sid = "stf_" + secrets.token_hex(8)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO staff_members
+               (staff_id,org_id,name,role,monthly_salary_pkr,join_date,cnic,phone,notes,
+                status,created_at,created_by,modified_at,modified_by)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (sid, org_id, name, role, monthly_salary_pkr, join_date, cnic, phone, notes,
+             "Active", now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM staff_members WHERE staff_id=?", (sid,)).fetchone()
+    return dict(row) if row else {}
+
+
+def update_staff(staff_id: str, org_id: str, actor: str = SYSTEM, **fields) -> dict:
+    allowed = {"name","role","monthly_salary_pkr","join_date","cnic","phone","status","notes"}
+    now = _now()
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    updates["modified_at"] = now; updates["modified_by"] = actor
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE staff_members SET {set_clause} WHERE staff_id=? AND org_id=?",
+            (*updates.values(), staff_id, org_id),
+        )
+        row = conn.execute("SELECT * FROM staff_members WHERE staff_id=?", (staff_id,)).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_staff(staff_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE staff_members SET is_active=0, status='Resigned', modified_at=?, modified_by=? WHERE staff_id=? AND org_id=?",
+            (now, actor, staff_id, org_id),
+        )
+
+
+def get_attendance(org_id: str, staff_id: str | None = None,
+                   month: str | None = None) -> list[dict]:
+    clauses = ["a.org_id=?", "a.is_active=1"]
+    params: list = [org_id]
+    if staff_id:
+        clauses.append("a.staff_id=?"); params.append(staff_id)
+    if month:
+        clauses.append("a.att_date LIKE ?"); params.append(f"{month}%")
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT a.*, s.name AS staff_name, s.role AS staff_role
+                FROM staff_attendance a
+                JOIN staff_members s ON s.staff_id = a.staff_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY a.att_date DESC""",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_attendance(org_id: str, staff_id: str, att_date: str,
+                      status: str = "Present", time_in: str | None = None,
+                      time_out: str | None = None, notes: str | None = None,
+                      actor: str = SYSTEM) -> dict:
+    now = _now()
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT att_id FROM staff_attendance WHERE staff_id=? AND att_date=? AND org_id=? AND is_active=1",
+            (staff_id, att_date, org_id),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE staff_attendance SET status=?, time_in=?, time_out=?, notes=?, modified_at=?, modified_by=? WHERE att_id=?",
+                (status, time_in, time_out, notes, now, actor, existing["att_id"]),
+            )
+            att_id = existing["att_id"]
+        else:
+            att_id = "att_" + secrets.token_hex(8)
+            conn.execute(
+                """INSERT INTO staff_attendance
+                   (att_id,org_id,staff_id,att_date,status,time_in,time_out,notes,
+                    created_at,created_by,modified_at,modified_by)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (att_id, org_id, staff_id, att_date, status, time_in, time_out, notes,
+                 now, actor, now, actor),
+            )
+        row = conn.execute("SELECT * FROM staff_attendance WHERE att_id=?", (att_id,)).fetchone()
+    return dict(row) if row else {}
+
+
+def get_salary_payments(org_id: str, staff_id: str | None = None) -> list[dict]:
+    clauses = ["p.org_id=?", "p.is_active=1"]
+    params: list = [org_id]
+    if staff_id:
+        clauses.append("p.staff_id=?"); params.append(staff_id)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT p.*, s.name AS staff_name, s.role AS staff_role
+                FROM salary_payments p
+                JOIN staff_members s ON s.staff_id = p.staff_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY p.month DESC""",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_salary_payment(org_id: str, staff_id: str, month: str, gross_pkr: float,
+                          advance_deduction: float = 0, absence_deduction: float = 0,
+                          paid_date: str | None = None, payment_mode: str = "Cash",
+                          notes: str | None = None, actor: str = SYSTEM) -> dict:
+    now = _now()
+    pid = "sal_" + secrets.token_hex(8)
+    net = round(gross_pkr - advance_deduction - absence_deduction, 2)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO salary_payments
+               (payment_id,org_id,staff_id,month,gross_pkr,advance_deduction,
+                absence_deduction,net_paid_pkr,paid_date,payment_mode,notes,
+                created_at,created_by,modified_at,modified_by)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (pid, org_id, staff_id, month, gross_pkr, advance_deduction,
+             absence_deduction, net, paid_date, payment_mode, notes,
+             now, actor, now, actor),
+        )
+        row = conn.execute("SELECT * FROM salary_payments WHERE payment_id=?", (pid,)).fetchone()
+    return dict(row) if row else {}
+
+
+def delete_salary_payment(payment_id: str, org_id: str, actor: str = SYSTEM) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE salary_payments SET is_active=0, modified_at=?, modified_by=? WHERE payment_id=? AND org_id=?",
+            (now, actor, payment_id, org_id),
+        )
+
+
+# ── Outstanding Dues / Recovery — Task #169 ──────────────────────────────────
+
+def get_outstanding_invoices(org_id: str) -> list[dict]:
+    """Return unpaid/partially-paid invoices with aging buckets."""
+    import datetime as _dt
+    today = _dt.date.today().isoformat()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT i.*, m.title AS matter_title, c.full_name AS client_name
+               FROM invoices i
+               LEFT JOIN matters m ON m.matter_id = i.matter_id
+               LEFT JOIN clients c ON c.client_id = i.client_id
+               WHERE i.org_id=? AND i.is_active=1 AND i.status IN ('Draft','Sent','Overdue')
+               ORDER BY i.due_date ASC NULLS LAST""",
+            (org_id,),
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        try:
+            due = _dt.date.fromisoformat(d.get("due_date") or today)
+            days_overdue = (_dt.date.fromisoformat(today) - due).days
+            d["days_overdue"] = max(0, days_overdue)
+            if days_overdue <= 0:
+                d["aging_bucket"] = "Current"
+            elif days_overdue <= 30:
+                d["aging_bucket"] = "0-30 days"
+            elif days_overdue <= 60:
+                d["aging_bucket"] = "31-60 days"
+            else:
+                d["aging_bucket"] = "60+ days"
+        except Exception:
+            d["days_overdue"] = 0
+            d["aging_bucket"] = "Current"
+        result.append(d)
+    return result
