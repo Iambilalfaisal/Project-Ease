@@ -88,7 +88,42 @@ export default defineConfig(() => {
                 "/org": backendUrl,
                 "/me": backendUrl,
                 "/webhook": backendUrl,
-                "/register": backendUrl
+                "/register": backendUrl,
+                // Project Ease API routes (app.py) — not part of the original
+                // Azure Search OpenAI Demo proxy list above, added as the
+                // product grew; without these, `npm run dev` 404s on nearly
+                // every OwnerPortal/EmployeePortal/AdminDashboard fetch.
+                "/matters": backendUrl,
+                "/clients": backendUrl,
+                "/hearings": backendUrl,
+                "/deadlines": backendUrl,
+                "/diary": backendUrl,
+                "/cause-list": backendUrl,
+                "/invoices": backendUrl,
+                "/fees": backendUrl,
+                "/staff": backendUrl,
+                "/matter-teams": backendUrl,
+                "/courts": backendUrl,
+                "/court-fees": backendUrl,
+                "/legal-notices": backendUrl,
+                "/outstanding-dues": backendUrl,
+                "/vakalatnama-register": backendUrl,
+                "/judge-notes": backendUrl,
+                "/opposing-counsel": backendUrl,
+                "/conflicts": backendUrl,
+                "/associate-fees": backendUrl,
+                "/audit-logs": backendUrl,
+                "/client-tokens": backendUrl,
+                "/plan-config": backendUrl,
+                "/upgrade-request": backendUrl,
+                "/templates": backendUrl,
+                "/draft": backendUrl,
+                "/export": backendUrl,
+                "/voice": backendUrl,
+                "/calendar": backendUrl,
+                "/bail-stages": backendUrl,
+                "/lhc": backendUrl,
+                "/portal": backendUrl
             }
         }
     };

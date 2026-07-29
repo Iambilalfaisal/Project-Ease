@@ -1,10 +1,7 @@
 {
     "recommendations": [
-        "ms-azuretools.azure-dev",
-        "ms-azuretools.vscode-bicep",
-        "ms-python.python",
-        "astral-sh.ty",
+        "myml.vscode-markdown-plantuml-preview",
         "esbenp.prettier-vscode",
-        "DavidAnson.vscode-markdownlint"
+        "jebbs.plantuml"
     ]
 }

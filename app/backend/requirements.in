@@ -36,3 +36,5 @@ typing-extensions
 ragas>=0.4.0
 datasets
 langchain-openai  # required by ragas 0.4.x LangchainLLMWrapper
+# Project Ease: WhatsApp reminder + digest scheduler
+apscheduler

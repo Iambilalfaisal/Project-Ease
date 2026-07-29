@@ -846,6 +846,29 @@ CREATE TABLE IF NOT EXISTS bail_bonds (
 CREATE INDEX IF NOT EXISTS idx_bail_bonds_matter ON bail_bonds(matter_id);
 CREATE INDEX IF NOT EXISTS idx_bail_bonds_org    ON bail_bonds(org_id);
 
+-- ── Bail Workflow Checklist (configurable, default = Surety ID -> CNIC verify ->
+--    property valuation -> surety appearance -> court filing -> result) ─────────
+CREATE TABLE IF NOT EXISTS org_bail_stages (
+    org_id      TEXT    NOT NULL REFERENCES organizations(org_id),
+    stage_key   TEXT    NOT NULL,
+    label       TEXT    NOT NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by  TEXT    NOT NULL DEFAULT 'system',
+    PRIMARY KEY (org_id, stage_key)
+);
+
+CREATE TABLE IF NOT EXISTS bail_bond_stage_completions (
+    bond_id       TEXT    NOT NULL REFERENCES bail_bonds(bond_id),
+    stage_key     TEXT    NOT NULL,
+    completed_at  TEXT,
+    completed_by  TEXT,
+    notes         TEXT,
+    PRIMARY KEY (bond_id, stage_key)
+);
+CREATE INDEX IF NOT EXISTS idx_bail_stage_completions_bond ON bail_bond_stage_completions(bond_id);
+
 -- ── Staff Attendance & Salary (Task #171) ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_members (
     staff_id      TEXT PRIMARY KEY,
@@ -952,17 +975,31 @@ _AUDIT_COLS = {
 }
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
+
+
 def _run_migrations(conn: sqlite3.Connection):
     """
     Add any missing audit columns to existing tables.
     ALTER TABLE … ADD COLUMN is idempotent via try/except — safe to run every startup.
+
+    Note: SQLite rejects ADD COLUMN with a non-constant default (e.g.
+    "DEFAULT (datetime('now'))") — it raises OperationalError, which the
+    blanket except below previously swallowed as if the column already
+    existed, silently leaving `modified_at` missing on any table created
+    before it was added to the base schema (organizations/users/categories/
+    documents). Those columns are added nullable-then-backfilled instead.
     """
     for table, cols in _AUDIT_COLS.items():
         for col_name, col_def in cols:
             try:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
             except sqlite3.OperationalError:
-                pass  # column already exists
+                if col_name == "modified_at" and not _column_exists(conn, table, col_name):
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} TEXT")
+                    conn.execute(f"UPDATE {table} SET {col_name}=? WHERE {col_name} IS NULL", (_now(),))
+                # else: column already exists — nothing to do
 
     # WhatsApp number per user — added in Task #26
     try:
@@ -1066,6 +1103,12 @@ def _run_migrations(conn: sqlite3.Connection):
             conn.execute(f"ALTER TABLE hearings ADD COLUMN {col} {defn}")
         except sqlite3.OperationalError:
             pass
+
+    # Associate dispatch — assign a team member to attend a hearing
+    try:
+        conn.execute("ALTER TABLE hearings ADD COLUMN assigned_to TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     # Task #166 — Appeal hierarchy on matters table
     for col, defn in [
@@ -2028,7 +2071,7 @@ def delete_matter(matter_id: str, org_id: str, actor: str = SYSTEM):
 def get_matter_with_docs(matter_id: str, org_id: str) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT m.*, c.name AS client_name, t.name AS team_name,
+            """SELECT m.*, c.name AS client_name, c.phone AS client_phone, t.name AS team_name,
                       (SELECT COUNT(*) FROM court_orders co
                        WHERE co.matter_id=m.matter_id AND co.outcome='Adjourned' AND co.is_active=1
                       ) AS adjournment_count
@@ -2051,6 +2094,111 @@ def get_matter_with_docs(matter_id: str, org_id: str) -> Optional[dict]:
         ).fetchall()
         matter["documents"] = [dict(d) for d in docs]
     return matter
+
+
+def find_client_by_phone_suffix(last_10_digits: str) -> Optional[dict]:
+    """Client self-service WhatsApp bot: find an active client anywhere
+    (phone numbers aren't org-scoped for lookup — the client's number is
+    the only thing the inbound webhook has) whose stored phone ends with
+    these 10 digits. `clients.phone` is free-text, so this is a loose SQL
+    pre-filter — callers should still confirm via normalize_pk_number."""
+    if len(last_10_digits) != 10:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT * FROM clients
+               WHERE is_active=1 AND phone IS NOT NULL AND phone LIKE ?
+               LIMIT 1""",
+            (f"%{last_10_digits}",),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_client_matters_status(client_id: str, org_id: str) -> list[dict]:
+    """Next hearing date + last recorded outcome per matter, for the client
+    self-service WhatsApp bot. Pure DB lookup — deliberately does not touch
+    the AI/RAG chat pipeline (no document exposure risk)."""
+    with get_conn() as conn:
+        matters = conn.execute(
+            """SELECT matter_id, title, status FROM matters
+               WHERE client_id=? AND org_id=? AND is_active=1""",
+            (client_id, org_id),
+        ).fetchall()
+        results = []
+        for m in matters:
+            next_hearing = conn.execute(
+                """SELECT hearing_date FROM hearings
+                   WHERE matter_id=? AND org_id=? AND is_active=1 AND hearing_date >= date('now')
+                   ORDER BY hearing_date LIMIT 1""",
+                (m["matter_id"], org_id),
+            ).fetchone()
+            last_order = conn.execute(
+                """SELECT hearing_date, outcome, next_date FROM court_orders
+                   WHERE matter_id=? AND org_id=? AND is_active=1
+                   ORDER BY hearing_date DESC LIMIT 1""",
+                (m["matter_id"], org_id),
+            ).fetchone()
+            results.append({
+                "matter_id": m["matter_id"], "title": m["title"], "status": m["status"],
+                "next_hearing_date": next_hearing["hearing_date"] if next_hearing else None,
+                "last_outcome": last_order["outcome"] if last_order else None,
+                "last_hearing_date": last_order["hearing_date"] if last_order else None,
+                "next_date_from_order": last_order["next_date"] if last_order else None,
+            })
+    return results
+
+
+def get_clients_with_hearings_in_range(org_id: str, from_date: str, to_date: str) -> list[dict]:
+    """Distinct clients with a hearing or deadline in this date range —
+    used by the bulk court-holiday WhatsApp blast. One row per client,
+    with the matter titles affected."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT c.client_id, c.name AS client_name, c.phone AS client_phone,
+                      GROUP_CONCAT(DISTINCT m.title) AS matter_titles
+               FROM hearings h
+               JOIN matters m ON m.matter_id = h.matter_id AND m.is_active=1
+               JOIN clients c ON c.client_id = m.client_id AND c.is_active=1
+               WHERE h.org_id=? AND h.is_active=1
+                 AND h.hearing_date BETWEEN ? AND ?
+               GROUP BY c.client_id
+               UNION
+               SELECT c.client_id, c.name AS client_name, c.phone AS client_phone,
+                      GROUP_CONCAT(DISTINCT m.title) AS matter_titles
+               FROM deadlines d
+               JOIN matters m ON m.matter_id = d.matter_id AND m.is_active=1
+               JOIN clients c ON c.client_id = m.client_id AND c.is_active=1
+               WHERE d.org_id=? AND d.is_active=1
+                 AND d.due_date BETWEEN ? AND ?
+               GROUP BY c.client_id""",
+            (org_id, from_date, to_date, org_id, from_date, to_date),
+        ).fetchall()
+    # UNION can produce a duplicate client_id row (once per matching branch) — merge in Python
+    merged: dict[str, dict] = {}
+    for r in rows:
+        d = dict(r)
+        cid = d["client_id"]
+        if cid not in merged:
+            merged[cid] = d
+        else:
+            existing_titles = set((merged[cid]["matter_titles"] or "").split(","))
+            existing_titles.update((d["matter_titles"] or "").split(","))
+            merged[cid]["matter_titles"] = ",".join(sorted(t for t in existing_titles if t))
+    return list(merged.values())
+
+
+def get_matter_client_contact(matter_id: str, org_id: str) -> Optional[dict]:
+    """Lightweight lookup used by WhatsApp client-notification features —
+    avoids the document join in get_matter_with_docs."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT m.matter_id, m.title, c.name AS client_name, c.phone AS client_phone
+               FROM matters m
+               LEFT JOIN clients c ON c.client_id = m.client_id
+               WHERE m.matter_id=? AND m.org_id=? AND m.is_active=1""",
+            (matter_id, org_id),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def link_document_to_matter(doc_id: str, matter_id: str, org_id: str,
@@ -2561,9 +2709,10 @@ def get_hearings(org_id: str, from_date: Optional[str] = None, to_date: Optional
     where = "WHERE " + " AND ".join(clauses)
     with get_conn() as conn:
         rows = conn.execute(
-            f"""SELECT h.*, m.title AS matter_title, m.case_number
+            f"""SELECT h.*, m.title AS matter_title, m.case_number, u.name AS assigned_to_name
                 FROM hearings h
                 LEFT JOIN matters m ON m.matter_id = h.matter_id AND m.is_active=1
+                LEFT JOIN users u ON u.user_id = h.assigned_to
                 {where} ORDER BY h.hearing_date, h.hearing_time""",
             params,
         ).fetchall()
@@ -2575,6 +2724,7 @@ def create_hearing(
     matter_id: Optional[str] = None, hearing_time: Optional[str] = None,
     court_name: Optional[str] = None, judge_name: Optional[str] = None,
     notes: Optional[str] = None, wa_reminder: bool = False,
+    assigned_to: Optional[str] = None,
     actor: str = SYSTEM,
 ) -> dict:
     now = _now()
@@ -2583,12 +2733,12 @@ def create_hearing(
         conn.execute(
             """INSERT INTO hearings
                (hearing_id,org_id,matter_id,title,hearing_date,hearing_time,
-                court_name,judge_name,notes,wa_reminder,
+                court_name,judge_name,notes,wa_reminder,assigned_to,
                 created_at,created_by,modified_at,modified_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (hid, org_id, matter_id or None, title, hearing_date, hearing_time,
              court_name or None, judge_name or None, notes or None,
-             1 if wa_reminder else 0, now, actor, now, actor),
+             1 if wa_reminder else 0, assigned_to or None, now, actor, now, actor),
         )
     return get_hearing(hid)  # type: ignore[return-value]
 
@@ -2596,9 +2746,10 @@ def create_hearing(
 def get_hearing(hearing_id: str) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT h.*, m.title AS matter_title, m.case_number
+            """SELECT h.*, m.title AS matter_title, m.case_number, u.name AS assigned_to_name
                FROM hearings h
                LEFT JOIN matters m ON m.matter_id = h.matter_id
+               LEFT JOIN users u ON u.user_id = h.assigned_to
                WHERE h.hearing_id=? AND h.is_active=1""",
             (hearing_id,),
         ).fetchone()
@@ -2607,7 +2758,8 @@ def get_hearing(hearing_id: str) -> Optional[dict]:
 
 def update_hearing(hearing_id: str, org_id: str, actor: str = SYSTEM, **fields) -> Optional[dict]:
     allowed = {"title", "hearing_date", "hearing_time", "matter_id",
-               "court_name", "judge_name", "notes", "wa_reminder"}
+               "court_name", "judge_name", "notes", "wa_reminder",
+               "adj_reason", "hearing_outcome", "next_date_fixed_by", "assigned_to"}
     sets = {k: v for k, v in fields.items() if k in allowed}
     if not sets:
         return get_hearing(hearing_id)
@@ -2650,6 +2802,34 @@ def get_hearings_needing_reminder() -> list[dict]:
 def mark_hearing_reminder_sent(hearing_id: str):
     with get_conn() as conn:
         conn.execute("UPDATE hearings SET reminder_sent=1 WHERE hearing_id=?", (hearing_id,))
+
+
+def get_org_owner_contact(org_id: str) -> Optional[dict]:
+    """The org_owner's name/WhatsApp for this org — used to notify the owner
+    when an assigned associate marks a hearing outcome from court."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT user_id, name, whatsapp_number
+               FROM users
+               WHERE org_id=? AND role='org_owner' AND is_active=1
+               LIMIT 1""",
+            (org_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_orgs_with_owner_wa() -> list[dict]:
+    """Every active org with an org_owner who has a WhatsApp number on file —
+    used by the morning cause-list nudge/digest scheduler jobs."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT o.org_id, o.name AS org_name,
+                      u.whatsapp_number AS owner_wa, u.name AS owner_name
+               FROM organizations o
+               JOIN users u ON u.org_id = o.org_id AND u.role='org_owner' AND u.is_active=1
+               WHERE o.is_active=1 AND u.whatsapp_number IS NOT NULL AND u.whatsapp_number != ''"""
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ── Deadlines ─────────────────────────────────────────────────────────────────
@@ -4789,6 +4969,52 @@ def get_judge_notes(org_id: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_judge_note(judge_id: str, org_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM judge_notes WHERE judge_id=? AND org_id=? AND is_active=1",
+            (judge_id, org_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_judge_track_record(org_id: str, judge_name: str) -> dict:
+    """Firm's own accumulated history with a judge — computed live from
+    this org's hearings/bail_bonds, matched by name (case-insensitive).
+    Deliberately NOT an external/published statistic — there is no such
+    dataset to pull from; this only ever reflects what this firm itself
+    has logged, and starts empty until the firm has real case history."""
+    name = (judge_name or "").strip()
+    if not name:
+        return {"hearings_count": 0, "outcome_breakdown": {}, "adjournment_rate": None, "bail_bonds_count": 0}
+    with get_conn() as conn:
+        hearing_rows = conn.execute(
+            """SELECT hearing_outcome FROM hearings
+               WHERE org_id=? AND is_active=1 AND hearing_outcome IS NOT NULL
+                 AND lower(judge_name)=lower(?)""",
+            (org_id, name),
+        ).fetchall()
+        bail_count = conn.execute(
+            """SELECT COUNT(*) AS n FROM bail_bonds
+               WHERE org_id=? AND is_active=1 AND lower(judge)=lower(?)""",
+            (org_id, name),
+        ).fetchone()["n"]
+
+    breakdown: dict[str, int] = {}
+    for r in hearing_rows:
+        outcome = r["hearing_outcome"]
+        breakdown[outcome] = breakdown.get(outcome, 0) + 1
+    total = len(hearing_rows)
+    adjourned = breakdown.get("Adjourned", 0)
+
+    return {
+        "hearings_count": total,
+        "outcome_breakdown": breakdown,
+        "adjournment_rate": round(100 * adjourned / total, 1) if total else None,
+        "bail_bonds_count": bail_count,
+    }
+
+
 def create_judge_note(org_id: str, data: dict, actor: str = SYSTEM) -> dict:
     jid = secrets.token_hex(10)
     now = _now()
@@ -5112,6 +5338,96 @@ def delete_bail_bond(bond_id: str, org_id: str, actor: str = SYSTEM) -> None:
             "UPDATE bail_bonds SET is_active=0, modified_at=?, modified_by=? WHERE bond_id=? AND org_id=?",
             (now, actor, bond_id, org_id),
         )
+
+
+# ── Bail Workflow Checklist (configurable, default = user's 6-stage flow) ────
+
+DEFAULT_BAIL_STAGES = [
+    ("surety_id",          "Surety Identification"),
+    ("cnic_verify",        "CNIC Verification"),
+    ("property_valuation", "Property Valuation"),
+    ("surety_appearance",  "Surety Appearance"),
+    ("court_filing",       "Court Filing"),
+    ("result",             "Result"),
+]
+
+
+def ensure_org_bail_stages(org_id: str, actor: str = SYSTEM) -> None:
+    """Seed an org's bail checklist with the 6 default stages the first
+    time it's needed — after that, the org owner's own edits are authoritative."""
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) AS n FROM org_bail_stages WHERE org_id=?", (org_id,)
+        ).fetchone()["n"]
+        if existing:
+            return
+        now = _now()
+        for i, (key, label) in enumerate(DEFAULT_BAIL_STAGES):
+            conn.execute(
+                """INSERT INTO org_bail_stages (org_id, stage_key, label, sort_order, is_active, created_at, created_by)
+                   VALUES (?,?,?,?,1,?,?)""",
+                (org_id, key, label, i, now, actor),
+            )
+
+
+def get_org_bail_stages(org_id: str, include_inactive: bool = False) -> list[dict]:
+    ensure_org_bail_stages(org_id)
+    where = "" if include_inactive else "AND is_active=1"
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM org_bail_stages WHERE org_id=? {where} ORDER BY sort_order, label",
+            (org_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_org_bail_stage(org_id: str, label: str, actor: str = SYSTEM) -> dict:
+    ensure_org_bail_stages(org_id)
+    key = "custom_" + secrets.token_hex(4)
+    with get_conn() as conn:
+        max_order = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) AS m FROM org_bail_stages WHERE org_id=?", (org_id,)
+        ).fetchone()["m"]
+        conn.execute(
+            """INSERT INTO org_bail_stages (org_id, stage_key, label, sort_order, is_active, created_at, created_by)
+               VALUES (?,?,?,?,1,?,?)""",
+            (org_id, key, label, max_order + 1, _now(), actor),
+        )
+    return {"org_id": org_id, "stage_key": key, "label": label, "sort_order": max_order + 1, "is_active": 1}
+
+
+def update_org_bail_stage(org_id: str, stage_key: str, **fields) -> None:
+    allowed = {"label", "sort_order", "is_active"}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return
+    cols = ", ".join(f"{k}=?" for k in sets)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE org_bail_stages SET {cols} WHERE org_id=? AND stage_key=?",
+            (*sets.values(), org_id, stage_key),
+        )
+
+
+def get_bail_stage_completions(bond_id: str) -> dict[str, dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM bail_bond_stage_completions WHERE bond_id=?", (bond_id,)
+        ).fetchall()
+    return {r["stage_key"]: dict(r) for r in rows}
+
+
+def set_bail_stage_completion(bond_id: str, stage_key: str, completed: bool, actor: str = SYSTEM, notes: Optional[str] = None) -> dict:
+    now = _now() if completed else None
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO bail_bond_stage_completions (bond_id, stage_key, completed_at, completed_by, notes)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT(bond_id, stage_key) DO UPDATE SET
+                 completed_at=excluded.completed_at, completed_by=excluded.completed_by, notes=excluded.notes""",
+            (bond_id, stage_key, now, actor if completed else None, notes),
+        )
+    return {"bond_id": bond_id, "stage_key": stage_key, "completed_at": now, "completed_by": actor if completed else None, "notes": notes}
 
 
 # ── Staff Attendance & Salary — Task #171 ────────────────────────────────────

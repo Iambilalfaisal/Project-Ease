@@ -361,6 +361,8 @@ from db import (
     list_client_tokens, revoke_client_token,
     # Court Orders — Task #130
     get_court_orders, create_court_order, update_court_order, delete_court_order,
+    get_matter_client_contact, find_client_by_phone_suffix, get_client_matters_status,
+    get_clients_with_hearings_in_range,
     # Adverse Parties — Task #131
     get_adverse_parties, create_adverse_party, update_adverse_party, delete_adverse_party,
     # Limitation Tracker — Task #132
@@ -370,6 +372,7 @@ from db import (
     # Cause List — Task #137
     parse_cause_list_text, store_cause_list, get_cause_list_entries,
     link_cause_list_entry, delete_cause_list_entry, get_today_cause_list_matches,
+    get_orgs_with_owner_wa, get_org_owner_contact,
     # Matter Notes — Task #138
     NOTE_TYPES, get_matter_notes, create_matter_note, update_matter_note, delete_matter_note,
     # Matter Priority — Task #139
@@ -420,6 +423,7 @@ from db import (
     # Intelligence Notes — Task #158
     get_opposing_counsel, create_opposing_counsel, update_opposing_counsel, delete_opposing_counsel,
     get_judge_notes, create_judge_note, update_judge_note, delete_judge_note,
+    get_judge_note, get_judge_track_record,
     # Feature Flags — Task #162
     FEATURE_KEYS, FEATURE_LABELS, get_org_flags, set_org_flags, get_all_org_flags,
     # Legal Notices — Task #165
@@ -430,6 +434,8 @@ from db import (
     # Bail Bonds — Task #167
     BAIL_TYPES, BAIL_STATUSES,
     get_bail_bonds, create_bail_bond, update_bail_bond, delete_bail_bond,
+    get_org_bail_stages, add_org_bail_stage, update_org_bail_stage,
+    get_bail_stage_completions, set_bail_stage_completion,
     # Staff Attendance & Salary — Task #171
     STAFF_ROLES, ATT_STATUSES, SALARY_PAY_MODES,
     get_staff, create_staff, update_staff, delete_staff,
@@ -1249,6 +1255,27 @@ def _twiml_reply(text: str):
     return current_app.response_class(xml, mimetype="text/xml")
 
 
+async def _whisper_transcribe_bytes(audio_bytes: bytes, filename: str, content_type: str) -> str | None:
+    """Transcribe raw audio bytes with Azure OpenAI Whisper.
+    Returns None if no Whisper deployment is configured or if transcription fails.
+    Whisper auto-detects language (Urdu, English, Roman Urdu speech, etc.) —
+    we deliberately don't pin `language=` so mixed-language court dictation
+    (very common: Urdu sentence, English case citation) still transcribes."""
+    whisper_dep = os.getenv("AZURE_OPENAI_WHISPER_DEPLOYMENT", "").strip()
+    if not whisper_dep:
+        return None
+    try:
+        openai_client = current_app.config[CONFIG_OPENAI_CLIENT]
+        result = await openai_client.audio.transcriptions.create(
+            model=whisper_dep,
+            file=(filename, audio_bytes, content_type),
+        )
+        return result.text.strip() or None
+    except Exception as exc:
+        logging.warning("Whisper transcription failed: %s", exc)
+        return None
+
+
 async def _transcribe_voice(media_url: str) -> str | None:
     """Download a Twilio voice note and transcribe it with Azure OpenAI Whisper.
     Returns None if no Whisper deployment is configured or if transcription fails."""
@@ -1265,15 +1292,61 @@ async def _transcribe_voice(media_url: str) -> str | None:
             r.raise_for_status()
             audio_bytes = r.content
             content_type = r.headers.get("content-type", "audio/ogg")
-        openai_client = current_app.config[CONFIG_OPENAI_CLIENT]
-        result = await openai_client.audio.transcriptions.create(
-            model=whisper_dep,
-            file=("voice_note.ogg", audio_bytes, content_type),
-        )
-        return result.text.strip() or None
+        return await _whisper_transcribe_bytes(audio_bytes, "voice_note.ogg", content_type)
     except Exception as exc:
         logging.warning("Whisper transcription failed: %s", exc)
         return None
+
+
+_WA_CLIENT_TRIGGERS = {"MERA CASE", "MY CASE", "CASE STATUS", "STATUS", "MERA CASE?", "MY CASE?"}
+
+
+async def _wa_client_self_service(phone: str, body: str):
+    """Client self-service bot: a client (not a team member) texts a phone
+    number that's on file for them, e.g. "mera case", and gets their next
+    hearing date + last outcome — zero involvement from the firm.
+
+    Deliberately a pure DB lookup, never routed through the AI/RAG chat
+    pipeline — a client's own number must never be able to pull firm
+    documents or other clients' data, so this only ever reads the handful
+    of fields matched to *their own* client_id.
+
+    Returns None if this number doesn't match any client on file (falls
+    through to the existing team-member-onboarding flow), so the caller can
+    tell "not a client" apart from "client asked something we handle here".
+    """
+    try:
+        from whatsapp_helper import normalize_pk_number
+    except ImportError:
+        return None
+    normalized = normalize_pk_number(phone)
+    if not normalized:
+        return None
+    last10 = normalized[-10:]
+    candidate = find_client_by_phone_suffix(last10)
+    if not candidate or normalize_pk_number(candidate.get("phone") or "") != normalized:
+        return None
+
+    if body.strip().upper() not in _WA_CLIENT_TRIGGERS:
+        return _twiml_reply(
+            f"👋 Hi {candidate.get('name') or 'there'}, this is *Project Ease* on behalf of your lawyer.\n\n"
+            "Reply *MERA CASE* (or *STATUS*) any time to get your next hearing date and last update."
+        )
+
+    matters = get_client_matters_status(candidate["client_id"], candidate["org_id"])
+    if not matters:
+        return _twiml_reply(f"Hi {candidate.get('name') or 'there'}, no active matters found on file for you right now.")
+
+    lines = [f"📋 *Case Update for {candidate.get('name') or 'you'}*\n"]
+    for m in matters:
+        lines.append(f"*{m['title']}* ({m['status']})")
+        if m.get("last_outcome"):
+            lines.append(f"  Last hearing ({m.get('last_hearing_date', '?')}): {m['last_outcome']}")
+        next_date = m.get("next_hearing_date") or m.get("next_date_from_order")
+        lines.append(f"  Next date: {next_date}" if next_date else "  Next date: not yet fixed")
+        lines.append("")
+    lines.append("_Sent automatically by Project Ease. For details, contact your lawyer's office._")
+    return _twiml_reply("\n".join(lines))
 
 
 @bp.route("/webhook/whatsapp", methods=["POST"])
@@ -1303,6 +1376,11 @@ async def whatsapp_webhook():
 
     user = get_user_by_whatsapp(phone)
     if not user:
+        # ── Client self-service bot: is this number a client's, not a team member's? ──
+        client_reply = await _wa_client_self_service(phone, body)
+        if client_reply is not None:
+            return client_reply
+
         # Unregistered number — start onboarding
         cmd = body.upper()
         if cmd in ("YES", "Y", "REGISTER", "SIGN UP", "SIGNUP"):
@@ -2111,6 +2189,121 @@ async def unlink_doc_from_matter(matter_id: str, doc_id: str):
 
 # ─── Court Orders (Task #130) ────────────────────────────────────────────────
 
+async def _notify_client_of_order_outcome(session, matter_id: str, org_id: str, order: dict) -> None:
+    """Task: auto client WhatsApp after a hearing outcome is marked.
+
+    Fire-and-forget best effort — never raises, so a WhatsApp/Twilio hiccup
+    can't block saving the court order itself.
+    """
+    outcome    = (order.get("outcome") or "").strip()
+    next_date  = (order.get("next_date") or "").strip()
+    if not outcome:
+        return
+    try:
+        from whatsapp_helper import send_whatsapp_text, normalize_pk_number
+    except ImportError:
+        logging.warning("whatsapp_helper not available — client notification skipped.")
+        return
+
+    contact = get_matter_client_contact(matter_id, org_id)
+    if not contact or not contact.get("client_phone"):
+        return
+    phone = normalize_pk_number(contact["client_phone"])
+    if not phone:
+        logging.info("Client phone for matter %s not a valid PK number — notification skipped.", matter_id)
+        return
+
+    title = contact.get("title") or "your matter"
+    if outcome == "Decided":
+        message = f'Your case "{title}" was decided today. Please contact our office for details.'
+    elif outcome == "Adjourned":
+        next_line = f"Next date: {next_date}." if next_date else "Next date will be shared shortly."
+        message = f'Your case "{title}" was heard today and adjourned. {next_line}'
+    else:
+        next_line = f" Next date: {next_date}." if next_date else ""
+        message = f'Your case "{title}" was heard today.{next_line}'
+
+    import asyncio as _aio
+    result = await _aio.to_thread(send_whatsapp_text, phone, message)
+    _audit(session, "client_whatsapp_notify",
+           resource_type="matter", resource_id=matter_id, resource_name=title,
+           details={"outcome": outcome, "sent": result.get("sent"), "error": result.get("error")})
+
+
+@bp.route("/voice/log-outcome", methods=["POST"])
+async def voice_log_outcome():
+    """Voice input for hearing outcomes (Urdu or English) — a lawyer records
+    a short voice note in court ("agli tareekh pandrah August, muqadma suna
+    gaya, judge ne bail manzoor ki") and this transcribes + extracts
+    structured fields to PRE-FILL the Add Court Order form. Nothing is saved
+    here — the lawyer always reviews/edits the extracted fields before the
+    normal POST /matters/<id>/orders save, since a misheard word could
+    otherwise silently corrupt a case record.
+    """
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    whisper_configured = bool(os.getenv("AZURE_OPENAI_WHISPER_DEPLOYMENT", "").strip())
+    if not whisper_configured:
+        return jsonify({
+            "error": "Voice input isn't configured yet — AZURE_OPENAI_WHISPER_DEPLOYMENT "
+                     "is not set. Type the order summary instead, or ask your admin to configure it."
+        }), 400
+
+    files = await request.files
+    upload = files.get("audio")
+    if upload is None:
+        return jsonify({"error": "No audio file provided"}), 400
+
+    audio_bytes = upload.read()
+    content_type = upload.content_type or "audio/webm"
+    transcript = await _whisper_transcribe_bytes(audio_bytes, upload.filename or "voice_note.webm", content_type)
+    if not transcript:
+        return jsonify({"error": "Could not transcribe that recording — try again, closer to the mic."}), 400
+
+    result = {"transcript": transcript, "outcome": None, "next_date": None, "order_brief": transcript}
+
+    if current_app.config.get("AZURE_CONFIGURED"):
+        try:
+            import datetime as _dt
+            import re as _re
+            openai_client = current_app.config[CONFIG_OPENAI_CLIENT]
+            today = _dt.date.today().strftime("%Y-%m-%d")
+            system_msg = (
+                "You extract structured hearing-outcome data from a Pakistani lawyer's spoken "
+                "voice note (often Urdu, English, or a mix). Return ONLY a JSON object with keys: "
+                '"outcome" (one of "Adjourned", "Heard", "Decided", "Partially Heard", or null if unclear), '
+                '"next_date" (an ISO YYYY-MM-DD date if a next hearing date was mentioned, else null — '
+                f"today's date is {today}, resolve relative/spoken dates like \"15 August\" against it), "
+                '"order_brief" (a clean one/two-sentence English summary of what happened, suitable for '
+                "a case file — translate from Urdu if needed, but keep any case-specific names/terms accurate). "
+                "If you are not confident about a field, use null rather than guessing."
+            )
+            ai_resp = await openai_client.chat.completions.create(
+                model=current_app.config.get("OPENAI_CHATGPT_MODEL", "gpt-5-mini-1"),
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": transcript},
+                ],
+                temperature=0.1,
+                max_tokens=400,
+            )
+            raw = (ai_resp.choices[0].message.content or "").strip()
+            raw = _re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=_re.MULTILINE).strip()
+            extracted = json.loads(raw)
+            if extracted.get("outcome") in ("Adjourned", "Heard", "Decided", "Partially Heard"):
+                result["outcome"] = extracted["outcome"]
+            if extracted.get("next_date"):
+                result["next_date"] = extracted["next_date"]
+            if extracted.get("order_brief"):
+                result["order_brief"] = extracted["order_brief"]
+        except Exception as exc:
+            logging.warning("Voice outcome extraction failed, falling back to raw transcript: %s", exc)
+
+    return jsonify(result)
+
+
 @bp.route("/matters/<matter_id>/orders", methods=["GET"])
 async def list_court_orders(matter_id: str):
     session = _get_session()
@@ -2142,6 +2335,8 @@ async def add_court_order(matter_id: str):
         next_date=data.get("next_date") or None,
         actor=session.get("user_id") or SYSTEM,
     )
+    if data.get("notify_client", True):
+        await _notify_client_of_order_outcome(session, matter_id, org_id, order)
     return jsonify(order), 201
 
 
@@ -2160,6 +2355,8 @@ async def edit_court_order(matter_id: str, order_id: str):
     )
     if not updated:
         return jsonify({"error": "Not found"}), 404
+    if "outcome" in data and data.get("notify_client", True):
+        await _notify_client_of_order_outcome(session, matter_id, org_id, updated)
     return jsonify(updated)
 
 
@@ -2332,6 +2529,35 @@ async def bill_time_entries_route(matter_id: str):
 
 # ─── Cause List Integration — Task #137 ─────────────────────────────────────
 
+async def _ocr_extract_text(file_bytes: bytes, filename: str) -> str:
+    """OCR a single uploaded PDF/image via Azure Document Intelligence and
+    return its plain text. Returns "" if Document Intelligence isn't
+    configured in this environment (caller should handle that explicitly,
+    not treat it the same as "OCR ran and found nothing")."""
+    doc_int_service = os.getenv("AZURE_DOCUMENTINTELLIGENCE_SERVICE")
+    if not doc_int_service:
+        return ""
+    doc_int_key = os.getenv("AZURE_DOCUMENTINTELLIGENCE_KEY")
+
+    from prepdocslib.pdfparser import DocumentAnalysisParser
+
+    if doc_int_key and doc_int_key != "YOUR_DOC_INTELLIGENCE_KEY_HERE":
+        credential = AzureKeyCredential(doc_int_key)
+    else:
+        credential = AzureDeveloperCliCredential(process_timeout=60)
+
+    parser = DocumentAnalysisParser(
+        endpoint=f"https://{doc_int_service}.cognitiveservices.azure.com/",
+        credential=credential,
+    )
+    stream = io.BytesIO(file_bytes)
+    stream.name = filename
+    texts = []
+    async for page in parser.parse(stream):
+        texts.append(page.text)
+    return "\n".join(texts)
+
+
 @bp.route("/cause-list", methods=["GET"])
 async def list_cause_list():
     session = _get_session()
@@ -2356,11 +2582,36 @@ async def parse_and_store_cause_list():
     session = _get_session()
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
-    data       = await request.get_json(silent=True) or {}
-    raw_text   = (data.get("text") or "").strip()
-    list_date  = (data.get("list_date") or "").strip()
-    court_name = (data.get("court_name") or "").strip()
-    if not raw_text:
+
+    raw_text   = ""
+    list_date  = ""
+    court_name = ""
+    is_multipart = (request.content_type or "").startswith("multipart/form-data")
+    if is_multipart:
+        form  = await request.form
+        files = await request.files
+        list_date  = (form.get("list_date") or "").strip()
+        court_name = (form.get("court_name") or "").strip()
+        upload = files.get("file")
+        if upload is not None:
+            doc_int_configured = bool(os.getenv("AZURE_DOCUMENTINTELLIGENCE_SERVICE"))
+            if not doc_int_configured:
+                return jsonify({
+                    "error": "Document scanning isn't configured yet — AZURE_DOCUMENTINTELLIGENCE_SERVICE "
+                             "is not set. Paste the cause list text instead, or ask your admin to configure OCR."
+                }), 400
+            try:
+                raw_text = await _ocr_extract_text(upload.read(), upload.filename or "cause_list.pdf")
+            except Exception as exc:
+                logging.exception("Cause list OCR failed: %s", exc)
+                return jsonify({"error": "Could not read that file — try a clearer scan or paste the text instead."}), 400
+    else:
+        data       = await request.get_json(silent=True) or {}
+        raw_text   = (data.get("text") or "").strip()
+        list_date  = (data.get("list_date") or "").strip()
+        court_name = (data.get("court_name") or "").strip()
+
+    if not raw_text.strip():
         return jsonify({"error": "Cause list text is required"}), 400
     if not list_date:
         import datetime as _dt
@@ -2915,6 +3166,80 @@ async def remove_matter_charge(matter_id: str, charge_id: str):
 
 # ─── Matter FIR — Task #148 ───────────────────────────────────────────────────
 
+@bp.route("/documents/extract-fir", methods=["POST"])
+async def extract_fir():
+    """OCR + AI field extraction for a photographed/scanned FIR or court
+    order, to pre-fill the Add FIR form. Beta: accuracy depends heavily on
+    document quality/layout, which varies by police station — the lawyer
+    always reviews the extracted fields before saving, nothing is written
+    to the matter here.
+    """
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not os.getenv("AZURE_DOCUMENTINTELLIGENCE_SERVICE"):
+        return jsonify({
+            "error": "Document scanning isn't configured yet — AZURE_DOCUMENTINTELLIGENCE_SERVICE "
+                     "is not set. Enter the FIR details manually, or ask your admin to configure OCR."
+        }), 400
+
+    files = await request.files
+    upload = files.get("file")
+    if upload is None:
+        return jsonify({"error": "No file provided"}), 400
+
+    try:
+        raw_text = await _ocr_extract_text(upload.read(), upload.filename or "fir.pdf")
+    except Exception as exc:
+        logging.exception("FIR OCR failed: %s", exc)
+        return jsonify({"error": "Could not read that document — try a clearer photo or scan."}), 400
+
+    if not raw_text.strip():
+        return jsonify({"error": "No readable text found in that document."}), 400
+
+    result: dict = {
+        "raw_text": raw_text[:4000],
+        "fir_number": None, "police_station": None, "district": None,
+        "io_name": None, "complainant": None, "arrest_date": None,
+        "sections_at_fir": None, "fir_date": None, "accused_name": None,
+    }
+
+    if current_app.config.get("AZURE_CONFIGURED"):
+        try:
+            import re as _re
+            openai_client = current_app.config[CONFIG_OPENAI_CLIENT]
+            system_msg = (
+                "You extract structured fields from OCR text of a Pakistani police FIR "
+                "(First Information Report) or a related court order. Return ONLY a JSON object "
+                "with keys: \"fir_number\", \"police_station\", \"district\", \"io_name\" "
+                "(investigating officer), \"complainant\", \"arrest_date\" (ISO YYYY-MM-DD if found), "
+                "\"sections_at_fir\" (e.g. \"302, 324, 34 PPC\"), \"fir_date\" (ISO YYYY-MM-DD if found), "
+                "\"accused_name\". Use null for any field not clearly present in the text — "
+                "never guess or infer a value that isn't actually written there."
+            )
+            ai_resp = await openai_client.chat.completions.create(
+                model=current_app.config.get("OPENAI_CHATGPT_MODEL", "gpt-5-mini-1"),
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": raw_text[:6000]},
+                ],
+                temperature=0.0,
+                max_tokens=500,
+            )
+            raw = (ai_resp.choices[0].message.content or "").strip()
+            raw = _re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=_re.MULTILINE).strip()
+            extracted = json.loads(raw)
+            for key in ("fir_number", "police_station", "district", "io_name", "complainant",
+                        "arrest_date", "sections_at_fir", "fir_date", "accused_name"):
+                if extracted.get(key):
+                    result[key] = extracted[key]
+        except Exception as exc:
+            logging.warning("FIR field extraction failed, returning raw OCR text only: %s", exc)
+
+    return jsonify(result)
+
+
 @bp.route("/matters/<matter_id>/fir", methods=["GET"])
 async def list_matter_fir(matter_id: str):
     session = _get_session()
@@ -3395,6 +3720,20 @@ async def edit_judge_note(judge_id: str):
     return jsonify(update_judge_note(judge_id, session.get("org") or "", data, actor=session.get("user_id") or SYSTEM))
 
 
+@bp.route("/judge-notes/<judge_id>/stats", methods=["GET"])
+async def judge_track_record(judge_id: str):
+    """Firm's own historical track record with this judge — computed live
+    from this org's own hearings/bail_bonds. Not external/published data."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    org_id = session.get("org") or ""
+    judge = get_judge_note(judge_id, org_id)
+    if not judge:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(get_judge_track_record(org_id, judge.get("name") or ""))
+
+
 @bp.route("/judge-notes/<judge_id>", methods=["DELETE"])
 async def remove_judge_note(judge_id: str):
     session = _get_session()
@@ -3809,6 +4148,7 @@ async def add_hearing():
         judge_name  = data.get("judge_name")   or None,
         notes       = data.get("notes")        or None,
         wa_reminder = bool(data.get("wa_reminder", False)),
+        assigned_to = data.get("assigned_to")   or None,
         actor=actor,
     )
     _audit(session, "hearing_create",
@@ -3828,6 +4168,55 @@ async def get_hearing_detail(hearing_id: str):
     return jsonify(h)
 
 
+async def _notify_on_hearing_outcome(session, org_id: str, hearing: dict) -> None:
+    """Associate dispatch: when a hearing's outcome is marked, WhatsApp the
+    org owner (so they see it without calling the associate) and, if the
+    hearing is matter-linked, the client too — same message pipeline as
+    Court Orders. Fire-and-forget, never raises."""
+    outcome = (hearing.get("hearing_outcome") or "").strip()
+    if not outcome:
+        return
+    try:
+        from whatsapp_helper import send_whatsapp_text, normalize_pk_number
+    except ImportError:
+        return
+    import asyncio as _aio
+
+    title = hearing.get("matter_title") or hearing.get("title") or "the hearing"
+    next_date = (hearing.get("hearing_date") or "")  # informational only here
+
+    # Notify the org owner (skip if the owner themself made the edit)
+    owner = get_org_owner_contact(org_id)
+    if owner and owner.get("whatsapp_number") and owner.get("user_id") != session.get("user_id"):
+        owner_phone = normalize_pk_number(owner["whatsapp_number"])
+        if owner_phone:
+            assignee_name = session.get("name") or "Your associate"
+            msg = f'📋 {assignee_name} marked "{title}" as *{outcome}* today.'
+            if hearing.get("adj_reason"):
+                msg += f"\nReason: {hearing['adj_reason']}"
+            result = await _aio.to_thread(send_whatsapp_text, owner_phone, msg)
+            _audit(session, "owner_whatsapp_notify", resource_type="hearing",
+                   resource_id=hearing.get("hearing_id"), resource_name=title,
+                   details={"outcome": outcome, "sent": result.get("sent")})
+
+    # Notify the client, if this hearing is linked to a matter
+    matter_id = hearing.get("matter_id")
+    if matter_id:
+        contact = get_matter_client_contact(matter_id, org_id)
+        if contact and contact.get("client_phone"):
+            phone = normalize_pk_number(contact["client_phone"])
+            if phone:
+                msg = f'Your case "{contact.get("title") or title}" was heard today.'
+                if outcome == "Adjourned":
+                    msg += " Adjourned."
+                elif outcome:
+                    msg += f" {outcome}."
+                result = await _aio.to_thread(send_whatsapp_text, phone, msg)
+                _audit(session, "client_whatsapp_notify", resource_type="matter",
+                       resource_id=matter_id, resource_name=contact.get("title"),
+                       details={"outcome": outcome, "sent": result.get("sent"), "via": "hearing"})
+
+
 @bp.route("/hearings/<hearing_id>", methods=["PATCH"])
 async def edit_hearing(hearing_id: str):
     session = _get_session()
@@ -3838,7 +4227,10 @@ async def edit_hearing(hearing_id: str):
         return jsonify({"error": "Not found"}), 404
     data  = await request.get_json(silent=True) or {}
     actor = session.get("user_id") or SYSTEM
-    updated = update_hearing(hearing_id, session.get("org") or "", actor=actor, **data)
+    org_id = session.get("org") or ""
+    updated = update_hearing(hearing_id, org_id, actor=actor, **data)
+    if updated and "hearing_outcome" in data and data.get("notify", True):
+        await _notify_on_hearing_outcome(session, org_id, updated)
     return jsonify(updated)
 
 
@@ -3854,6 +4246,76 @@ async def remove_hearing(hearing_id: str):
     delete_hearing(hearing_id, session.get("org") or "", actor=actor)
     _audit(session, "hearing_delete", resource_type="hearing", resource_name=h.get("title", ""))
     return jsonify({"ok": True})
+
+
+@bp.route("/calendar/notify-holiday/preview", methods=["GET"])
+async def preview_holiday_notify():
+    """Which clients have a hearing/deadline in this date range — shown
+    before sending the bulk court-holiday WhatsApp blast, so the lawyer
+    sees exactly who's about to get messaged."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    from_date = request.args.get("from_date") or ""
+    to_date   = request.args.get("to_date") or from_date
+    if not from_date:
+        return jsonify({"error": "from_date is required"}), 400
+    clients = get_clients_with_hearings_in_range(session.get("org") or "", from_date, to_date)
+    return jsonify({"clients": clients})
+
+
+@bp.route("/calendar/notify-holiday", methods=["POST"])
+async def send_holiday_notify():
+    """Bulk WhatsApp: one click notifies every client with a hearing/deadline
+    in the given date range that the court is closed. Sends individually
+    (not a broadcast list) and reports per-send success/failure — never
+    silent about partial failures."""
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data      = await request.get_json(silent=True) or {}
+    from_date = (data.get("from_date") or "").strip()
+    to_date   = (data.get("to_date") or from_date).strip()
+    message   = (data.get("message") or "").strip()
+    if not from_date:
+        return jsonify({"error": "from_date is required"}), 400
+    org_id = session.get("org") or ""
+    clients = get_clients_with_hearings_in_range(org_id, from_date, to_date)
+    if not clients:
+        return jsonify({"notified": 0, "failed": 0, "skipped_no_phone": 0, "details": []})
+
+    try:
+        from whatsapp_helper import send_whatsapp_text, normalize_pk_number
+    except ImportError:
+        return jsonify({"error": "whatsapp_helper not available"}), 500
+
+    import asyncio as _aio
+    date_label = from_date if from_date == to_date else f"{from_date} to {to_date}"
+    default_msg = (
+        f"📢 *Court Holiday Notice*\n\nPlease note: the court is closed {date_label}. "
+        "Any hearings scheduled in this period will be rescheduled — your lawyer's office "
+        "will confirm the new date shortly."
+    )
+
+    notified, failed, skipped = 0, 0, 0
+    details = []
+    for c in clients:
+        phone = normalize_pk_number(c.get("client_phone") or "")
+        if not phone:
+            skipped += 1
+            details.append({"client_name": c.get("client_name"), "sent": False, "reason": "no_valid_phone"})
+            continue
+        msg = message or default_msg
+        result = await _aio.to_thread(send_whatsapp_text, phone, msg)
+        if result.get("sent"):
+            notified += 1
+        else:
+            failed += 1
+        details.append({"client_name": c.get("client_name"), "sent": result.get("sent"), "reason": result.get("error")})
+
+    _audit(session, "bulk_holiday_notify", details={"from_date": from_date, "to_date": to_date,
+                                                     "notified": notified, "failed": failed, "skipped": skipped})
+    return jsonify({"notified": notified, "failed": failed, "skipped_no_phone": skipped, "details": details})
 
 
 @bp.route("/diary/<date_str>", methods=["GET"])
@@ -4250,9 +4712,11 @@ def _start_reminder_scheduler(app_ref):
         from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore
         scheduler = BackgroundScheduler(daemon=True)
         scheduler.add_job(_send_due_reminders, "interval", hours=1, id="wa_reminders")
+        scheduler.add_job(_send_cause_list_nudge, "cron", hour=7, minute=0, id="cause_list_nudge")
+        scheduler.add_job(_send_cause_list_digest, "cron", hour=8, minute=0, id="cause_list_digest")
         scheduler.start()
         _scheduler_started = True
-        logging.getLogger(__name__).info("WhatsApp reminder scheduler started.")
+        logging.getLogger(__name__).info("WhatsApp reminder scheduler started (hourly reminders, 7am cause-list nudge, 8am digest).")
     except ImportError:
         logging.getLogger(__name__).warning(
             "apscheduler not installed — WhatsApp reminders disabled. "
@@ -4360,6 +4824,67 @@ async def _send_due_reminders_async():
 
         if sent:
             mark_deadline_reminder_sent(d["deadline_id"])
+
+
+def _send_cause_list_nudge():
+    """07:00 — if an org owner hasn't pasted/uploaded today's cause list yet,
+    send a one-line WhatsApp nudge. Runs as a sync APScheduler job."""
+    import asyncio as _aio
+    try:
+        loop = _aio.new_event_loop()
+        loop.run_until_complete(_send_cause_list_nudge_async())
+    except Exception as exc:
+        logging.getLogger(__name__).error("Cause-list nudge scheduler error: %s", exc)
+
+
+async def _send_cause_list_nudge_async():
+    import datetime as _dt
+    from whatsapp_helper import send_whatsapp_text  # type: ignore[import]
+    import asyncio as _aio
+    _log = logging.getLogger(__name__)
+    today = _dt.datetime.utcnow().strftime("%Y-%m-%d")
+    for org in get_orgs_with_owner_wa():
+        entries = get_cause_list_entries(org["org_id"], today)
+        if entries:
+            continue  # already pasted/uploaded — no nudge needed
+        msg = (
+            "🏛️ *Project Ease*\n\n"
+            "Today's LHC cause list hasn't been added yet. Paste or upload it in "
+            "*Cause List* so your 8am matter digest goes out on time."
+        )
+        try:
+            await _aio.to_thread(send_whatsapp_text, org["owner_wa"], msg)
+        except Exception as exc:
+            _log.error("Cause-list nudge send error for org %s: %s", org["org_id"], exc)
+
+
+def _send_cause_list_digest():
+    """08:00 — send each org owner today's matched cause-list entries."""
+    import asyncio as _aio
+    try:
+        loop = _aio.new_event_loop()
+        loop.run_until_complete(_send_cause_list_digest_async())
+    except Exception as exc:
+        logging.getLogger(__name__).error("Cause-list digest scheduler error: %s", exc)
+
+
+async def _send_cause_list_digest_async():
+    from whatsapp_helper import send_whatsapp_text  # type: ignore[import]
+    import asyncio as _aio
+    _log = logging.getLogger(__name__)
+    for org in get_orgs_with_owner_wa():
+        matches = get_today_cause_list_matches(org["org_id"])
+        if not matches:
+            continue  # nothing matched today — nothing to send
+        lines = [f"🏛️ *Morning Brief — {len(matches)} of your matters are listed today*\n"]
+        for m in matches:
+            label = m.get("bench") or m.get("court_name") or m.get("matter_court") or "Court TBD"
+            lines.append(f"• {m.get('matter_title', 'Matter')} — {label}")
+        lines.append("\n_Sent automatically by Project Ease at 8am_")
+        try:
+            await _aio.to_thread(send_whatsapp_text, org["owner_wa"], "\n".join(lines))
+        except Exception as exc:
+            _log.error("Cause-list digest send error for org %s: %s", org["org_id"], exc)
 
 
 # ─── Answer Export (PDF via browser print / Word via python-docx) ─────────────
@@ -5451,6 +5976,72 @@ async def remove_bail_bond(matter_id: str, bond_id: str):
         return jsonify({"error": "Unauthorized"}), 401
     delete_bail_bond(bond_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
     return jsonify({"ok": True})
+
+
+# ── Bail Workflow Checklist (configurable, default = 6-stage flow) ──────────
+
+@bp.route("/bail-stages", methods=["GET"])
+async def list_bail_stages():
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    include_inactive = request.args.get("all") == "1" and session.get("role") == "org_owner"
+    return jsonify({"stages": get_org_bail_stages(session.get("org") or "", include_inactive=include_inactive)})
+
+
+@bp.route("/bail-stages", methods=["POST"])
+async def add_bail_stage():
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data  = await request.get_json(silent=True) or {}
+    label = (data.get("label") or "").strip()
+    if not label:
+        return jsonify({"error": "label is required"}), 400
+    stage = add_org_bail_stage(session.get("org") or "", label, actor=session.get("user_id") or SYSTEM)
+    return jsonify(stage), 201
+
+
+@bp.route("/bail-stages/<stage_key>", methods=["PATCH"])
+async def edit_bail_stage(stage_key: str):
+    session = _get_session()
+    if not session or session.get("role") != "org_owner":
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    update_org_bail_stage(
+        session.get("org") or "", stage_key,
+        **{k: v for k, v in data.items() if k in {"label", "sort_order", "is_active"}},
+    )
+    return jsonify({"ok": True})
+
+
+@bp.route("/matters/<matter_id>/bail-bonds/<bond_id>/stages", methods=["GET"])
+async def get_bail_bond_stages(matter_id: str, bond_id: str):
+    session = _get_session()
+    if not session:
+        return jsonify({"error": "Unauthorized"}), 401
+    stages      = get_org_bail_stages(session.get("org") or "")
+    completions = get_bail_stage_completions(bond_id)
+    return jsonify({
+        "stages": [
+            {**s, "completed_at": (completions.get(s["stage_key"]) or {}).get("completed_at"),
+             "completed_by": (completions.get(s["stage_key"]) or {}).get("completed_by")}
+            for s in stages
+        ]
+    })
+
+
+@bp.route("/matters/<matter_id>/bail-bonds/<bond_id>/stages/<stage_key>", methods=["PATCH"])
+async def toggle_bail_bond_stage(matter_id: str, bond_id: str, stage_key: str):
+    session = _get_session()
+    if not session or session.get("role") not in ("org_owner", "employee"):
+        return jsonify({"error": "Unauthorized"}), 401
+    data = await request.get_json(silent=True) or {}
+    result = set_bail_stage_completion(
+        bond_id, stage_key, completed=bool(data.get("completed", True)),
+        actor=session.get("user_id") or SYSTEM, notes=data.get("notes"),
+    )
+    return jsonify(result)
 
 
 # ── Staff & Attendance — Task #171 ────────────────────────────────────────────

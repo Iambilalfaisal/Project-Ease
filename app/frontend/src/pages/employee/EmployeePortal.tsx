@@ -5,7 +5,7 @@ import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Panel = "chat" | "documents" | "profile";
+type Panel = "chat" | "documents" | "assignments" | "profile";
 
 interface PermittedCategory {
     category_id: string;
@@ -635,24 +635,149 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
     );
 };
 
+// ── My Court Assignments — associate dispatch ───────────────────────────────
+
+interface AssignedHearing {
+    hearing_id: string;
+    title: string;
+    hearing_date: string;
+    hearing_time: string | null;
+    court_name: string | null;
+    judge_name: string | null;
+    matter_id: string | null;
+    matter_title: string | null;
+    hearing_outcome: string | null;
+    adj_reason: string | null;
+    next_date_fixed_by: string | null;
+}
+
+const HEARING_OUTCOMES = ["Heard", "Adjourned", "Partially Heard", "Reserved for Judgment", "Dismissed", "Withdrawn", "ex-parte"];
+
+const AssignmentsPanel = ({ userId }: { userId: string }) => {
+    const [hearings, setHearings] = useState<AssignedHearing[]>([]);
+    const [loading,  setLoading]  = useState(true);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [outcome,   setOutcome]   = useState("");
+    const [adjReason, setAdjReason] = useState("");
+    const [saving,    setSaving]    = useState(false);
+    const [saveErr,   setSaveErr]   = useState("");
+
+    const load = () => {
+        setLoading(true);
+        const today = new Date().toISOString().slice(0, 10);
+        fetch(`/hearings?from_date=${today}`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setHearings(Array.isArray(d) ? d.filter((h: any) => h.assigned_to === userId) : []))
+            .catch(() => setHearings([]))
+            .finally(() => setLoading(false));
+    };
+
+    useEffect(() => { load(); }, [userId]);
+
+    const startMarking = (h: AssignedHearing) => {
+        setEditingId(h.hearing_id);
+        setOutcome(h.hearing_outcome ?? "");
+        setAdjReason(h.adj_reason ?? "");
+        setSaveErr("");
+    };
+
+    const saveOutcome = async (hearingId: string) => {
+        if (!outcome) { setSaveErr("Select an outcome first."); return; }
+        setSaving(true); setSaveErr("");
+        try {
+            const r = await fetch(`/hearings/${hearingId}`, {
+                method: "PATCH",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ hearing_outcome: outcome, adj_reason: adjReason || undefined }),
+            });
+            if (!r.ok) { const d = await r.json().catch(() => ({})); setSaveErr(d.error ?? "Could not save."); return; }
+            setEditingId(null);
+            load();
+        } catch { setSaveErr("Network error."); }
+        finally { setSaving(false); }
+    };
+
+    if (loading) return <div className={styles.panelContent}><div className={styles.loadingWrap}>Loading…</div></div>;
+
+    if (hearings.length === 0) {
+        return (
+            <div className={styles.panelContent}>
+                <div className={styles.emptyDocs}>
+                    No court hearings assigned to you right now. When your firm owner dispatches you to a hearing, it'll show up here.
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className={styles.panelContent}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+                {hearings.map(h => (
+                    <div key={h.hearing_id} style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: "1rem" }}>{h.title}</div>
+                                {h.matter_title && <div style={{ color: "var(--text-2)", fontSize: "0.85rem" }}>{h.matter_title}</div>}
+                                <div style={{ color: "var(--text-3)", fontSize: "0.82rem", marginTop: "0.25rem" }}>
+                                    {h.hearing_date}{h.hearing_time ? ` · ${h.hearing_time}` : ""}
+                                    {h.court_name ? ` · ${h.court_name}` : ""}
+                                    {h.judge_name ? ` · ${h.judge_name}` : ""}
+                                </div>
+                            </div>
+                            {h.hearing_outcome ? (
+                                <span className={styles.statusReady}>{h.hearing_outcome}</span>
+                            ) : editingId !== h.hearing_id ? (
+                                <button className={styles.sendBtn} style={{ padding: "0.4rem 0.9rem", fontSize: "0.82rem" }} onClick={() => startMarking(h)}>Mark Outcome</button>
+                            ) : null}
+                        </div>
+
+                        {editingId === h.hearing_id && (
+                            <div style={{ marginTop: "0.85rem", paddingTop: "0.85rem", borderTop: "1px solid var(--border)" }}>
+                                <select className={styles.pwInput} style={{ width: "100%", marginBottom: "0.6rem" }} value={outcome} onChange={e => setOutcome(e.target.value)}>
+                                    <option value="">— Select outcome —</option>
+                                    {HEARING_OUTCOMES.map(o => <option key={o}>{o}</option>)}
+                                </select>
+                                {outcome === "Adjourned" && (
+                                    <input className={styles.pwInput} style={{ width: "100%", marginBottom: "0.6rem" }}
+                                        placeholder="Adjournment reason (optional)" value={adjReason} onChange={e => setAdjReason(e.target.value)} />
+                                )}
+                                {saveErr && <div className={styles.pwError} style={{ marginBottom: "0.5rem" }}>{saveErr}</div>}
+                                <div style={{ display: "flex", gap: "0.5rem" }}>
+                                    <button className={styles.sendBtn} disabled={saving} onClick={() => saveOutcome(h.hearing_id)}>
+                                        {saving ? "Saving…" : "✓ Save — notifies owner & client"}
+                                    </button>
+                                    <button className={styles.pwBtn} style={{ background: "transparent" }} onClick={() => setEditingId(null)} disabled={saving}>Cancel</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
 const NAV: { id: Panel; icon: string; label: string }[] = [
-    { id: "chat",      icon: "Q", label: "Ask a Question" },
-    { id: "documents", icon: "D", label: "My Documents"   },
-    { id: "profile",   icon: "P", label: "Profile"        },
+    { id: "chat",        icon: "Q", label: "Ask a Question"       },
+    { id: "documents",   icon: "D", label: "My Documents"         },
+    { id: "assignments", icon: "⚖", label: "My Court Assignments" },
+    { id: "profile",     icon: "P", label: "Profile"              },
 ];
 
 const PANEL_TITLES: Record<Panel, string> = {
-    chat:      "Ask a Question",
-    documents: "My Documents",
-    profile:   "My Profile",
+    chat:        "Ask a Question",
+    documents:   "My Documents",
+    assignments: "My Court Assignments",
+    profile:     "My Profile",
 };
 
 const PANEL_SUBS: Record<Panel, string> = {
-    chat:      "Search and query your firm's documents using AI",
-    documents: "Documents you have access to",
-    profile:   "Your account and access permissions",
+    chat:        "Search and query your firm's documents using AI",
+    documents:   "Documents you have access to",
+    assignments: "Hearings your firm has dispatched you to attend",
+    profile:     "Your account and access permissions",
 };
 
 const EmployeePortal = () => {
@@ -747,9 +872,10 @@ const EmployeePortal = () => {
                     <ThemeToggle />
                 </header>
 
-                {panel === "chat"      && <ChatPanel orgName={orgName} categories={categories} />}
-                {panel === "documents" && <DocumentsPanel docs={docs} />}
-                {panel === "profile"   && profile && <ProfilePanel profile={profile} />}
+                {panel === "chat"        && <ChatPanel orgName={orgName} categories={categories} />}
+                {panel === "documents"   && <DocumentsPanel docs={docs} />}
+                {panel === "assignments" && profile && <AssignmentsPanel userId={profile.user_id} />}
+                {panel === "profile"     && profile && <ProfilePanel profile={profile} />}
             </div>
         </div>
     );

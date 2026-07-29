@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import styles from "./OwnerPortal.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
+import { queueWrite, initOfflineSync, fetchWithCache, getPendingCount } from "../../offline/offlineQueue";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,7 @@ interface Matter {
     matter_id:       string;
     client_id:       string;
     client_name:     string;
+    client_phone?:   string;
     title:           string;
     matter_type:     string;
     status:          "Active" | "Pending" | "Closed" | "Settled" | "Withdrawn";
@@ -460,6 +462,7 @@ interface CourtOrder {
     next_date:    string | null;
     outcome:      "Adjourned" | "Heard" | "Decided" | "Partially Heard";
     created_at:   string;
+    _offline?:    boolean;   // client-side only: queued locally, not yet synced
 }
 
 interface AuditLog {
@@ -1312,6 +1315,63 @@ const BLANK_MATTER: {
     parent_matter_id: "", matter_stage: "",
 };
 
+// ── Bail Workflow Checklist — per bail bond, org-configurable stages ─────────
+interface BailStage {
+    stage_key: string; label: string; sort_order: number;
+    completed_at?: string | null; completed_by?: string | null;
+    is_active?: number;
+}
+
+const BailChecklist = ({ matterId, bondId }: { matterId: string; bondId: string }) => {
+    const [stages,  setStages]  = useState<BailStage[] | null>(null);
+    const [busyKey, setBusyKey] = useState<string | null>(null);
+
+    const load = () => {
+        fetch(`/matters/${matterId}/bail-bonds/${bondId}/stages`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setStages(d.stages ?? []))
+            .catch(() => setStages([]));
+    };
+    useEffect(() => { load(); }, [bondId]);
+
+    const toggle = async (stage: BailStage) => {
+        setBusyKey(stage.stage_key);
+        try {
+            await fetch(`/matters/${matterId}/bail-bonds/${bondId}/stages/${stage.stage_key}`, {
+                method: "PATCH",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ completed: !stage.completed_at }),
+            });
+            load();
+        } finally { setBusyKey(null); }
+    };
+
+    if (stages === null) return <div className={styles.muted} style={{ fontSize: "0.78rem" }}>Loading checklist…</div>;
+    if (stages.length === 0) return null;
+
+    const doneCount = stages.filter(s => s.completed_at).length;
+
+    return (
+        <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-2)" }}>Bail Process Checklist</span>
+                <span className={styles.muted} style={{ fontSize: "0.75rem" }}>{doneCount}/{stages.length} complete</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                {stages.map(s => (
+                    <label key={s.stage_key} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.82rem", cursor: busyKey ? "wait" : "pointer" }}>
+                        <input type="checkbox" checked={!!s.completed_at} disabled={busyKey === s.stage_key} onChange={() => toggle(s)} />
+                        <span style={{ textDecoration: s.completed_at ? "line-through" : "none", color: s.completed_at ? "var(--text-3)" : "var(--text-1)" }}>
+                            {s.label}
+                        </span>
+                        {s.completed_at && <span className={styles.muted} style={{ fontSize: "0.72rem" }}>· {s.completed_at.slice(0, 10)}</span>}
+                    </label>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const MattersPanel = () => {
     const [matters,     setMatters]     = useState<Matter[]>([]);
     const [clients,     setClients]     = useState<Client[]>([]);
@@ -1354,9 +1414,16 @@ const MattersPanel = () => {
     const [ordersLoading, setOrdersLoading] = useState(false);
     const [showOrderModal, setShowOrderModal] = useState(false);
     const [editOrder,      setEditOrder]      = useState<CourtOrder | null>(null);
-    const [orderForm,      setOrderForm]      = useState({ hearing_date: "", court_name: "", order_brief: "", next_date: "", outcome: "Adjourned" });
+    const [orderForm,      setOrderForm]      = useState({ hearing_date: "", court_name: "", order_brief: "", next_date: "", outcome: "Adjourned", notify_client: true });
     const [orderSaving,    setOrderSaving]    = useState(false);
     const [orderErr,       setOrderErr]       = useState("");
+    // Voice input for hearing outcomes (Urdu/English) — Task: voice-log-outcome
+    const [voiceRecording,  setVoiceRecording]  = useState(false);
+    const [voiceProcessing, setVoiceProcessing] = useState(false);
+    const [voiceErr,        setVoiceErr]        = useState("");
+    const [voiceResult,     setVoiceResult]     = useState<{ transcript: string; outcome: string | null; next_date: string | null; order_brief: string } | null>(null);
+    const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+    const voiceChunksRef   = useRef<Blob[]>([]);
     // Adverse Parties — Task #131
     const BLANK_PARTY = { party_name: "", party_type: "Individual", counsel_name: "", counsel_phone: "", counsel_firm: "", notes: "" };
     const [adverseParties,   setAdverseParties]   = useState<AdverseParty[]>([]);
@@ -1559,6 +1626,10 @@ const MattersPanel = () => {
     const [firForm,         setFirForm]         = useState<typeof BLANK_FIR>({ ...BLANK_FIR });
     const [firSaving,       setFirSaving]       = useState(false);
     const [firErr,          setFirErr]          = useState("");
+    // FIR OCR scan (beta) — Task: extract-fir
+    const [firScanning,     setFirScanning]     = useState(false);
+    const [firScanErr,      setFirScanErr]      = useState("");
+    const [firScanRawText,  setFirScanRawText]  = useState("");
     // Limitation alerts — Task #132
     const [limAlerts, setLimAlerts] = useState<{ matter_id: string; title: string; limitation_date: string; limitation_type: string; days_remaining: number; client_name: string }[]>([]);
     const [causeListAlerts, setCauseListAlerts] = useState<{ matter_id: string; matter_title: string; case_number: string | null; item_no: string | null; court_name: string | null }[]>([]);
@@ -1593,16 +1664,69 @@ const MattersPanel = () => {
             .catch(() => setOrdersLoading(false));
     };
 
+    // Re-pull orders once queued offline writes have synced, so optimistic
+    // "⏳ Saved offline" cards get replaced by the real server records.
+    useEffect(() => {
+        const onFlushed = () => { if (detail) loadOrders(detail.matter_id); };
+        window.addEventListener("pe-offline-flushed", onFlushed);
+        return () => window.removeEventListener("pe-offline-flushed", onFlushed);
+    }, [detail]);
+
     const openOrderModal = (order?: CourtOrder) => {
         const today = new Date().toISOString().slice(0, 10);
         if (order) {
             setEditOrder(order);
-            setOrderForm({ hearing_date: order.hearing_date, court_name: order.court_name ?? "", order_brief: order.order_brief, next_date: order.next_date ?? "", outcome: order.outcome });
+            setOrderForm({ hearing_date: order.hearing_date, court_name: order.court_name ?? "", order_brief: order.order_brief, next_date: order.next_date ?? "", outcome: order.outcome, notify_client: true });
         } else {
             setEditOrder(null);
-            setOrderForm({ hearing_date: today, court_name: detail?.court_name ?? "", order_brief: "", next_date: "", outcome: "Adjourned" });
+            setOrderForm({ hearing_date: today, court_name: detail?.court_name ?? "", order_brief: "", next_date: "", outcome: "Adjourned", notify_client: true });
         }
-        setOrderErr(""); setShowOrderModal(true);
+        setOrderErr(""); setVoiceErr(""); setVoiceResult(null); setShowOrderModal(true);
+    };
+
+    const startVoiceRecording = async () => {
+        setVoiceErr(""); setVoiceResult(null);
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream);
+            voiceChunksRef.current = [];
+            recorder.ondataavailable = e => { if (e.data.size > 0) voiceChunksRef.current.push(e.data); };
+            recorder.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop());
+                const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+                setVoiceProcessing(true);
+                try {
+                    const fd = new FormData();
+                    fd.append("audio", blob, "hearing_note.webm");
+                    const r = await fetch("/voice/log-outcome", { method: "POST", headers: authHeaders(), body: fd });
+                    const d = await r.json();
+                    if (!r.ok) setVoiceErr(d.error ?? "Could not process the recording.");
+                    else setVoiceResult(d);
+                } catch { setVoiceErr("Network error while processing the recording."); }
+                finally { setVoiceProcessing(false); }
+            };
+            recorder.start();
+            voiceRecorderRef.current = recorder;
+            setVoiceRecording(true);
+        } catch {
+            setVoiceErr("Could not access the microphone — check browser permissions.");
+        }
+    };
+
+    const stopVoiceRecording = () => {
+        voiceRecorderRef.current?.stop();
+        setVoiceRecording(false);
+    };
+
+    const applyVoiceResult = () => {
+        if (!voiceResult) return;
+        setOrderForm(f => ({
+            ...f,
+            order_brief: voiceResult.order_brief || f.order_brief,
+            outcome:     voiceResult.outcome ?? f.outcome,
+            next_date:   voiceResult.next_date ?? f.next_date,
+        }));
+        setVoiceResult(null);
     };
 
     const saveOrder = async () => {
@@ -1617,16 +1741,29 @@ const MattersPanel = () => {
             order_brief:  orderForm.order_brief.trim(),
             next_date:    orderForm.next_date || undefined,
             outcome:      orderForm.outcome,
+            notify_client: orderForm.notify_client,
         };
+        const url = editOrder
+            ? `/matters/${detail.matter_id}/orders/${editOrder.order_id}`
+            : `/matters/${detail.matter_id}/orders`;
+        const method: "POST" | "PATCH" = editOrder ? "PATCH" : "POST";
+        if (!navigator.onLine) {
+            // Don't even attempt the request — go straight to the offline queue.
+            await queueWrite(url, method, body, "Court Order", detail.title);
+            setOrders(prev => [{ order_id: `offline-${Date.now()}`, matter_id: detail.matter_id, ...body, court_name: body.court_name ?? null, next_date: body.next_date ?? null, created_at: new Date().toISOString(), _offline: true } as CourtOrder, ...prev]);
+            setShowOrderModal(false); setOrderSaving(false);
+            return;
+        }
         try {
-            const url = editOrder
-                ? `/matters/${detail.matter_id}/orders/${editOrder.order_id}`
-                : `/matters/${detail.matter_id}/orders`;
-            const method = editOrder ? "PATCH" : "POST";
             const r = await fetch(url, { method, headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
             if (!r.ok) { const d = await r.json().catch(() => ({})); setOrderErr(d.error ?? "Save failed."); }
             else { setShowOrderModal(false); loadOrders(detail.matter_id); }
-        } catch { setOrderErr("Network error."); }
+        } catch {
+            // fetch() threw — treat as a network drop mid-request, queue it rather than losing the entry
+            await queueWrite(url, method, body, "Court Order", detail.title);
+            setOrders(prev => [{ order_id: `offline-${Date.now()}`, matter_id: detail.matter_id, ...body, court_name: body.court_name ?? null, next_date: body.next_date ?? null, created_at: new Date().toISOString(), _offline: true } as CourtOrder, ...prev]);
+            setShowOrderModal(false);
+        }
         finally { setOrderSaving(false); }
     };
 
@@ -2187,7 +2324,32 @@ const MattersPanel = () => {
             sections_after_challan: f.sections_after_challan || "",
             fir_date: f.fir_date || "", notes: f.notes || "",
         } : { ...BLANK_FIR_FN });
+        setFirScanErr(""); setFirScanRawText("");
         setShowFirModal(true);
+    };
+    const scanFirFile = async (file: File) => {
+        setFirScanning(true); setFirScanErr(""); setFirScanRawText("");
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            const r = await fetch("/documents/extract-fir", { method: "POST", headers: authHeaders(), body: fd });
+            const d = await r.json();
+            if (!r.ok) { setFirScanErr(d.error ?? "Could not read that document."); return; }
+            setFirForm(f => ({
+                ...f,
+                fir_number:      d.fir_number      || f.fir_number,
+                police_station:  d.police_station  || f.police_station,
+                district:        d.district        || f.district,
+                io_name:         d.io_name         || f.io_name,
+                complainant:     d.complainant     || f.complainant,
+                arrest_date:     d.arrest_date     || f.arrest_date,
+                sections_at_fir: d.sections_at_fir || f.sections_at_fir,
+                fir_date:        d.fir_date        || f.fir_date,
+                notes: [f.notes, d.accused_name ? `Accused (AI-extracted): ${d.accused_name}` : ""].filter(Boolean).join("\n"),
+            }));
+            setFirScanRawText(d.raw_text || "");
+        } catch { setFirScanErr("Network error while scanning."); }
+        finally { setFirScanning(false); }
     };
     const saveFir = async () => {
         if (!detail) return;
@@ -3385,10 +3547,14 @@ const MattersPanel = () => {
                                             {o.next_date && (
                                                 <div className={styles.orderNextDate}>Next date: <strong>{o.next_date}</strong></div>
                                             )}
-                                            <div className={styles.orderActions}>
-                                                <button className={styles.actionBtn} onClick={() => openOrderModal(o)}>Edit</button>
-                                                <button className={styles.actionBtnDanger} onClick={() => deleteOrder(o)}>Delete</button>
-                                            </div>
+                                            {o._offline ? (
+                                                <div className={styles.muted} style={{ fontSize: "0.78rem", marginTop: "0.3rem" }}>⏳ Saved offline — will sync automatically once you're back online.</div>
+                                            ) : (
+                                                <div className={styles.orderActions}>
+                                                    <button className={styles.actionBtn} onClick={() => openOrderModal(o)}>Edit</button>
+                                                    <button className={styles.actionBtnDanger} onClick={() => deleteOrder(o)}>Delete</button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -4461,7 +4627,14 @@ const MattersPanel = () => {
                 {detailTab === "fir" && (<>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>First Information Reports &amp; police station records</span>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openFirModal()}>+ Add FIR</button>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <label className={styles.btnSecondary} style={{ fontSize: "0.8rem", cursor: "pointer" }}>
+                                📷 Scan FIR (beta)
+                                <input type="file" accept="image/*,.pdf" style={{ display: "none" }}
+                                    onChange={e => { const file = e.target.files?.[0]; if (file) { openFirModal(); scanFirFile(file); } e.target.value = ""; }} />
+                            </label>
+                            <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openFirModal()}>+ Add FIR</button>
+                        </div>
                     </div>
                     {firLoading ? (
                         <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
@@ -4501,6 +4674,13 @@ const MattersPanel = () => {
                     <div className={styles.overlay} onClick={() => setShowFirModal(false)}>
                         <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
                             <div className={styles.modalTitle}>{editFir ? "Edit FIR Record" : "Add FIR Record"}</div>
+                            {firScanning && <div className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.6rem" }}>🔍 Reading document…</div>}
+                            {firScanErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.82rem", marginBottom: "0.6rem" }}>{firScanErr}</div>}
+                            {firScanRawText && !firScanning && (
+                                <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.75rem" }}>
+                                    ✓ Fields below were AI-extracted from the scanned document — please verify each one before saving.
+                                </div>
+                            )}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                                 <div className={styles.formGroup}>
                                     <label className={styles.formLabel}>FIR Number *</label>
@@ -4758,6 +4938,7 @@ const MattersPanel = () => {
                                             {b.bail_order_ref && <span><strong>Order Ref:</strong> {b.bail_order_ref}</span>}
                                         </div>
                                         {b.notes && <div style={{ marginTop: "0.4rem", fontSize: "0.78rem", color: "var(--text-3)", fontStyle: "italic" }}>{b.notes}</div>}
+                                        {detail && <BailChecklist matterId={detail.matter_id} bondId={b.bond_id} />}
                                     </div>
                                 );
                             })}
@@ -5141,6 +5322,37 @@ const MattersPanel = () => {
                     <div className={styles.overlay} onClick={() => setShowOrderModal(false)}>
                         <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
                             <div className={styles.modalTitle}>{editOrder ? "Edit Court Order" : "Add Court Order"}</div>
+
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.85rem", padding: "0.6rem", borderRadius: "var(--radius)", background: "var(--bg-1)", border: "1px solid var(--border)" }}>
+                                {!voiceRecording ? (
+                                    <button type="button" className={styles.btnSecondary} onClick={startVoiceRecording} disabled={voiceProcessing}>
+                                        🎤 Record voice note
+                                    </button>
+                                ) : (
+                                    <button type="button" className={styles.btnPrimary} onClick={stopVoiceRecording} style={{ background: "#c94040", borderColor: "#c94040" }}>
+                                        ⏹ Stop recording…
+                                    </button>
+                                )}
+                                <span className={styles.muted} style={{ fontSize: "0.78rem" }}>
+                                    {voiceProcessing ? "Transcribing…" : "Speak the outcome in Urdu or English — review before it fills the form."}
+                                </span>
+                            </div>
+                            {voiceErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.82rem", marginBottom: "0.75rem" }}>{voiceErr}</div>}
+                            {voiceResult && (
+                                <div style={{ marginBottom: "0.85rem", padding: "0.65rem", borderRadius: "var(--radius)", background: "var(--bg-1)", border: "1px solid var(--gold)" }}>
+                                    <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.3rem" }}>Heard: "{voiceResult.transcript}"</div>
+                                    <div style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                                        <strong>Suggested:</strong> {voiceResult.order_brief}
+                                        {voiceResult.outcome && <> · <strong>{voiceResult.outcome}</strong></>}
+                                        {voiceResult.next_date && <> · Next: <strong>{voiceResult.next_date}</strong></>}
+                                    </div>
+                                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                                        <button type="button" className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={applyVoiceResult}>✓ Use this — fill form</button>
+                                        <button type="button" className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => setVoiceResult(null)}>Discard</button>
+                                    </div>
+                                </div>
+                            )}
+
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                                 <div className={styles.formGroup}>
                                     <label className={styles.formLabel}>Hearing Date *</label>
@@ -5167,6 +5379,12 @@ const MattersPanel = () => {
                             <div className={styles.formGroup}>
                                 <label className={styles.formLabel}>Next Date Fixed</label>
                                 <input type="date" className={styles.formInput} value={orderForm.next_date} onChange={e => setOrderForm(f => ({ ...f, next_date: e.target.value }))} />
+                            </div>
+                            <div className={styles.formGroup} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+                                <input type="checkbox" id="notifyClientWa" checked={orderForm.notify_client} onChange={e => setOrderForm(f => ({ ...f, notify_client: e.target.checked }))} style={{ marginTop: "0.2rem" }} />
+                                <label htmlFor="notifyClientWa" style={{ fontSize: "0.85rem", cursor: "pointer" }}>
+                                    📲 Notify client via WhatsApp{detail?.client_phone ? ` (${detail.client_phone})` : " — no phone number on file for this client"}
+                                </label>
                             </div>
                             {orderErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{orderErr}</div>}
                             <div className={styles.modalActions}>
@@ -5511,6 +5729,47 @@ const PAKISTAN_COURTS = [
 ];
 
 // ── Intelligence Panel — Task #158 ───────────────────────────────────────────
+// Firm's own track record with a judge — computed from this org's own
+// hearings/bail bonds, never external/published data.
+const JudgeStats = ({ judgeId }: { judgeId: string }) => {
+    const [stats, setStats] = useState<{ hearings_count: number; outcome_breakdown: Record<string, number>; adjournment_rate: number | null; bail_bonds_count: number } | null>(null);
+
+    useEffect(() => {
+        fetch(`/judge-notes/${judgeId}/stats`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(setStats)
+            .catch(() => setStats(null));
+    }, [judgeId]);
+
+    if (!stats) return <div className={styles.muted} style={{ fontSize: "0.78rem" }}>Loading track record…</div>;
+
+    if (stats.hearings_count === 0 && stats.bail_bonds_count === 0) {
+        return (
+            <div className={styles.muted} style={{ fontSize: "0.78rem", fontStyle: "italic" }}>
+                No hearing history logged with this judge yet — this builds up automatically as you record hearing outcomes.
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px dashed var(--border)" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-3)", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                Your Firm's History With This Judge
+            </div>
+            <div style={{ fontSize: "0.82rem", display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+                <span>{stats.hearings_count} hearing{stats.hearings_count === 1 ? "" : "s"} logged</span>
+                {stats.adjournment_rate !== null && <span>{stats.adjournment_rate}% adjourned</span>}
+                {stats.bail_bonds_count > 0 && <span>{stats.bail_bonds_count} bail bond{stats.bail_bonds_count === 1 ? "" : "s"}</span>}
+            </div>
+            {Object.keys(stats.outcome_breakdown).length > 0 && (
+                <div style={{ fontSize: "0.76rem", color: "var(--text-2)", marginTop: "0.3rem" }}>
+                    {Object.entries(stats.outcome_breakdown).map(([k, v]) => `${k}: ${v}`).join(" · ")}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const IntelligencePanel = () => {
     type Counsel = { counsel_id: string; name: string; bar_no: string | null; firm_name: string | null; phone: string | null; email: string | null; court_preference: string | null; known_tactics: string | null; private_notes: string | null };
     type Judge   = { judge_id: string; name: string; court_name: string | null; designation: string | null; known_for: string | null; private_notes: string | null };
@@ -5650,6 +5909,7 @@ const IntelligencePanel = () => {
                                         {j.known_for && <div style={{ fontSize: "0.82rem", marginBottom: "0.25rem" }}><strong>Known For:</strong> {j.known_for}</div>}
                                         {j.private_notes && <div style={{ fontSize: "0.82rem", color: "var(--text-2)", fontStyle: "italic" }}>{j.private_notes}</div>}
                                         {!j.known_for && !j.private_notes && <div className={styles.muted} style={{ fontSize: "0.8rem" }}>No detailed notes yet.</div>}
+                                        <JudgeStats judgeId={j.judge_id} />
                                     </div>
                                 )}
                             </div>
@@ -5843,6 +6103,7 @@ const CauseListPanel = () => {
     const [parseResult, setParseResult] = useState<{ total: number; matched: number } | null>(null);
     const [filterDate, setFilterDate] = useState(new Date().toISOString().slice(0, 10));
     const [text,       setText]       = useState("");
+    const [file,       setFile]       = useState<File | null>(null);
     const [listDate,   setListDate]   = useState(new Date().toISOString().slice(0, 10));
     const [courtName,  setCourtName]  = useState("");
     const [showInput,  setShowInput]  = useState(false);
@@ -5867,19 +6128,28 @@ const CauseListPanel = () => {
     useEffect(() => { loadEntries(filterDate); loadMatters(); }, []);
 
     const parseCauseList = async () => {
-        if (!text.trim()) { setParseErr("Please paste the cause list text first."); return; }
+        if (!text.trim() && !file) { setParseErr("Paste the cause list text or upload a photo/PDF first."); return; }
         setParsing(true); setParseErr(""); setParseResult(null);
         try {
-            const r = await fetch("/cause-list/parse", {
-                method: "POST",
-                headers: { ...authHeaders(), "Content-Type": "application/json" },
-                body: JSON.stringify({ text, list_date: listDate, court_name: courtName }),
-            });
+            let r: Response;
+            if (file) {
+                const fd = new FormData();
+                fd.append("file", file);
+                fd.append("list_date", listDate);
+                fd.append("court_name", courtName);
+                r = await fetch("/cause-list/parse", { method: "POST", headers: authHeaders(), body: fd });
+            } else {
+                r = await fetch("/cause-list/parse", {
+                    method: "POST",
+                    headers: { ...authHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify({ text, list_date: listDate, court_name: courtName }),
+                });
+            }
             const d = await r.json();
             if (!r.ok) { setParseErr(d.error ?? "Parse failed."); }
             else {
                 setParseResult({ total: d.total_count, matched: d.matched_count });
-                setShowInput(false); setText("");
+                setShowInput(false); setText(""); setFile(null);
                 setFilterDate(listDate);
                 loadEntries(listDate);
             }
@@ -5934,7 +6204,7 @@ const CauseListPanel = () => {
                 <div className={styles.settingsCard} style={{ marginBottom: "1.25rem" }}>
                     <div className={styles.settingsCardTitle}>Import Cause List</div>
                     <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.75rem" }}>
-                        Paste the plain text of any Pakistani court's cause list. Case numbers will be detected automatically and matched against your matters.
+                        Paste the plain text of any Pakistani court's cause list, or upload a photo/PDF and let OCR read it. Case numbers will be detected automatically and matched against your matters — matched matters get sent to you automatically as a WhatsApp digest at 8am.
                     </p>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
                         <div className={styles.formGroup}>
@@ -5952,8 +6222,19 @@ const CauseListPanel = () => {
                     <div className={styles.formGroup}>
                         <label className={styles.formLabel}>Cause List Text</label>
                         <textarea className={styles.formInput} rows={10} style={{ resize: "vertical", fontFamily: "monospace", fontSize: "0.8rem" }}
-                            value={text} onChange={e => setText(e.target.value)}
+                            value={text} onChange={e => { setText(e.target.value); if (e.target.value) setFile(null); }}
+                            disabled={!!file}
                             placeholder={"Paste cause list text here…\n\nExample:\n1. W.P. No. 1234/2024 — Muhammad Ali v Federation of Pakistan\n2. C.S. No. 89/2023 — ABC Ltd v XYZ Ltd"} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>— or upload a photo / scanned PDF —</label>
+                        <input type="file" accept="image/*,.pdf" className={styles.formInput}
+                            onChange={e => { const f = e.target.files?.[0] ?? null; setFile(f); if (f) setText(""); }} />
+                        {file && (
+                            <p className={styles.muted} style={{ fontSize: "0.78rem", marginTop: "0.35rem" }}>
+                                📎 {file.name} — will be read automatically (OCR). <button type="button" className={styles.btnGhost} style={{ padding: "0.1rem 0.5rem", fontSize: "0.75rem" }} onClick={() => setFile(null)}>Remove</button>
+                            </p>
+                        )}
                     </div>
                     {parseErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{parseErr}</div>}
                     <div className={styles.modalActions}>
@@ -7406,6 +7687,8 @@ interface Hearing {
     hearing_outcome:     string | null;
     adj_reason:          string | null;
     next_date_fixed_by:  string | null;
+    assigned_to:         string | null;
+    assigned_to_name:    string | null;
 }
 
 interface Deadline {
@@ -7448,6 +7731,7 @@ const CalendarPanel = () => {
     const [hearings,  setHearings]  = useState<Hearing[]>([]);
     const [deadlines, setDeadlines] = useState<Deadline[]>([]);
     const [matters,   setMatters]   = useState<{ matter_id: string; title: string }[]>([]);
+    const [teamMembers, setTeamMembers] = useState<{ user_id: string; name: string }[]>([]);
     const [loading,   setLoading]   = useState(true);
     const [selected,  setSelected]  = useState<string | null>(null);  // YYYY-MM-DD
 
@@ -7469,6 +7753,18 @@ const CalendarPanel = () => {
     const [fOutcome,   setFOutcome]   = useState("");          // Task #163
     const [fAdjReason, setFAdjReason] = useState("");          // Task #163
     const [fNextBy,    setFNextBy]    = useState("");          // Task #164
+    const [fAssignedTo, setFAssignedTo] = useState("");        // Associate dispatch
+
+    // Bulk WhatsApp — court holiday notice
+    const [showHolidayModal, setShowHolidayModal] = useState(false);
+    const [holidayFrom, setHolidayFrom] = useState("");
+    const [holidayTo,   setHolidayTo]   = useState("");
+    const [holidayMsg,  setHolidayMsg]  = useState("");
+    const [holidayPreview, setHolidayPreview] = useState<{ client_id: string; client_name: string; matter_titles: string }[] | null>(null);
+    const [holidayLoading, setHolidayLoading] = useState(false);
+    const [holidaySending, setHolidaySending] = useState(false);
+    const [holidayResult,  setHolidayResult]  = useState<{ notified: number; failed: number; skipped_no_phone: number } | null>(null);
+    const [holidayErr,     setHolidayErr]     = useState("");
     const [fSaving,    setFSaving]    = useState(false);
     const [fErr,       setFErr]       = useState("");
 
@@ -7481,10 +7777,12 @@ const CalendarPanel = () => {
             fetch(`/hearings?from_date=${fromDate}&to_date=${toDate}`, { headers: authHeaders() }).then(r => r.json()),
             fetch(`/deadlines?from_date=${fromDate}&to_date=${toDate}`, { headers: authHeaders() }).then(r => r.json()),
             fetch("/matters", { headers: authHeaders() }).then(r => r.json()),
-        ]).then(([h, d, m]) => {
+            fetch("/team", { headers: authHeaders() }).then(r => r.json()).catch(() => ({ members: [] })),
+        ]).then(([h, d, m, t]) => {
             setHearings(Array.isArray(h) ? h : []);
             setDeadlines(Array.isArray(d) ? d : []);
-            setMatters(Array.isArray(m) ? m.map((x: any) => ({ matter_id: x.matter_id, title: x.title })) : []);
+            setMatters((m.matters ?? []).map((x: any) => ({ matter_id: x.matter_id, title: x.title })));
+            setTeamMembers((t.members ?? []).map((x: any) => ({ user_id: x.user_id, name: x.name })));
             setLoading(false);
         }).catch(() => setLoading(false));
     };
@@ -7516,7 +7814,7 @@ const CalendarPanel = () => {
     const openAdd = (kind: "hearing" | "deadline", date?: string) => {
         setFTitle(""); setFDate(date ?? ""); setFTime(""); setFCourt(""); setFJudge("");
         setFDLType("Filing"); setFMatter(""); setFNotes(""); setFWA(false);
-        setFOutcome(""); setFAdjReason(""); setFNextBy("");
+        setFOutcome(""); setFAdjReason(""); setFNextBy(""); setFAssignedTo("");
         setFErr(""); setEditTarget(null);
         setModal(kind === "hearing" ? "add-hearing" : "add-deadline");
     };
@@ -7530,6 +7828,7 @@ const CalendarPanel = () => {
             setFMatter(ev.matter_id ?? ""); setFNotes(ev.notes ?? "");
             setFWA(!!ev.wa_reminder);
             setFOutcome(ev.hearing_outcome ?? ""); setFAdjReason(ev.adj_reason ?? ""); setFNextBy(ev.next_date_fixed_by ?? "");
+            setFAssignedTo(ev.assigned_to ?? "");
             setModal("edit-hearing");
         } else {
             setFTitle(ev.title); setFDate(ev.due_date); setFDLType(ev.deadline_type);
@@ -7539,6 +7838,38 @@ const CalendarPanel = () => {
     };
 
     const closeModal = () => { setModal(null); setEditTarget(null); };
+
+    const openHolidayModal = () => {
+        setHolidayFrom(todayStr); setHolidayTo(todayStr); setHolidayMsg("");
+        setHolidayPreview(null); setHolidayResult(null); setHolidayErr("");
+        setShowHolidayModal(true);
+    };
+
+    const loadHolidayPreview = async () => {
+        if (!holidayFrom) return;
+        setHolidayLoading(true); setHolidayErr(""); setHolidayResult(null);
+        try {
+            const r = await fetch(`/calendar/notify-holiday/preview?from_date=${holidayFrom}&to_date=${holidayTo || holidayFrom}`, { headers: authHeaders() });
+            const d = await r.json();
+            if (!r.ok) setHolidayErr(d.error ?? "Could not load preview.");
+            else setHolidayPreview(d.clients ?? []);
+        } catch { setHolidayErr("Network error."); }
+        finally { setHolidayLoading(false); }
+    };
+
+    const sendHolidayNotify = async () => {
+        setHolidaySending(true); setHolidayErr("");
+        try {
+            const r = await fetch("/calendar/notify-holiday", {
+                method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ from_date: holidayFrom, to_date: holidayTo || holidayFrom, message: holidayMsg || undefined }),
+            });
+            const d = await r.json();
+            if (!r.ok) setHolidayErr(d.error ?? "Send failed.");
+            else setHolidayResult(d);
+        } catch { setHolidayErr("Network error."); }
+        finally { setHolidaySending(false); }
+    };
 
     const saveHearing = async () => {
         if (!fTitle.trim() || !fDate) { setFErr("Title and date are required."); return; }
@@ -7551,6 +7882,7 @@ const CalendarPanel = () => {
             hearing_outcome: fOutcome || undefined,
             adj_reason: fAdjReason || undefined,
             next_date_fixed_by: fNextBy || undefined,
+            assigned_to: fAssignedTo || undefined,
         };
         try {
             let r: Response;
@@ -7654,6 +7986,10 @@ const CalendarPanel = () => {
                         <button className={styles.btnGhost} style={{ marginLeft: "auto", fontSize: "0.8rem", padding: "0.3rem 0.75rem" }}
                             onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelected(todayStr); }}>
                             Today
+                        </button>
+                        <button className={styles.btnSecondary} style={{ fontSize: "0.8rem", padding: "0.3rem 0.75rem", background: "#25d366", color: "#fff", borderColor: "#25d366" }}
+                            onClick={openHolidayModal} title="Notify all clients with hearings/deadlines in a date range that court is closed">
+                            📢 Notify Clients — Court Holiday
                         </button>
                     </div>
 
@@ -7853,6 +8189,18 @@ const CalendarPanel = () => {
                                 <input className={styles.formInput} value={fAdjReason} onChange={e => setFAdjReason(e.target.value)} placeholder="e.g. Counsel not available, court summoned, on application of plaintiff…" />
                             </div>
                         )}
+                        {modal?.includes("hearing") && (
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Assign to (associate dispatch)</label>
+                                <select className={styles.formSelect} value={fAssignedTo} onChange={e => setFAssignedTo(e.target.value)}>
+                                    <option value="">— Not assigned —</option>
+                                    {teamMembers.map(m => <option key={m.user_id} value={m.user_id}>{m.name}</option>)}
+                                </select>
+                                <p className={styles.muted} style={{ fontSize: "0.76rem", marginTop: "0.25rem" }}>
+                                    The assigned team member will see this in "My Court Assignments" and can mark the outcome from their portal — you'll get a WhatsApp when they do.
+                                </p>
+                            </div>
+                        )}
 
                         {/* Linked matter */}
                         <div className={styles.formGroup}>
@@ -7884,6 +8232,75 @@ const CalendarPanel = () => {
                                 onClick={modal?.includes("hearing") ? saveHearing : saveDeadline}>
                                 {fSaving ? "Saving…" : (modal?.startsWith("edit") ? "Save Changes" : "Add")}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Bulk WhatsApp: Court Holiday notice ── */}
+            {showHolidayModal && (
+                <div className={styles.overlay} onClick={() => setShowHolidayModal(false)}>
+                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+                        <div className={styles.modalTitle}>📢 Notify Clients — Court Holiday</div>
+                        <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.85rem" }}>
+                            Every client with a hearing or deadline in this date range gets a WhatsApp notice that court is closed — one click instead of messaging each client by hand.
+                        </p>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>From</label>
+                                <input type="date" className={styles.formInput} value={holidayFrom} onChange={e => { setHolidayFrom(e.target.value); setHolidayPreview(null); }} />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>To</label>
+                                <input type="date" className={styles.formInput} value={holidayTo} onChange={e => { setHolidayTo(e.target.value); setHolidayPreview(null); }} />
+                            </div>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Message (optional — default holiday notice used if blank)</label>
+                            <textarea className={styles.formInput} rows={3} style={{ resize: "vertical" }} value={holidayMsg} onChange={e => setHolidayMsg(e.target.value)}
+                                placeholder="e.g. Court will remain closed on 14 August (Independence Day). Hearings will be rescheduled." />
+                        </div>
+
+                        {holidayPreview === null ? (
+                            <button className={styles.btnSecondary} onClick={loadHolidayPreview} disabled={holidayLoading || !holidayFrom}>
+                                {holidayLoading ? "Loading…" : "Preview affected clients"}
+                            </button>
+                        ) : holidayResult ? (
+                            <div className={styles.limAlertBanner} style={{ background: "var(--bg-1)", borderColor: "#2d8a4e" }}>
+                                ✅ Sent to {holidayResult.notified} client{holidayResult.notified === 1 ? "" : "s"}.
+                                {holidayResult.failed > 0 && ` ${holidayResult.failed} failed.`}
+                                {holidayResult.skipped_no_phone > 0 && ` ${holidayResult.skipped_no_phone} had no phone on file.`}
+                            </div>
+                        ) : (
+                            <div style={{ marginBottom: "0.75rem" }}>
+                                {holidayPreview.length === 0 ? (
+                                    <div className={styles.emptyHint}>No clients have a hearing or deadline in this range — nothing to send.</div>
+                                ) : (
+                                    <>
+                                        <div style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.4rem" }}>
+                                            {holidayPreview.length} client{holidayPreview.length === 1 ? "" : "s"} will be notified:
+                                        </div>
+                                        <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                                            {holidayPreview.map(c => (
+                                                <div key={c.client_id} style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>
+                                                    • {c.client_name} <span className={styles.muted}>({c.matter_titles})</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        {holidayErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{holidayErr}</div>}
+
+                        <div className={styles.modalActions}>
+                            <button className={styles.btnGhost} onClick={() => setShowHolidayModal(false)}>{holidayResult ? "Close" : "Cancel"}</button>
+                            {holidayPreview !== null && holidayPreview.length > 0 && !holidayResult && (
+                                <button className={styles.btnPrimary} disabled={holidaySending} onClick={sendHolidayNotify}>
+                                    {holidaySending ? "Sending…" : `Send to ${holidayPreview.length} client${holidayPreview.length === 1 ? "" : "s"}`}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -8440,6 +8857,46 @@ const SettingsPanel = ({
     const [teamErr,       setTeamErr]       = useState<string | null>(null);
     const [addMemberSelects, setAddMemberSelects] = useState<Record<string, string>>({});
 
+    // Bail checklist stages (configurable, default = 6-stage flow)
+    const [bailStages,    setBailStages]    = useState<BailStage[]>([]);
+    const [newStageLabel, setNewStageLabel] = useState("");
+    const [stageSaving,   setStageSaving]   = useState(false);
+
+    const loadBailStages = () => {
+        fetch("/bail-stages?all=1", { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => setBailStages(d.stages ?? []))
+            .catch(() => {});
+    };
+
+    const addBailStage = async () => {
+        if (!newStageLabel.trim()) return;
+        setStageSaving(true);
+        try {
+            await fetch("/bail-stages", {
+                method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ label: newStageLabel.trim() }),
+            });
+            setNewStageLabel("");
+            loadBailStages();
+        } finally { setStageSaving(false); }
+    };
+
+    const renameBailStage = async (stageKey: string, label: string) => {
+        await fetch(`/bail-stages/${stageKey}`, {
+            method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ label }),
+        });
+    };
+
+    const toggleBailStageActive = async (stage: any) => {
+        await fetch(`/bail-stages/${stage.stage_key}`, {
+            method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ is_active: stage.is_active ? 0 : 1 }),
+        });
+        loadBailStages();
+    };
+
     useEffect(() => {
         Promise.all([
             fetch("/matter-teams", { headers: authHeaders() }).then(r => r.json()),
@@ -8451,6 +8908,7 @@ const SettingsPanel = ({
                 role: m.role, joined: m.created_at ?? "",
             })));
         }).catch(() => {});
+        loadBailStages();
     }, []);
 
     const toggleExpand = (id: string) =>
@@ -8761,6 +9219,34 @@ const SettingsPanel = ({
                             })}
                         </div>
                     )}
+                </div>
+
+                {/* ── Bail Checklist Stages ── */}
+                <div className={styles.settingsCard} style={{ gridColumn: "1 / -1" }}>
+                    <div className={styles.settingsCardTitle}>Bail Checklist Stages</div>
+                    <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.85rem" }}>
+                        The step-by-step tracker shown on every bail bond. Defaults to Surety Identification → CNIC Verification → Property Valuation → Surety Appearance → Court Filing → Result — rename or add stages to match how your firm actually works; existing bonds keep their progress.
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginBottom: "0.85rem" }}>
+                        {bailStages.map(s => (
+                            <div key={s.stage_key} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <span style={{ color: "var(--text-3)", fontSize: "0.78rem", width: 20 }}>{s.sort_order + 1}.</span>
+                                <input className={styles.formInput} style={{ flex: 1, fontSize: "0.85rem", padding: "0.3rem 0.6rem", opacity: s.is_active ? 1 : 0.5 }}
+                                    defaultValue={s.label}
+                                    onBlur={e => { if (e.target.value.trim() && e.target.value !== s.label) renameBailStage(s.stage_key, e.target.value.trim()); }} />
+                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }} onClick={() => toggleBailStageActive(s)}>
+                                    {s.is_active ? "Deactivate" : "Reactivate"}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <input className={styles.formInput} style={{ flex: 1 }} value={newStageLabel} onChange={e => setNewStageLabel(e.target.value)}
+                            onKeyDown={e => e.key === "Enter" && addBailStage()} placeholder="Add a custom stage…" />
+                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} disabled={stageSaving || !newStageLabel.trim()} onClick={addBailStage}>
+                            + Add
+                        </button>
+                    </div>
                 </div>
 
                 <div className={styles.settingsCard}>
@@ -9347,18 +9833,19 @@ const DiaryPanel = () => {
     const [deadlines, setDeadlines]   = useState<DiaryDeadline[]>([]);
     const [loading, setLoading]       = useState(false);
     const [err, setErr]               = useState<string | null>(null);
+    const [showingCached, setShowingCached] = useState<string | null>(null);  // cachedAt timestamp, or null if live
 
     const loadDiary = async (d: string) => {
-        setLoading(true); setErr(null);
+        setLoading(true); setErr(null); setShowingCached(null);
         try {
-            const token = localStorage.getItem("token") || "";
-            const r = await fetch(`/diary/${d}`, { headers: { Authorization: `Bearer ${token}` } });
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            const data = await r.json();
+            const { data, fromCache, cachedAt } = await fetchWithCache<{ hearings: DiaryHearing[]; deadlines: DiaryDeadline[] }>(
+                `/diary/${d}`, `diary:${d}`, authHeaders()
+            );
             setHearings(data.hearings  || []);
             setDeadlines(data.deadlines || []);
+            if (fromCache && cachedAt) setShowingCached(new Date(cachedAt).toLocaleString());
         } catch (e: any) {
-            setErr(e.message || "Failed to load diary");
+            setErr(e.message || "Failed to load diary — no offline copy available for this date yet.");
         } finally { setLoading(false); }
     };
 
@@ -9420,10 +9907,9 @@ const DiaryPanel = () => {
         if (!briefNumber.trim()) { setBriefStatus({ ok: false, msg: "Please enter a WhatsApp number." }); return; }
         setBriefSending(true); setBriefStatus(null);
         try {
-            const token = localStorage.getItem("token") || "";
             const r = await fetch("/diary/send-brief", {
                 method: "POST",
-                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
                 body: JSON.stringify({ to_number: briefNumber.trim(), date }),
             });
             const data = await r.json();
@@ -9472,6 +9958,12 @@ const DiaryPanel = () => {
                     {total === 0 ? "— Clear day" : `${total} item${total !== 1 ? "s" : ""}`}
                 </span>}
             </div>
+            {showingCached && (
+                <div className={styles.limAlertBanner} style={{ background: "var(--bg-1)", borderColor: "#c97c2a", marginBottom: "0.75rem", fontSize: "0.82rem" }}>
+                    📴 Showing offline copy from {showingCached} — reconnect to refresh.
+                </div>
+            )}
+            {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.85rem", marginBottom: "0.75rem" }}>{err}</div>}
 
             {loading && <p className={styles.emptyState}>Loading…</p>}
             {err    && <p style={{ color: "#e53e3e", padding: 12 }}>{err}</p>}
@@ -10280,6 +10772,9 @@ const OwnerPortal = () => {
     const [loading,  setLoading]  = useState(true);
     const [navOpen,  setNavOpen]  = useState(false);  // mobile sidebar toggle
     const [lang,     setLang]     = useState<"en" | "ur">("en");  // Task #173
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+    const [offlinePendingCount, setOfflinePendingCount] = useState(0);
+    const [offlineSyncNotice,   setOfflineSyncNotice]   = useState<string | null>(null);
 
     const raw  = sessionStorage.getItem("pe_user");
     const user = raw ? JSON.parse(raw) as { name: string; email: string; role: string; org: string } : { name: "Owner", email: "", role: "org_owner", org: "" };
@@ -10351,6 +10846,32 @@ const OwnerPortal = () => {
         });
     }, [docs]);
 
+    // Offline write queue: track connectivity + pending count, auto-flush on reconnect/focus.
+    useEffect(() => {
+        const goOnline  = () => setIsOnline(true);
+        const goOffline = () => setIsOnline(false);
+        window.addEventListener("online", goOnline);
+        window.addEventListener("offline", goOffline);
+
+        const refreshCount = () => { getPendingCount().then(setOfflinePendingCount); };
+        window.addEventListener("pe-offline-queued", refreshCount);
+        refreshCount();
+
+        const cleanupSync = initOfflineSync(authHeaders, (res) => {
+            setOfflineSyncNotice(`✅ Synced ${res.flushed} queued update${res.flushed === 1 ? "" : "s"}.`);
+            window.dispatchEvent(new CustomEvent("pe-offline-flushed"));
+            refreshCount();
+            setTimeout(() => setOfflineSyncNotice(null), 6000);
+        });
+
+        return () => {
+            window.removeEventListener("online", goOnline);
+            window.removeEventListener("offline", goOffline);
+            window.removeEventListener("pe-offline-queued", refreshCount);
+            cleanupSync();
+        };
+    }, []);
+
     const signOut = () => {
         const token = sessionStorage.getItem("pe_token") ?? "";
         fetch("/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
@@ -10376,6 +10897,22 @@ const OwnerPortal = () => {
 
     return (
         <div className={styles.shell}>
+            {/* Offline / sync status banner */}
+            {(!isOnline || offlinePendingCount > 0 || offlineSyncNotice) && (
+                <div style={{
+                    position: "fixed", top: 0, left: 0, right: 0, zIndex: 500,
+                    textAlign: "center", padding: "0.4rem 1rem", fontSize: "0.82rem", fontWeight: 600,
+                    background: offlineSyncNotice ? "#2d8a4e" : (!isOnline ? "#c97c2a" : "var(--gold)"),
+                    color: "#fff",
+                }}>
+                    {offlineSyncNotice
+                        ? offlineSyncNotice
+                        : !isOnline
+                            ? `📴 You're offline — hearing outcomes you log will be saved on this device and synced automatically once you're back online.${offlinePendingCount > 0 ? ` (${offlinePendingCount} queued)` : ""}`
+                            : `⏳ ${offlinePendingCount} update${offlinePendingCount === 1 ? "" : "s"} queued from earlier — syncing…`}
+                </div>
+            )}
+
             {/* Mobile top bar */}
             <div className={styles.mobileTopBar}>
                 <button className={styles.hamburger} onClick={() => setNavOpen(v => !v)} aria-label="Menu">
