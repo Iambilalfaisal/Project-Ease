@@ -161,7 +161,3 @@ data/**/*.md5
 # Compiled Bicep output (from `az bicep build`)
 infra/main.json
 infra/main.test.json
-branch_structure.json
-temp_auto_push.bat
-temp_interactive_push.bat
-.gitignore
