@@ -1,3 +1,33 @@
+# Project-Ease — AI-Powered Legal Practice Management Platform
+
+> Built on Microsoft's [azure-search-openai-demo](https://github.com/Azure-Samples/azure-search-openai-demo), extended into a full legal ERP for Pakistani law firms.
+
+## What Project-Ease actually is
+
+Multi-tenant AI platform for law firms — query your own document archive in plain English, get answers cited back to the source paragraph. Plus a full legal practice management ERP built around it: case/matter tracking, hearings, deadlines, billing, and client communication.
+
+## What I built beyond the Microsoft base
+
+- **Multi-tenant retrieval** — org-scoped isolation over a shared PLD/SCMR/MLD/CLC case-law corpus, enforced server-side from the JWT's `organization_id` claim (never trusts a client-supplied override) in a single hybrid BM25 + vector + semantic query — [`app/backend/approaches/approach.py`](app/backend/approaches/approach.py)
+- **Two-pass anti-hallucination verification** — a second temperature-0 LLM call verifies every answer against retrieved sources before the user sees it
+- **RAGAS evaluation harness** — faithfulness, answer relevancy, and context-precision scoring — [`app/backend/evals/`](app/backend/evals/), [`evals/`](evals/)
+- **FIR & police station tracking** with OCR-assisted extraction (Azure AI Document Intelligence)
+- **Bail bonds tracker** (Pre-Arrest / Post-Arrest / Anticipatory / Interim / Regular / Transit) with per-org checklists
+- **Vakalatnama register** + Punjab Court Fees Act slab-based fee calculator
+- **WhatsApp/Twilio client communication** with Whisper voice transcription and scheduled hearing/deadline reminders
+- **27-tab matter lifecycle** — hearings, deadlines, fees, documents, court orders, adverse-party tracking, time billing, conflict checker, charge/section tracker, and more, all per case
+- **Urdu/RTL UI** with auto-detection and language-matching AI responses (EN/اردو toggle)
+- **Multi-tenant SaaS infrastructure** — per-seat plan enforcement, JazzCash/Easypaisa billing, audit logging, feature flags per org
+
+## Stack
+
+Python · Quart (async) · Azure OpenAI · Azure AI Search · Azure AI Document Intelligence
+React 19 · TypeScript · RAGAS · Multi-tenant RAG · Microsoft Entra
+
+---
+
+# Original Microsoft README below
+
 <!--
 ---
 name: RAG chat app with your data (Python)
