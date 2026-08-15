@@ -23,9 +23,7 @@ const ROLE_LABELS: Record<string, string> = {
     employee:       "Employee",
 };
 
-const ORG_DISPLAY_NAMES: Record<string, string> = {
-    lawfirm: "Hassan & Associates",
-};
+const ORG_DISPLAY_NAMES: Record<string, string> = {};
 
 // ── Org context pill shown in the centre of the header ────────────────────────
 

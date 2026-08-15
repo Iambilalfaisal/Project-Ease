@@ -7304,7 +7304,7 @@ const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
                         )}
                         <div className={styles.formGroup}>
                             <label className={styles.formLabel}>Full Name</label>
-                            <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Hassan Nasir" />
+                            <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ali Raza" />
                         </div>
                         <div className={styles.formGroup}>
                             <label className={styles.formLabel}>Email Address</label>

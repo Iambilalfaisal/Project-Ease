@@ -289,8 +289,8 @@ export default function Compliance() {
                             <span className={styles.contactIcon}>📧</span>
                             <div>
                                 <div className={styles.contactLabel}>Email</div>
-                                <a href="mailto:hasan.nasir.acmeone@gmail.com" className={styles.contactLink}>
-                                    hasan.nasir.acmeone@gmail.com
+                                <a href="mailto:Bilalfaisal100@gmail.com" className={styles.contactLink}>
+                                    Bilalfaisal100@gmail.com
                                 </a>
                             </div>
                         </div>
@@ -298,8 +298,8 @@ export default function Compliance() {
                             <span className={styles.contactIcon}>💬</span>
                             <div>
                                 <div className={styles.contactLabel}>WhatsApp</div>
-                                <a href="https://wa.me/923000000000" className={styles.contactLink} target="_blank" rel="noreferrer">
-                                    +92 300 000 0000
+                                <a href="https://wa.me/923224255722" className={styles.contactLink} target="_blank" rel="noreferrer">
+                                    +92 322 425 5722
                                 </a>
                             </div>
                         </div>
@@ -317,7 +317,7 @@ export default function Compliance() {
                 <div className={styles.footerLinks}>
                     <a href="/#/" className={styles.footerLink}>Home</a>
                     <a href="/#/compliance" className={styles.footerLink}>Compliance</a>
-                    <a href="mailto:hasan.nasir.acmeone@gmail.com" className={styles.footerLink}>Contact</a>
+                    <a href="mailto:Bilalfaisal100@gmail.com" className={styles.footerLink}>Contact</a>
                 </div>
             </footer>
         </div>

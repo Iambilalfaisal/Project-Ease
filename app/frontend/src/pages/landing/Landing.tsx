@@ -1,4 +1,4 @@
-import { useState, useEffect, KeyboardEvent } from "react";
+import { useState, useEffect, KeyboardEvent, MouseEvent } from "react";
 import styles from "./Landing.module.css";
 
 type Modal = "signin" | "signup" | "demo" | "forgot" | "reset" | null;
@@ -205,6 +205,15 @@ const Landing = () => {
     const open  = (m: Modal) => { setModal(m); setDemoSent(false); };
     const close = ()          => setModal(null);
 
+    // Plain href="#id" anchors don't work here — this app uses createHashRouter,
+    // so the hash IS the router's path and "#features" gets matched as a route
+    // (there is none), landing on the router's default 404 instead of scrolling.
+    // Scroll manually and never touch location.hash.
+    const scrollToSection = (id: string) => (e: MouseEvent) => {
+        e.preventDefault();
+        document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    };
+
     return (
         <div className={styles.page}>
 
@@ -215,16 +224,16 @@ const Landing = () => {
                 </span>
 
                 <ul className={styles.navLinks}>
-                    <li><a href="#features">Features</a></li>
-                    <li><a href="#pld">PLD / SCMR</a></li>
-                    <li><a href="#pricing">Pricing</a></li>
-                    <li><a href="#security">Security</a></li>
-                    <li><a href="#contact">Contact</a></li>
+                    <li><a href="#features" onClick={scrollToSection("features")}>Features</a></li>
+                    <li><a href="#pld" onClick={scrollToSection("pld")}>PLD / SCMR</a></li>
+                    <li><a href="#pricing" onClick={scrollToSection("pricing")}>Pricing</a></li>
+                    <li><a href="#security" onClick={scrollToSection("security")}>Security</a></li>
+                    <li><a href="#contact" onClick={scrollToSection("contact")}>Contact</a></li>
                 </ul>
 
                 <div className={styles.navActions}>
                     <a
-                        href="https://wa.me/923000000000?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
+                        href="https://wa.me/923224255722?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
                         className={styles.btnWa}
                         target="_blank"
                         rel="noreferrer"
@@ -266,7 +275,7 @@ const Landing = () => {
                             Start 14-Day Free Trial &nbsp;→
                         </button>
                         <a
-                            href="https://wa.me/923000000000?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
+                            href="https://wa.me/923224255722?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
                             className={`${styles.btnWa} ${styles.btnWaLg}`}
                             target="_blank"
                             rel="noreferrer"
@@ -547,17 +556,17 @@ const Landing = () => {
                                 <div className={styles.formRow}>
                                     <div className={styles.formGroup}>
                                         <label className={styles.formLabel}>First Name</label>
-                                        <input className={styles.formInput} type="text" placeholder="Hassan" />
+                                        <input className={styles.formInput} type="text" placeholder="Ali" />
                                     </div>
                                     <div className={styles.formGroup}>
                                         <label className={styles.formLabel}>Last Name</label>
-                                        <input className={styles.formInput} type="text" placeholder="Nasir" />
+                                        <input className={styles.formInput} type="text" placeholder="Raza" />
                                     </div>
                                 </div>
 
                                 <div className={styles.formGroup}>
                                     <label className={styles.formLabel}>Firm / Company Name</label>
-                                    <input className={styles.formInput} type="text" placeholder="Hassan & Associates" />
+                                    <input className={styles.formInput} type="text" placeholder="Raza & Co" />
                                 </div>
 
                                 <div className={styles.formGroup}>
@@ -615,7 +624,7 @@ const Landing = () => {
                     </p>
                     <div className={styles.contactCards}>
                         <a
-                            href="https://wa.me/923000000000?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
+                            href="https://wa.me/923224255722?text=Hi%2C%20I%27d%20like%20to%20learn%20more%20about%20Project%20Ease"
                             className={`${styles.contactCard} ${styles.contactCardWa}`}
                             target="_blank"
                             rel="noreferrer"
@@ -624,10 +633,10 @@ const Landing = () => {
                             <span className={styles.contactCardLabel}>WhatsApp Us</span>
                             <span className={styles.contactCardValue}>Fastest response · Usually within 1 hour</span>
                         </a>
-                        <a href="mailto:hasan.nasir.acmeone@gmail.com" className={styles.contactCard}>
+                        <a href="mailto:Bilalfaisal100@gmail.com" className={styles.contactCard}>
                             <span className={styles.contactIcon}>✉</span>
                             <span className={styles.contactCardLabel}>Email Us</span>
-                            <span className={styles.contactCardValue}>hasan.nasir.acmeone@gmail.com</span>
+                            <span className={styles.contactCardValue}>Bilalfaisal100@gmail.com</span>
                         </a>
                         <div className={styles.contactCard} onClick={() => open("demo")} style={{ cursor: "pointer" }}>
                             <span className={styles.contactIcon}>📅</span>
@@ -646,8 +655,8 @@ const Landing = () => {
                     <a href="/#/compliance" className={styles.footerContact} style={{ marginRight: "1.25rem" }}>
                         Compliance & Security
                     </a>
-                    <a href="mailto:hasan.nasir.acmeone@gmail.com" className={styles.footerContact}>
-                        hasan.nasir.acmeone@gmail.com
+                    <a href="mailto:Bilalfaisal100@gmail.com" className={styles.footerContact}>
+                        Bilalfaisal100@gmail.com
                     </a>
                 </div>
             </footer>
@@ -1092,7 +1101,7 @@ const SignUpForm = ({ onSignIn }: { onSignIn: () => void }) => {
                     </div>
                     <div className={styles.formGroup}>
                         <label className={styles.formLabel}>Your Full Name <span className={styles.required}>*</span></label>
-                        <input className={styles.formInput} type="text" placeholder="Hassan Nasir"
+                        <input className={styles.formInput} type="text" placeholder="Ali Raza"
                             value={ownerName} onChange={e => setOwnerName(e.target.value)} />
                     </div>
                     <div className={styles.formGroup}>
@@ -1207,17 +1216,17 @@ const DemoModal = ({
             <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                     <label className={styles.formLabel}>First Name</label>
-                    <input className={styles.formInput} type="text" placeholder="Hassan" />
+                    <input className={styles.formInput} type="text" placeholder="Ali" />
                 </div>
                 <div className={styles.formGroup}>
                     <label className={styles.formLabel}>Last Name</label>
-                    <input className={styles.formInput} type="text" placeholder="Nasir" />
+                    <input className={styles.formInput} type="text" placeholder="Raza" />
                 </div>
             </div>
 
             <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Firm Name</label>
-                <input className={styles.formInput} type="text" placeholder="Hassan & Associates" />
+                <input className={styles.formInput} type="text" placeholder="Raza & Co" />
             </div>
 
             <div className={styles.formGroup}>
