@@ -3,7 +3,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any, TypeVar, cast
 
-from quart import abort, current_app, request
+from quart import abort, current_app, jsonify, request
 
 from config import CONFIG_AUTH_CLIENT, CONFIG_SEARCH_CLIENT
 from core.authentication import AuthError
@@ -18,8 +18,10 @@ def authenticated_path(route_fn: Callable[[str, dict[str, Any]], Any]):
     @wraps(route_fn)
     async def auth_handler(path=""):
         # If authentication is enabled, validate the user can access the file
-        auth_helper = current_app.config[CONFIG_AUTH_CLIENT]
-        search_client = current_app.config[CONFIG_SEARCH_CLIENT]
+        auth_helper = current_app.config.get(CONFIG_AUTH_CLIENT)
+        search_client = current_app.config.get(CONFIG_SEARCH_CLIENT)
+        if auth_helper is None or search_client is None:
+            return jsonify({"error": "This feature requires Azure credentials to be configured."}), 503
         authorized = False
         try:
             auth_claims = await auth_helper.get_auth_claims_if_enabled(request.headers)
@@ -48,7 +50,9 @@ def authenticated(route_fn: _C) -> _C:
 
     @wraps(route_fn)
     async def auth_handler(*args, **kwargs):
-        auth_helper = current_app.config[CONFIG_AUTH_CLIENT]
+        auth_helper = current_app.config.get(CONFIG_AUTH_CLIENT)
+        if auth_helper is None:
+            return jsonify({"error": "This feature requires Azure credentials to be configured."}), 503
         try:
             auth_claims = await auth_helper.get_auth_claims_if_enabled(request.headers)
         except AuthError:

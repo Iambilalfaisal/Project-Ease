@@ -1007,6 +1007,37 @@ def _run_migrations(conn: sqlite3.Connection):
     except sqlite3.OperationalError:
         pass  # column already exists
 
+    # Organizations plan/status columns — present in SCHEMA but missing from the
+    # already-existing db.sqlite (CREATE TABLE IF NOT EXISTS is a no-op on it),
+    # causing "no such column" crashes in create_org/update_org/register_org/
+    # get_pending_registrations/approve_registration/resolve_upgrade_request/
+    # get_platform_stats. Nullable-then-backfilled since SQLite rejects a
+    # non-constant DEFAULT on ADD COLUMN for status/max_docs/max_users, and a
+    # constant default still wouldn't match rows that already have a plan.
+    for col_name, col_type in [("status", "TEXT"), ("max_docs", "INTEGER"), ("max_users", "INTEGER"), ("industry", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE organizations ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            continue  # column already exists
+        if col_name == "status":
+            conn.execute("UPDATE organizations SET status='active' WHERE status IS NULL")
+        elif col_name == "max_docs":
+            conn.execute("UPDATE organizations SET max_docs=20 WHERE max_docs IS NULL")
+        elif col_name == "max_users":
+            conn.execute("UPDATE organizations SET max_users=5 WHERE max_users IS NULL")
+        elif col_name == "industry":
+            conn.execute("UPDATE organizations SET industry='Other' WHERE industry IS NULL")
+
+    # Ensure seeded dev accounts satisfy the current password policy (>=8 chars).
+    # `emp123` (6 chars) predates that policy and can never be set again through
+    # the API once changed, so keep it in sync here instead of only at initial seed.
+    for _email, _pw in {"employee@acmelegal.com": "employee123"}.items():
+        _hashed = hash_password(_pw)
+        conn.execute(
+            "UPDATE users SET password_hash=?, must_change_password=0 WHERE email=? AND password_hash != ?",
+            (_hashed, _email, _hashed),
+        )
+
     # Self-service registration columns — added in Task #41
     _reg_cols = [
         ("slug",           "TEXT"),
@@ -3046,7 +3077,7 @@ def get_client_token_by_value(token: str) -> dict | None:
             """SELECT ct.*, c.name AS client_name, c.email AS client_email,
                       c.phone AS client_phone,
                       m.title AS matter_title, m.matter_type, m.case_number,
-                      m.court as court_name, m.status AS matter_status,
+                      m.court_name as court_name, m.status AS matter_status,
                       o.name AS org_name
                FROM client_tokens ct
                JOIN clients c      ON ct.client_id = c.client_id
@@ -4586,7 +4617,13 @@ def compute_court_fee(claim_amount: float, fee_type: str = "Ad Valorem") -> floa
     Punjab Court Fees Act slab calculator (approximate).
     Rates updated per Punjab Finance Act amendments; verify current gazette for exact rates.
     """
-    if fee_type != "Ad Valorem" or claim_amount <= 0:
+    if claim_amount <= 0:
+        return 0.0
+    if fee_type == "Fixed":
+        # "Fixed" fee types (e.g. certain petitions) aren't proportional to claim
+        # value under a slab — the amount the preparer enters *is* the fee.
+        return round(claim_amount, 2)
+    if fee_type != "Ad Valorem":
         return 0.0
     c = claim_amount
     if c <= 1_000:
@@ -5105,6 +5142,21 @@ def get_org_flags(org_id: str) -> dict[str, bool]:
     return {k: stored.get(k, True) for k in FEATURE_KEYS}
 
 
+def is_feature_enabled(org_id: str, feature_key: str) -> bool:
+    """Single-key check backing SERVER-SIDE feature-flag enforcement.
+
+    get_org_flags() is what the UI reads to decide what to show; this is what
+    routes call to decide what to actually allow, so disabling a flag is a real
+    access boundary and not just a hidden nav item.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT enabled FROM org_feature_flags WHERE org_id=? AND feature=?",
+            (org_id, feature_key),
+        ).fetchone()
+    return bool(row["enabled"]) if row else True
+
+
 def set_org_flags(org_id: str, flags: dict, actor: str = SYSTEM) -> dict[str, bool]:
     """Upsert feature flags for an org. Unknown keys are silently ignored."""
     now = _now()
@@ -5150,7 +5202,7 @@ def get_legal_notices(org_id: str, matter_id: str | None = None) -> list[dict]:
         clauses.append("n.matter_id=?"); params.append(matter_id)
     with get_conn() as conn:
         rows = conn.execute(
-            f"""SELECT n.*, m.title AS matter_title, c.full_name AS client_name
+            f"""SELECT n.*, m.title AS matter_title, c.name AS client_name
                 FROM legal_notices n
                 LEFT JOIN matters m ON m.matter_id = n.matter_id
                 LEFT JOIN clients c ON c.client_id = n.client_id
@@ -5595,11 +5647,11 @@ def get_outstanding_invoices(org_id: str) -> list[dict]:
     today = _dt.date.today().isoformat()
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT i.*, m.title AS matter_title, c.full_name AS client_name
+            """SELECT i.*, m.title AS matter_title, c.name AS client_name
                FROM invoices i
                LEFT JOIN matters m ON m.matter_id = i.matter_id
                LEFT JOIN clients c ON c.client_id = i.client_id
-               WHERE i.org_id=? AND i.is_active=1 AND i.status IN ('Draft','Sent','Overdue')
+               WHERE i.org_id=? AND i.is_active=1 AND LOWER(i.status) IN ('draft','sent','overdue')
                ORDER BY i.due_date ASC NULLS LAST""",
             (org_id,),
         ).fetchall()

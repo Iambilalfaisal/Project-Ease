@@ -72,7 +72,7 @@ const authHeaders = () => ({ Authorization: `Bearer ${sessionStorage.getItem("pe
 ### Dev credentials
 - Platform Admin: `admin@projectease.com` / `admin123` → `/#/admin`
 - Org Owner: `owner@acmelegal.com` / `owner123` → `/#/owner`
-- Employee: `employee@acmelegal.com` / `emp123` → `/#/app`
+- Employee: `employee@acmelegal.com` / `employee123` → `/#/app`
 
 ## Database conventions (`db.py`)
 - Primary keys: `secrets.token_hex(10)` (20-char hex string)

@@ -4,6 +4,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
@@ -310,7 +311,22 @@ async def chat_stream(auth_claims: dict[str, Any]):
 # Send MSAL.js settings to the client UI
 @bp.route("/auth_setup", methods=["GET"])
 def auth_setup():
-    auth_helper = current_app.config[CONFIG_AUTH_CLIENT]
+    auth_helper = current_app.config.get(CONFIG_AUTH_CLIENT)
+    if auth_helper is None:
+        # Local-dev / auth-only mode (no Azure credentials configured) — mirrors
+        # the frontend's own DEFAULT_AUTH_SETUP fallback so this never 500s.
+        return jsonify({
+            "useLogin": False,
+            "requireAccessControl": False,
+            "enableUnauthenticatedAccess": True,
+            "msalConfig": {
+                "auth": {"clientId": "", "authority": "", "redirectUri": "/redirect",
+                         "postLogoutRedirectUri": "/", "navigateToLoginRequestUrl": False},
+                "cache": {"cacheLocation": "sessionStorage", "storeAuthStateInCookie": False},
+            },
+            "loginRequest": {"scopes": []},
+            "tokenRequest": {"scopes": []},
+        })
     return jsonify(auth_helper.get_auth_setup_for_client())
 
 
@@ -425,7 +441,7 @@ from db import (
     get_judge_notes, create_judge_note, update_judge_note, delete_judge_note,
     get_judge_note, get_judge_track_record,
     # Feature Flags — Task #162
-    FEATURE_KEYS, FEATURE_LABELS, get_org_flags, set_org_flags, get_all_org_flags,
+    FEATURE_KEYS, FEATURE_LABELS, get_org_flags, set_org_flags, get_all_org_flags, is_feature_enabled,
     # Legal Notices — Task #165
     NOTICE_TYPES, NOTICE_VIA, NOTICE_STATUSES,
     get_legal_notices, create_legal_notice, update_legal_notice, delete_legal_notice,
@@ -502,6 +518,17 @@ async def auth_login():
     if not user or not _check_pw(password, user["password_hash"]):
         log_event("login_fail", ip_address=_get_ip(), details={"email": email})
         return jsonify({"error": "Invalid email or password"}), 401
+
+    # Self-registered orgs start life as pending_payment (Task #41) — block login
+    # until an admin approves the registration. Whitelisted on "active" (rather
+    # than blacklisting "pending_payment") so any future non-active status is
+    # blocked by default too, not silently let through.
+    org = get_org(user["org_id"])
+    if org and org.get("status") not in (None, "active"):
+        log_event("login_fail", org_id=user["org_id"], user_id=user["user_id"],
+                  ip_address=_get_ip(), details={"email": email, "reason": "org_not_active"})
+        return jsonify({"error": "Your organization's registration is still pending approval. "
+                                  "You'll be notified by email once it's been reviewed."}), 403
 
     token = _secrets.token_hex(32)
     session_data = {
@@ -780,7 +807,7 @@ async def list_documents():
 async def remove_document(doc_id: str):
     """Delete a document from the index, blob storage, and DB."""
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     org_id = session.get("org")
 
@@ -872,7 +899,7 @@ async def list_categories():
 @bp.route("/categories", methods=["POST"])
 async def add_category():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     data = await request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
@@ -888,7 +915,7 @@ async def add_category():
 @bp.route("/categories/<category_id>", methods=["DELETE"])
 async def remove_category(category_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     delete_category(category_id, session.get("org") or "", actor=session.get("user_id") or SYSTEM)
     return jsonify({"success": True})
@@ -1780,6 +1807,9 @@ async def speech():
     if not request.is_json:
         return jsonify({"error": "request must be json"}), 415
 
+    if current_app.config.get(CONFIG_CREDENTIAL) is None:
+        return jsonify({"error": "Speech isn't configured — Azure credentials required."}), 503
+
     speech_token = current_app.config.get(CONFIG_SPEECH_SERVICE_TOKEN)
     if speech_token is None or speech_token.expires_on < time.time() + 60:
         speech_token = await current_app.config[CONFIG_CREDENTIAL].get_token(
@@ -1869,7 +1899,7 @@ async def list_uploaded(auth_claims: dict[str, Any]):
 @bp.route("/clients", methods=["GET"])
 async def list_clients():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     return jsonify({"clients": get_clients(session.get("org") or "")})
 
@@ -1903,7 +1933,7 @@ async def add_client():
 @bp.route("/clients/<client_id>", methods=["GET"])
 async def get_client_detail(client_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     client = get_client_with_matters(client_id, session.get("org") or "")
     if not client:
@@ -2064,7 +2094,7 @@ async def remove_court(court_id: str):
 @bp.route("/matters", methods=["GET"])
 async def list_matters():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     client_id = request.args.get("client_id") or None
     return jsonify({"matters": get_matters(session.get("org") or "", client_id=client_id),
@@ -2115,7 +2145,7 @@ async def add_matter():
 @bp.route("/matters/<matter_id>", methods=["GET"])
 async def get_matter_detail(matter_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     matter = get_matter_with_docs(matter_id, session.get("org") or "")
     if not matter:
@@ -2307,7 +2337,7 @@ async def voice_log_outcome():
 @bp.route("/matters/<matter_id>/orders", methods=["GET"])
 async def list_court_orders(matter_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     org_id = session.get("org") or ""
     orders = get_court_orders(matter_id, org_id)
@@ -2375,7 +2405,7 @@ async def remove_court_order(matter_id: str, order_id: str):
 @bp.route("/matters/limitation-alerts", methods=["GET"])
 async def limitation_alerts():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     within = int(request.args.get("within_days", 60))
     alerts = get_matters_with_approaching_limitation(session.get("org") or "", within_days=within)
@@ -2387,7 +2417,7 @@ async def limitation_alerts():
 @bp.route("/matters/<matter_id>/adverse-parties", methods=["GET"])
 async def list_adverse_parties(matter_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     parties = get_adverse_parties(matter_id, session.get("org") or "")
     return jsonify({"parties": parties})
@@ -2448,7 +2478,7 @@ async def remove_adverse_party(matter_id: str, party_id: str):
 @bp.route("/matters/<matter_id>/time-entries", methods=["GET"])
 async def list_time_entries(matter_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     entries = get_time_entries(matter_id, session.get("org") or "")
     return jsonify({"entries": entries})
@@ -2457,7 +2487,7 @@ async def list_time_entries(matter_id: str):
 @bp.route("/matters/<matter_id>/time-entries", methods=["POST"])
 async def add_time_entry(matter_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     data = await request.get_json() or {}
     duration_minutes = int(data.get("duration_minutes") or 0)
@@ -2481,7 +2511,7 @@ async def add_time_entry(matter_id: str):
 @bp.route("/matters/<matter_id>/time-entries/<entry_id>", methods=["PATCH"])
 async def edit_time_entry(matter_id: str, entry_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     data = await request.get_json() or {}
     updated = update_time_entry(
@@ -2498,7 +2528,7 @@ async def edit_time_entry(matter_id: str, entry_id: str):
 @bp.route("/matters/<matter_id>/time-entries/<entry_id>", methods=["DELETE"])
 async def remove_time_entry(matter_id: str, entry_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     delete_time_entry(entry_id, session.get("org") or "",
                       actor=session.get("user_id") or SYSTEM)
@@ -2561,7 +2591,7 @@ async def _ocr_extract_text(file_bytes: bytes, filename: str) -> str:
 @bp.route("/cause-list", methods=["GET"])
 async def list_cause_list():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     list_date = request.args.get("date") or None
     entries   = get_cause_list_entries(session.get("org") or "", list_date)
@@ -2571,7 +2601,7 @@ async def list_cause_list():
 @bp.route("/cause-list/today-matches", methods=["GET"])
 async def today_cause_list_matches():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     matches = get_today_cause_list_matches(session.get("org") or "")
     return jsonify({"matches": matches})
@@ -2996,6 +3026,8 @@ async def edit_matter_correspondence(matter_id: str, corr_id: str):
         **{k: v for k, v in data.items()
            if k in {"corr_date", "direction", "corr_type", "subject", "party", "reference_no", "notes"}},
     )
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
     return jsonify(updated)
 
 
@@ -3058,6 +3090,8 @@ async def edit_matter_relief(matter_id: str, relief_id: str):
            if k in {"application_date", "relief_type", "court", "judge", "status",
                     "conditions", "surety_amount_pkr", "surety_name", "notes"}},
     )
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
     return jsonify(updated)
 
 
@@ -3151,6 +3185,8 @@ async def edit_matter_charge(matter_id: str, charge_id: str):
            if k in {"section_no", "description", "plea", "charge_framed",
                     "charge_framed_date", "court", "notes"}},
     )
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
     return jsonify(updated)
 
 
@@ -3274,6 +3310,8 @@ async def edit_matter_fir(matter_id: str, fir_id: str):
     data = await request.get_json(silent=True) or {}
     updated = update_matter_fir(fir_id, session.get("org") or "", data,
                                 actor=session.get("user_id") or SYSTEM)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
     return jsonify(updated)
 
 
@@ -3319,6 +3357,8 @@ async def edit_matter_challan(matter_id: str, challan_id: str):
     data = await request.get_json(silent=True) or {}
     updated = update_matter_challan(challan_id, session.get("org") or "", data,
                                     actor=session.get("user_id") or SYSTEM)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
     return jsonify(updated)
 
 
@@ -3372,6 +3412,8 @@ async def check_conflicts():
         if opponent and client_name and opponent in client_name:
             match_reason.append(f"'{data.get('opponent_name')}' is an existing client of the firm")
         # Opponent name matches the opposing party in another matter (same counsel, fine — but flag for awareness)
+        if opponent and opp and opponent in opp:
+            match_reason.append(f"'{data.get('opponent_name')}' appears as opposing party in another matter — recurring opponent")
         if match_reason:
             conflicts.append({
                 "matter_id":    m.get("matter_id"),
@@ -3430,6 +3472,8 @@ async def edit_court_fee(matter_id: str, fp_id: str):
     data = await request.get_json(silent=True) or {}
     updated = update_court_fee_payment(fp_id, session.get("org") or "", data,
                                        actor=session.get("user_id") or SYSTEM)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
     return jsonify(updated)
 
 
@@ -3472,8 +3516,11 @@ async def edit_associate_fee(matter_id: str, af_id: str):
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     data = await request.get_json(silent=True) or {}
-    return jsonify(update_associate_fee(af_id, session.get("org") or "", data,
-                                        actor=session.get("user_id") or SYSTEM))
+    updated = update_associate_fee(af_id, session.get("org") or "", data,
+                                   actor=session.get("user_id") or SYSTEM)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
 
 
 @bp.route("/matters/<matter_id>/associate-fees/<af_id>", methods=["DELETE"])
@@ -3526,8 +3573,11 @@ async def edit_trust_entry(client_id: str, ledger_id: str):
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     data = await request.get_json(silent=True) or {}
-    return jsonify(update_trust_entry(ledger_id, session.get("org") or "", data,
-                                      actor=session.get("user_id") or SYSTEM))
+    updated = update_trust_entry(ledger_id, session.get("org") or "", data,
+                                 actor=session.get("user_id") or SYSTEM)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
 
 
 @bp.route("/clients/<client_id>/trust-ledger/<ledger_id>", methods=["DELETE"])
@@ -3572,8 +3622,11 @@ async def edit_matter_cheque(matter_id: str, cheque_id: str):
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
     data = await request.get_json(silent=True) or {}
-    return jsonify(update_matter_cheque(cheque_id, session.get("org") or "", data,
-                                        actor=session.get("user_id") or SYSTEM))
+    updated = update_matter_cheque(cheque_id, session.get("org") or "", data,
+                                   actor=session.get("user_id") or SYSTEM)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
 
 
 @bp.route("/matters/<matter_id>/cheques/<cheque_id>", methods=["DELETE"])
@@ -3624,8 +3677,8 @@ async def update_vakalatnama_status(matter_id: str):
         return jsonify({"error": "Invalid status"}), 400
     return jsonify(update_matter(
         matter_id, session.get("org") or "",
-        {"vakalatnama_status": new_status},
         actor=session.get("user_id") or SYSTEM,
+        vakalatnama_status=new_status,
     ))
 
 
@@ -3947,7 +4000,7 @@ async def admin_reject_upgrade(request_id: str):
 async def list_audit_logs():
     """Return paginated audit logs scoped to the caller's org (owner) or all orgs (admin)."""
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "platform_admin"):
         return jsonify({"error": "Unauthorized"}), 401
 
     role = session.get("role")
@@ -3983,7 +4036,7 @@ async def list_audit_logs():
 @bp.route("/fees", methods=["GET"])
 async def list_fees():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     org_id    = session.get("org") or ""
     matter_id = request.args.get("matter_id") or None
@@ -4055,7 +4108,7 @@ async def remove_fee(fee_id: str):
 @bp.route("/invoices", methods=["GET"])
 async def list_invoices():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     org_id    = session.get("org") or ""
     matter_id = request.args.get("matter_id") or None
@@ -4092,7 +4145,7 @@ async def add_invoice():
 @bp.route("/invoices/<invoice_id>", methods=["GET"])
 async def get_invoice(invoice_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     inv = get_invoice_with_fees(invoice_id)
     if not inv or inv.get("org_id") != session.get("org"):
@@ -4120,7 +4173,7 @@ async def edit_invoice(invoice_id: str):
 @bp.route("/hearings", methods=["GET"])
 async def list_hearings():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     org_id    = session.get("org") or ""
     from_date = request.args.get("from_date") or None
@@ -4160,7 +4213,7 @@ async def add_hearing():
 @bp.route("/hearings/<hearing_id>", methods=["GET"])
 async def get_hearing_detail(hearing_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     h = get_hearing(hearing_id)
     if not h or h.get("org_id") != session.get("org"):
@@ -4395,9 +4448,13 @@ async def send_diary_morning_brief():
         # Normalise number — Twilio expects "whatsapp:+92..." format internally
         normalised = to_number if to_number.startswith("+") else f"+{to_number}"
         import asyncio as _aio
-        await _aio.to_thread(send_whatsapp_text, normalised, message)
-        _audit(session, "diary_brief_sent", resource_type="diary", resource_name=date_str)
-        return jsonify({"sent": True, "to": normalised, "date": date_str})
+        result = await _aio.to_thread(send_whatsapp_text, normalised, message)
+        sent = bool(result.get("sent")) if isinstance(result, dict) else bool(result)
+        if sent:
+            _audit(session, "diary_brief_sent", resource_type="diary", resource_name=date_str)
+            return jsonify({"sent": True, "to": normalised, "date": date_str})
+        reason = result.get("error") if isinstance(result, dict) else "send_failed"
+        return jsonify({"sent": False, "reason": reason or "send_failed", "message": message})
     except ImportError:
         # Twilio not yet configured — return the formatted text so the
         # caller can fall back to the WhatsApp share link.
@@ -4423,7 +4480,7 @@ async def read_org_flags():
 async def admin_list_org_flags_route():
     """Admin reads feature flags for every active org."""
     session = _get_session()
-    if not session or session.get("role") != "admin":
+    if not session or session.get("role") != "platform_admin":
         return jsonify({"error": "Unauthorized"}), 401
     return jsonify({"orgs": get_all_org_flags(), "feature_keys": list(FEATURE_KEYS), "feature_labels": FEATURE_LABELS})
 
@@ -4432,7 +4489,7 @@ async def admin_list_org_flags_route():
 async def admin_set_org_flags_route(org_id: str):
     """Admin sets feature flags for a specific org."""
     session = _get_session()
-    if not session or session.get("role") != "admin":
+    if not session or session.get("role") != "platform_admin":
         return jsonify({"error": "Unauthorized"}), 401
     body  = await request.get_json() or {}
     flags = body.get("flags", {})
@@ -4442,10 +4499,74 @@ async def admin_set_org_flags_route(org_id: str):
     return jsonify({"flags": result})
 
 
+# ── Server-side feature-flag enforcement ──────────────────────────────────────
+# get_org_flags()/is_feature_enabled() back the admin Feature Access panel, but
+# until now nothing ever called is_feature_enabled() outside of that panel's own
+# GET/PUT routes — a disabled flag only hid a sidebar item, the API stayed fully
+# callable. This makes it a real boundary. Checked longest/most-specific pattern
+# first so a route with its own dedicated flag (e.g. vakalatnama under /matters)
+# is matched before the broader parent route group's flag.
+_FEATURE_ROUTE_RULES = [
+    (re.compile(r"^/matters/[^/]+/vakalatnama$"), "vakalat"),
+    (re.compile(r"^/diary/send-brief$"),          "whatsapp"),
+    (re.compile(r"^/calendar/notify-holiday"),    "whatsapp"),
+    (re.compile(r"^/team/[^/]+/whatsapp$"),       "whatsapp"),
+    (re.compile(r"^/court-fees/calculate$"),      "matters"),
+    (re.compile(r"^/associate-fees/summary$"),    "matters"),
+    (re.compile(r"^/bail-stages"),                "matters"),
+    (re.compile(r"^/matters(/|$)"),               "matters"),
+    (re.compile(r"^/clients(/|$)"),               "clients"),
+    (re.compile(r"^/hearings(/|$)"),               "calendar"),
+    (re.compile(r"^/calendar(/|$)"),               "calendar"),
+    (re.compile(r"^/diary(/|$)"),                  "diary"),
+    (re.compile(r"^/invoices(/|$)"),                "invoices"),
+    (re.compile(r"^/fees(/|$)"),                    "invoices"),
+    (re.compile(r"^/outstanding-dues$"),            "invoices"),
+    (re.compile(r"^/team(/|$)"),                    "team"),
+    (re.compile(r"^/templates(/|$)"),               "drafting"),
+    (re.compile(r"^/draft$"),                       "drafting"),
+    (re.compile(r"^/cause-list(/|$)"),              "causelist"),
+    (re.compile(r"^/vakalatnama-register$"),        "vakalat"),
+    (re.compile(r"^/judge-notes(/|$)"),             "intelligence"),
+    (re.compile(r"^/opposing-counsel(/|$)"),        "intelligence"),
+    (re.compile(r"^/audit-logs$"),                  "audit"),
+    (re.compile(r"^/client-tokens(/|$)"),           "client_portal"),
+    (re.compile(r"^/documents(/|$)"),               "documents"),
+    (re.compile(r"^/categories(/|$)"),              "documents"),
+]
+
+
+@bp.before_request
+async def _enforce_feature_flags():
+    """Block a route at the API layer when its feature is disabled for the org.
+
+    Skips platform_admin (cross-org by design) and any request with no valid
+    session — those are either public routes or get their own 401 from the
+    route body. The public /portal/* routes are token-scoped, not session-scoped,
+    so they check is_feature_enabled() directly instead of going through here.
+    """
+    session = _get_session()
+    if not session or session.get("role") == "platform_admin":
+        return None
+    org_id = session.get("org")
+    if not org_id:
+        return None
+    path = request.path
+    for pattern, feature_key in _FEATURE_ROUTE_RULES:
+        if pattern.match(path):
+            if not is_feature_enabled(org_id, feature_key):
+                return jsonify({
+                    "error": f"'{FEATURE_LABELS.get(feature_key, feature_key)}' is not enabled for your organization.",
+                    "feature": feature_key,
+                }), 403
+            break
+    return None
+
+
 @bp.route("/deadlines", methods=["GET"])
 async def list_deadlines():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     org_id    = session.get("org") or ""
     from_date = request.args.get("from_date") or None
@@ -4900,7 +5021,7 @@ async def export_answer():
         org_name  : str   – firm name for header branding
     """
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
@@ -5031,7 +5152,7 @@ async def templates_list():
     session = _get_session()
     if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
-    org_id = session["organization_id"]
+    org_id = session.get("org") or ""
     ttype  = request.args.get("type")
     rows   = list_templates(org_id, ttype if ttype else None)
     return jsonify(rows)
@@ -5042,7 +5163,7 @@ async def templates_create():
     session = _get_session()
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
-    org_id = session["organization_id"]
+    org_id = session.get("org") or ""
     actor  = session["user_id"]
     body   = await request.get_json(force=True) or {}
 
@@ -5067,7 +5188,7 @@ async def templates_update(template_id: str):
     session = _get_session()
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
-    org_id = session["organization_id"]
+    org_id = session.get("org") or ""
     actor  = session["user_id"]
 
     existing = get_template(template_id)
@@ -5097,7 +5218,7 @@ async def templates_delete(template_id: str):
     session = _get_session()
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
-    org_id = session["organization_id"]
+    org_id = session.get("org") or ""
     actor  = session["user_id"]
 
     existing = get_template(template_id)
@@ -5122,7 +5243,7 @@ async def draft_document():
     session = _get_session()
     if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
-    org_id = session["organization_id"]
+    org_id = session.get("org") or ""
     actor  = session["user_id"]
 
     try:
@@ -5296,7 +5417,7 @@ async def client_tokens_list():
     session = _get_session()
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
-    org_id    = session["organization_id"]
+    org_id    = session.get("org") or ""
     client_id = request.args.get("client_id")
     rows      = list_client_tokens(org_id, client_id if client_id else None)
     return jsonify(rows)
@@ -5307,7 +5428,7 @@ async def client_tokens_create():
     session = _get_session()
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
-    org_id = session["organization_id"]
+    org_id = session.get("org") or ""
     actor  = session["user_id"]
     body   = await request.get_json(force=True) or {}
 
@@ -5337,7 +5458,7 @@ async def client_tokens_revoke(token_id: str):
     session = _get_session()
     if not session or session.get("role") != "org_owner":
         return jsonify({"error": "Unauthorized"}), 401
-    org_id = session["organization_id"]
+    org_id = session.get("org") or ""
     actor  = session["user_id"]
 
     existing = get_client_token_by_id(token_id)
@@ -5362,6 +5483,8 @@ async def portal_me():
     row = get_client_token_by_value(token)
     if not row:
         return jsonify({"error": "Invalid or expired token"}), 401
+    if not is_feature_enabled(row["org_id"], "client_portal"):
+        return jsonify({"error": "The client portal is not enabled for this organization."}), 403
     return jsonify({
         "client_name":   row["client_name"],
         "client_email":  row.get("client_email"),
@@ -5385,6 +5508,8 @@ async def portal_documents():
     row = get_client_token_by_value(token)
     if not row:
         return jsonify({"error": "Invalid or expired token"}), 401
+    if not is_feature_enabled(row["org_id"], "client_portal"):
+        return jsonify({"error": "The client portal is not enabled for this organization."}), 403
 
     org_id    = row["org_id"]
     matter_id = row.get("matter_id")
@@ -5416,6 +5541,8 @@ async def portal_document_download(doc_id: str):
     row = get_client_token_by_value(token)
     if not row:
         return jsonify({"error": "Invalid or expired token"}), 401
+    if not is_feature_enabled(row["org_id"], "client_portal"):
+        return jsonify({"error": "The client portal is not enabled for this organization."}), 403
 
     org_id    = row["org_id"]
     matter_id = row.get("matter_id")
@@ -5886,7 +6013,7 @@ async def list_court_transfers(matter_id: str):
     session = _get_session()
     if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
-    return jsonify(get_court_transfers(matter_id, session.get("org") or ""))
+    return jsonify({"transfers": get_court_transfers(matter_id, session.get("org") or "")})
 
 
 @bp.route("/matters/<matter_id>/transfers", methods=["POST"])
@@ -5912,8 +6039,11 @@ async def edit_court_transfer(matter_id: str, transfer_id: str):
     if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     b = await request.get_json() or {}
-    return jsonify(update_court_transfer(transfer_id, session.get("org") or "",
-                                         actor=session.get("user_id") or SYSTEM, **b))
+    updated = update_court_transfer(transfer_id, session.get("org") or "",
+                                    actor=session.get("user_id") or SYSTEM, **b)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
 
 
 @bp.route("/matters/<matter_id>/transfers/<transfer_id>", methods=["DELETE"])
@@ -5965,8 +6095,11 @@ async def edit_bail_bond(matter_id: str, bond_id: str):
     if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     b = await request.get_json() or {}
-    return jsonify(update_bail_bond(bond_id, session.get("org") or "",
-                                    actor=session.get("user_id") or SYSTEM, **b))
+    updated = update_bail_bond(bond_id, session.get("org") or "",
+                               actor=session.get("user_id") or SYSTEM, **b)
+    if not updated:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
 
 
 @bp.route("/matters/<matter_id>/bail-bonds/<bond_id>", methods=["DELETE"])
@@ -5983,7 +6116,7 @@ async def remove_bail_bond(matter_id: str, bond_id: str):
 @bp.route("/bail-stages", methods=["GET"])
 async def list_bail_stages():
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     include_inactive = request.args.get("all") == "1" and session.get("role") == "org_owner"
     return jsonify({"stages": get_org_bail_stages(session.get("org") or "", include_inactive=include_inactive)})
@@ -6018,7 +6151,7 @@ async def edit_bail_stage(stage_key: str):
 @bp.route("/matters/<matter_id>/bail-bonds/<bond_id>/stages", methods=["GET"])
 async def get_bail_bond_stages(matter_id: str, bond_id: str):
     session = _get_session()
-    if not session:
+    if not session or session.get("role") not in ("org_owner", "employee"):
         return jsonify({"error": "Unauthorized"}), 401
     stages      = get_org_bail_stages(session.get("org") or "")
     completions = get_bail_stage_completions(bond_id)
