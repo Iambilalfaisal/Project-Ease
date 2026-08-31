@@ -137,11 +137,6 @@
     font-weight: 500;
 }
 
-.status_active   { color: #3ab57a; }
-.status_closed   { color: var(--text-3); }
-.status_pending  { color: var(--gold); }
-.status_settled  { color: #60a5fa; }
-
 /* ── Documents section ───────────────────────────────────────────────────────*/
 
 .docsSection {
@@ -168,16 +163,6 @@
     font-size: 0.72rem;
     color: var(--text-3);
     font-weight: 600;
-}
-
-.emptyDocs {
-    background: var(--bg-1);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 2rem;
-    text-align: center;
-    font-size: 0.88rem;
-    color: var(--text-2);
 }
 
 .docList {
@@ -216,22 +201,6 @@
     color: var(--text-3);
     margin-top: 0.15rem;
 }
-
-.downloadBtn {
-    background: var(--gold);
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 0.4rem 0.85rem;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: opacity 0.15s;
-    flex-shrink: 0;
-}
-.downloadBtn:hover:not(:disabled) { opacity: 0.85; }
-.downloadBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Security note ───────────────────────────────────────────────────────────*/
 
@@ -313,11 +282,5 @@
     .docInfo {
         min-width: 0;
         flex: 1 1 100%;
-    }
-
-    .downloadBtn {
-        width: 100%;
-        text-align: center;
-        padding: 0.55rem 1rem;
     }
 }

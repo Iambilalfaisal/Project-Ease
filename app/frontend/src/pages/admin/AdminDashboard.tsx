@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import styles from "./AdminDashboard.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
+import { Table, Modal, Badge, Button, BadgeTone } from "../../components/ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -96,18 +97,12 @@ function fmtBytes(b: number): string {
 
 function fmtDate(s: string): string { return s ? s.slice(0, 10) : "—"; }
 
+const PLAN_TONE: Record<string, BadgeTone> = { free: "gray", pro: "blue", enterprise: "gold" };
+const orgStatusTone = (status: string): BadgeTone => (status === "active" ? "green" : "red");
+const docStatusTone = (status: string): BadgeTone => (status === "ready" ? "green" : "amber");
+
 const PlanBadge = ({ plan }: { plan: string }) => (
-    <span style={{
-        display: "inline-block",
-        background: `${PLAN_COLORS[plan] ?? "#94a3b8"}22`,
-        color: PLAN_COLORS[plan] ?? "#94a3b8",
-        border: `1px solid ${PLAN_COLORS[plan] ?? "#94a3b8"}44`,
-        borderRadius: "100px",
-        padding: "0.15rem 0.6rem",
-        fontSize: "0.72rem",
-        fontWeight: 700,
-        textTransform: "capitalize" as const,
-    }}>{plan}</span>
+    <Badge tone={PLAN_TONE[plan] ?? "gray"}>{plan.charAt(0).toUpperCase() + plan.slice(1)}</Badge>
 );
 
 const ScoreBadge = ({ val }: { val: number | null }) => {
@@ -137,84 +132,70 @@ const OrgDetailModal = ({ orgId, onClose }: { orgId: string; onClose: () => void
     }, [orgId]);
 
     return (
-        <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-            <div className={styles.modal} style={{ maxWidth: 680, width: "95%" }}>
-                {loading || !details ? (
-                    <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
-                ) : (
-                    <>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
-                            <div>
-                                <h3 className={styles.modalTitle} style={{ marginBottom: "0.25rem" }}>{details.name}</h3>
-                                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                                    <PlanBadge plan={details.plan} />
-                                    <span className={details.status === "active" ? styles.badgeGreen : styles.badgeRed}>
-                                        {details.status}
-                                    </span>
-                                    <span className={styles.muted} style={{ fontSize: "0.78rem" }}>{details.industry}</span>
-                                </div>
+        <Modal open onClose={onClose} maxWidth={680} title={details ? details.name : undefined}>
+            {loading || !details ? (
+                <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
+            ) : (
+                <>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "1.25rem" }}>
+                        <PlanBadge plan={details.plan} />
+                        <Badge tone={orgStatusTone(details.status)}>{details.status}</Badge>
+                        <span className={styles.muted} style={{ fontSize: "0.78rem" }}>{details.industry}</span>
+                    </div>
+
+                    {/* Stats row */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "0.5rem", marginBottom: "1.5rem" }}>
+                        {[
+                            { label: "Users",     value: details.user_count },
+                            { label: "Documents", value: details.doc_count },
+                            { label: "Storage",   value: fmtBytes(details.total_bytes) },
+                            { label: "Created",   value: fmtDate(details.created_at) },
+                        ].map(s => (
+                            <div key={s.label} style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.65rem 0.75rem" }}>
+                                <div style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-1)" }}>{s.value}</div>
+                                <div style={{ fontSize: "0.72rem", color: "var(--text-3)", marginTop: 2 }}>{s.label}</div>
                             </div>
-                            <button className={styles.btnGhost} onClick={onClose}>Close</button>
-                        </div>
+                        ))}
+                    </div>
 
-                        {/* Stats row */}
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "0.5rem", marginBottom: "1.5rem" }}>
-                            {[
-                                { label: "Users",     value: details.user_count },
-                                { label: "Documents", value: details.doc_count },
-                                { label: "Storage",   value: fmtBytes(details.total_bytes) },
-                                { label: "Created",   value: fmtDate(details.created_at) },
-                            ].map(s => (
-                                <div key={s.label} style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.65rem 0.75rem" }}>
-                                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-1)" }}>{s.value}</div>
-                                    <div style={{ fontSize: "0.72rem", color: "var(--text-3)", marginTop: 2 }}>{s.label}</div>
-                                </div>
-                            ))}
-                        </div>
+                    {/* Users */}
+                    <div className={styles.sectionTitle} style={{ marginBottom: "0.5rem" }}>Team Members</div>
+                    <div style={{ marginBottom: "1.25rem", maxHeight: 180, overflowY: "auto" }}>
+                        <Table dense>
+                            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
+                            <tbody>
+                                {details.users.map(u => (
+                                    <tr key={u.user_id}>
+                                        <td><strong>{u.name}</strong></td>
+                                        <td className={styles.muted}>{u.email}</td>
+                                        <td><span style={{ color: u.role === "org_owner" ? "var(--gold)" : "var(--text-3)", fontSize: "0.78rem", fontWeight: 600 }}>{u.role === "org_owner" ? "Owner" : "Employee"}</span></td>
+                                        <td className={styles.muted}>{fmtDate(u.created_at)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
+                    </div>
 
-                        {/* Users */}
-                        <div className={styles.sectionTitle} style={{ marginBottom: "0.5rem" }}>Team Members</div>
-                        <div className={styles.tableWrap} style={{ marginBottom: "1.25rem", maxHeight: 180, overflowY: "auto" }}>
-                            <table className={styles.table}>
-                                <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
-                                <tbody>
-                                    {details.users.map(u => (
-                                        <tr key={u.user_id}>
-                                            <td><strong>{u.name}</strong></td>
-                                            <td className={styles.muted}>{u.email}</td>
-                                            <td><span style={{ color: u.role === "org_owner" ? "var(--gold)" : "var(--text-3)", fontSize: "0.78rem", fontWeight: 600 }}>{u.role === "org_owner" ? "Owner" : "Employee"}</span></td>
-                                            <td className={styles.muted}>{fmtDate(u.created_at)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Documents */}
-                        <div className={styles.sectionTitle} style={{ marginBottom: "0.5rem" }}>Documents ({details.documents.length})</div>
-                        {details.documents.length === 0 ? (
-                            <div className={styles.muted} style={{ fontSize: "0.82rem", padding: "0.5rem 0" }}>No documents uploaded yet.</div>
-                        ) : (
-                            <div className={styles.tableWrap} style={{ maxHeight: 180, overflowY: "auto" }}>
-                                <table className={styles.table}>
-                                    <thead><tr><th>File</th><th>Size</th><th>Status</th><th>Uploaded</th></tr></thead>
-                                    <tbody>
-                                        {details.documents.map(d => (
-                                            <tr key={d.doc_id}>
-                                                <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.filename}</td>
-                                                <td className={styles.muted}>{fmtBytes(d.size_bytes)}</td>
-                                                <td><span className={d.status === "ready" ? styles.badgeGreen : styles.badgeAmber}>{d.status}</span></td>
-                                                <td className={styles.muted}>{fmtDate(d.uploaded_at)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
-        </div>
+                    {/* Documents */}
+                    <div className={styles.sectionTitle} style={{ marginBottom: "0.5rem" }}>Documents ({details.documents.length})</div>
+                    <div style={{ maxHeight: 180, overflowY: "auto" }}>
+                        <Table dense empty={details.documents.length === 0} emptyMessage="No documents uploaded yet.">
+                            <thead><tr><th>File</th><th>Size</th><th>Status</th><th>Uploaded</th></tr></thead>
+                            <tbody>
+                                {details.documents.map(d => (
+                                    <tr key={d.doc_id}>
+                                        <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.filename}</td>
+                                        <td className={styles.muted}>{fmtBytes(d.size_bytes)}</td>
+                                        <td><Badge tone={docStatusTone(d.status)}>{d.status}</Badge></td>
+                                        <td className={styles.muted}>{fmtDate(d.uploaded_at)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
+                    </div>
+                </>
+            )}
+        </Modal>
     );
 };
 
@@ -262,23 +243,21 @@ const OverviewPanel = ({ stats, orgs }: { stats: PlatformStats | null; orgs: Org
 
             {/* Recent orgs */}
             <div className={styles.sectionTitle}>All Organizations</div>
-            <div className={styles.tableWrap}>
-                <table className={styles.table}>
-                    <thead><tr><th>Name</th><th>Plan</th><th>Users</th><th>Docs</th><th>Status</th><th>Created</th></tr></thead>
-                    <tbody>
-                        {orgs.map(o => (
-                            <tr key={o.org_id}>
-                                <td><strong>{o.name}</strong><div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{o.industry}</div></td>
-                                <td><PlanBadge plan={o.plan} /></td>
-                                <td className={styles.muted}>{o.user_count}</td>
-                                <td className={styles.muted}>{o.doc_count}</td>
-                                <td><span className={o.status === "active" ? styles.badgeGreen : styles.badgeRed}>{o.status}</span></td>
-                                <td className={styles.muted}>{fmtDate(o.created_at)}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            <Table>
+                <thead><tr><th>Name</th><th>Plan</th><th>Users</th><th>Docs</th><th>Status</th><th>Created</th></tr></thead>
+                <tbody>
+                    {orgs.map(o => (
+                        <tr key={o.org_id}>
+                            <td><strong>{o.name}</strong><div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{o.industry}</div></td>
+                            <td><PlanBadge plan={o.plan} /></td>
+                            <td className={styles.muted}>{o.user_count}</td>
+                            <td className={styles.muted}>{o.doc_count}</td>
+                            <td><Badge tone={orgStatusTone(o.status)}>{o.status}</Badge></td>
+                            <td className={styles.muted}>{fmtDate(o.created_at)}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
         </div>
     );
 };
@@ -361,9 +340,9 @@ const OrgsPanel = ({ orgs, setOrgs }: { orgs: Org[]; setOrgs: React.Dispatch<Rea
         <div className={styles.panelContent}>
             <div className={styles.panelToolbar}>
                 <span className={styles.resultCount}>{orgs.length} organization{orgs.length !== 1 ? "s" : ""}</span>
-                <button className={styles.btnPrimary} onClick={() => { setShowCreate(true); setActionError(null); }}>
+                <Button onClick={() => { setShowCreate(true); setActionError(null); }}>
                     + Add Organization
-                </button>
+                </Button>
             </div>
 
             {actionError && (
@@ -373,183 +352,166 @@ const OrgsPanel = ({ orgs, setOrgs }: { orgs: Org[]; setOrgs: React.Dispatch<Rea
                 </div>
             )}
 
-            <div className={styles.tableWrap}>
-                <table className={styles.table}>
-                    <thead>
-                        <tr>
-                            <th>Organization</th>
-                            <th>Plan</th>
-                            <th>Users</th>
-                            <th>Docs</th>
-                            <th>Storage</th>
-                            <th>Status</th>
-                            <th>Created</th>
-                            <th>Actions</th>
+            <Table>
+                <thead>
+                    <tr>
+                        <th>Organization</th>
+                        <th>Plan</th>
+                        <th>Users</th>
+                        <th>Docs</th>
+                        <th>Storage</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {orgs.map(o => (
+                        <tr key={o.org_id}>
+                            <td>
+                                <div style={{ fontWeight: 600 }}>{o.name}</div>
+                                <div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{o.industry}</div>
+                            </td>
+                            <td><PlanBadge plan={o.plan} /></td>
+                            <td className={styles.muted}>{o.user_count} / {o.max_users}</td>
+                            <td className={styles.muted}>{o.doc_count} / {o.max_docs}</td>
+                            <td className={styles.muted}>{fmtBytes(o.total_bytes)}</td>
+                            <td><Badge tone={orgStatusTone(o.status)}>{o.status}</Badge></td>
+                            <td className={styles.muted}>{fmtDate(o.created_at)}</td>
+                            <td>
+                                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                                    <Button variant="ghost" size="sm" onClick={() => setDetailOrgId(o.org_id)}>
+                                        View
+                                    </Button>
+                                    <Button variant="ghost" size="sm" onClick={() => {
+                                        setEditOrg(o);
+                                        setPlanForm({ plan: o.plan, max_docs: o.max_docs, max_users: o.max_users });
+                                    }}>
+                                        Plan
+                                    </Button>
+                                    <Button variant="ghost" size="sm" onClick={() => handleSuspendToggle(o)}>
+                                        {o.status === "active" ? "Suspend" : "Activate"}
+                                    </Button>
+                                    <Button variant="danger" size="sm" onClick={() => setConfirmDelete(o)}>
+                                        Delete
+                                    </Button>
+                                </div>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        {orgs.map(o => (
-                            <tr key={o.org_id}>
-                                <td>
-                                    <div style={{ fontWeight: 600 }}>{o.name}</div>
-                                    <div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{o.industry}</div>
-                                </td>
-                                <td><PlanBadge plan={o.plan} /></td>
-                                <td className={styles.muted}>{o.user_count} / {o.max_users}</td>
-                                <td className={styles.muted}>{o.doc_count} / {o.max_docs}</td>
-                                <td className={styles.muted}>{fmtBytes(o.total_bytes)}</td>
-                                <td>
-                                    <span className={o.status === "active" ? styles.badgeGreen : styles.badgeRed}>
-                                        {o.status}
-                                    </span>
-                                </td>
-                                <td className={styles.muted}>{fmtDate(o.created_at)}</td>
-                                <td>
-                                    <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                                        <button className={styles.actionBtn} onClick={() => setDetailOrgId(o.org_id)}>
-                                            View
-                                        </button>
-                                        <button className={styles.actionBtn} onClick={() => {
-                                            setEditOrg(o);
-                                            setPlanForm({ plan: o.plan, max_docs: o.max_docs, max_users: o.max_users });
-                                        }}>
-                                            Plan
-                                        </button>
-                                        <button className={styles.actionBtn} onClick={() => handleSuspendToggle(o)}>
-                                            {o.status === "active" ? "Suspend" : "Activate"}
-                                        </button>
-                                        <button className={styles.actionBtnDanger} onClick={() => setConfirmDelete(o)}>
-                                            Delete
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+                    ))}
+                </tbody>
+            </Table>
 
             {/* Create org modal */}
-            {showCreate && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowCreate(false); }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Add Organization</h3>
-                        {actionError && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {actionError}</div>}
+            <Modal
+                open={showCreate}
+                onClose={() => setShowCreate(false)}
+                title="Add Organization"
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
+                    <Button onClick={handleCreate} loading={saving}>Create Organization</Button>
+                </>}
+            >
+                {actionError && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {actionError}</div>}
 
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
-                            <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
-                                <label className={styles.formLabel}>Organization Name</label>
-                                <input className={styles.formInput} value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} placeholder="Acme Legal" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Industry</label>
-                                <select className={styles.formSelect} value={createForm.industry} onChange={e => setCreateForm(f => ({ ...f, industry: e.target.value }))}>
-                                    {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
-                                </select>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Plan</label>
-                                <select className={styles.formSelect} value={createForm.plan} onChange={e => setCreateForm(f => ({ ...f, plan: e.target.value }))}>
-                                    <option value="free">Free</option>
-                                    <option value="pro">Pro</option>
-                                    <option value="enterprise">Enterprise</option>
-                                </select>
-                            </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
+                    <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
+                        <label className={styles.formLabel}>Organization Name</label>
+                        <input className={styles.formInput} value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} placeholder="Acme Legal" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Industry</label>
+                        <select className={styles.formSelect} value={createForm.industry} onChange={e => setCreateForm(f => ({ ...f, industry: e.target.value }))}>
+                            {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
+                        </select>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Plan</label>
+                        <select className={styles.formSelect} value={createForm.plan} onChange={e => setCreateForm(f => ({ ...f, plan: e.target.value }))}>
+                            <option value="free">Free</option>
+                            <option value="pro">Pro</option>
+                            <option value="enterprise">Enterprise</option>
+                        </select>
+                    </div>
 
-                            <div style={{ gridColumn: "1 / -1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem", marginBottom: "0.25rem" }}>
-                                <div style={{ fontSize: "0.78rem", color: "var(--text-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Owner Account</div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Owner Full Name</label>
-                                <input className={styles.formInput} value={createForm.owner_name} onChange={e => setCreateForm(f => ({ ...f, owner_name: e.target.value }))} placeholder="Jane Smith" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Owner Email</label>
-                                <input className={styles.formInput} type="email" value={createForm.owner_email} onChange={e => setCreateForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="owner@firm.com" />
-                            </div>
-                        </div>
-
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setShowCreate(false)}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={handleCreate} disabled={saving}>
-                                {saving ? "Creating…" : "Create Organization"}
-                            </button>
-                        </div>
+                    <div style={{ gridColumn: "1 / -1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem", marginBottom: "0.25rem" }}>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Owner Account</div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Owner Full Name</label>
+                        <input className={styles.formInput} value={createForm.owner_name} onChange={e => setCreateForm(f => ({ ...f, owner_name: e.target.value }))} placeholder="Jane Smith" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Owner Email</label>
+                        <input className={styles.formInput} type="email" value={createForm.owner_email} onChange={e => setCreateForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="owner@firm.com" />
                     </div>
                 </div>
-            )}
+            </Modal>
 
             {/* New org credentials */}
-            {createCreds && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setCreateCreds(null); }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Organization Created ✓</h3>
-                        <p className={styles.muted} style={{ fontSize: "0.84rem", marginBottom: "1rem" }}>
-                            Share these login credentials with the org owner. They will be prompted to set a new password on first login.
-                        </p>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Owner Email</label>
-                            <input className={styles.formInput} readOnly value={createCreds.email} />
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Temporary Password</label>
-                            <input className={styles.formInput} readOnly value={createCreds.password} />
-                        </div>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnPrimary} onClick={() => setCreateCreds(null)}>Done</button>
-                        </div>
-                    </div>
+            <Modal
+                open={!!createCreds}
+                onClose={() => setCreateCreds(null)}
+                title="Organization Created ✓"
+                footer={<Button onClick={() => setCreateCreds(null)}>Done</Button>}
+            >
+                <p className={styles.muted} style={{ fontSize: "0.84rem", marginBottom: "1rem" }}>
+                    Share these login credentials with the org owner. They will be prompted to set a new password on first login.
+                </p>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Owner Email</label>
+                    <input className={styles.formInput} readOnly value={createCreds?.email ?? ""} />
                 </div>
-            )}
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Temporary Password</label>
+                    <input className={styles.formInput} readOnly value={createCreds?.password ?? ""} />
+                </div>
+            </Modal>
 
             {/* Edit plan modal */}
-            {editOrg && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setEditOrg(null); }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Change Plan — {editOrg.name}</h3>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Plan</label>
-                            <select className={styles.formSelect} value={planForm.plan} onChange={e => setPlanForm(f => ({ ...f, plan: e.target.value }))}>
-                                <option value="free">Free</option>
-                                <option value="pro">Pro</option>
-                                <option value="enterprise">Enterprise</option>
-                            </select>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Max Documents</label>
-                                <input className={styles.formInput} type="number" value={planForm.max_docs} onChange={e => setPlanForm(f => ({ ...f, max_docs: +e.target.value }))} />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Max Users</label>
-                                <input className={styles.formInput} type="number" value={planForm.max_users} onChange={e => setPlanForm(f => ({ ...f, max_users: +e.target.value }))} />
-                            </div>
-                        </div>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setEditOrg(null)}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={handlePlanSave} disabled={saving}>
-                                {saving ? "Saving…" : "Save"}
-                            </button>
-                        </div>
+            <Modal
+                open={!!editOrg}
+                onClose={() => setEditOrg(null)}
+                title={`Change Plan — ${editOrg?.name ?? ""}`}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setEditOrg(null)}>Cancel</Button>
+                    <Button onClick={handlePlanSave} loading={saving}>Save</Button>
+                </>}
+            >
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Plan</label>
+                    <select className={styles.formSelect} value={planForm.plan} onChange={e => setPlanForm(f => ({ ...f, plan: e.target.value }))}>
+                        <option value="free">Free</option>
+                        <option value="pro">Pro</option>
+                        <option value="enterprise">Enterprise</option>
+                    </select>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Max Documents</label>
+                        <input className={styles.formInput} type="number" value={planForm.max_docs} onChange={e => setPlanForm(f => ({ ...f, max_docs: +e.target.value }))} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Max Users</label>
+                        <input className={styles.formInput} type="number" value={planForm.max_users} onChange={e => setPlanForm(f => ({ ...f, max_users: +e.target.value }))} />
                     </div>
                 </div>
-            )}
+            </Modal>
 
             {/* Confirm delete */}
-            {confirmDelete && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setConfirmDelete(null); }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Delete Organization</h3>
-                        <p className={styles.muted} style={{ fontSize: "0.84rem", marginBottom: "1rem" }}>
-                            This will permanently delete <strong style={{ color: "var(--text-1)" }}>{confirmDelete.name}</strong> and all its users, documents, and data. This cannot be undone.
-                        </p>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setConfirmDelete(null)}>Cancel</button>
-                            <button className={styles.btnDanger} onClick={() => handleDelete(confirmDelete)}>Delete Forever</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <Modal
+                open={!!confirmDelete}
+                onClose={() => setConfirmDelete(null)}
+                title="Delete Organization"
+                footer={<>
+                    <Button variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+                    <Button variant="danger" onClick={() => confirmDelete && handleDelete(confirmDelete)}>Delete Forever</Button>
+                </>}
+            >
+                <p className={styles.muted} style={{ fontSize: "0.84rem" }}>
+                    This will permanently delete <strong style={{ color: "var(--text-1)" }}>{confirmDelete?.name}</strong> and all its users, documents, and data. This cannot be undone.
+                </p>
+            </Modal>
 
             {/* Org detail modal */}
             {detailOrgId && <OrgDetailModal orgId={detailOrgId} onClose={() => setDetailOrgId(null)} />}
@@ -580,23 +542,21 @@ const EvalsPanel = () => {
     return (
         <div className={styles.panelContent}>
             <div className={styles.panelToolbar}><span className={styles.resultCount}>{results.length} eval records</span></div>
-            <div className={styles.tableWrap}>
-                <table className={styles.table}>
-                    <thead><tr><th>Time</th><th>Org</th><th>Query</th><th>Precision</th><th>Relevance</th><th>Latency</th></tr></thead>
-                    <tbody>
-                        {results.map(r => (
-                            <tr key={r.id}>
-                                <td className={styles.muted}>{r.timestamp?.slice(0, 16).replace("T", " ")}</td>
-                                <td>{r.organization_id ?? "—"}</td>
-                                <td className={styles.queryCell}>{r.original_query}</td>
-                                <td><ScoreBadge val={r.precision_at_k} /></td>
-                                <td><ScoreBadge val={r.answer_relevance_score} /></td>
-                                <td className={styles.muted}>{r.latency_ms != null ? `${r.latency_ms}ms` : "—"}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            <Table>
+                <thead><tr><th>Time</th><th>Org</th><th>Query</th><th>Precision</th><th>Relevance</th><th>Latency</th></tr></thead>
+                <tbody>
+                    {results.map(r => (
+                        <tr key={r.id}>
+                            <td className={styles.muted}>{r.timestamp?.slice(0, 16).replace("T", " ")}</td>
+                            <td>{r.organization_id ?? "—"}</td>
+                            <td className={styles.queryCell}>{r.original_query}</td>
+                            <td><ScoreBadge val={r.precision_at_k} /></td>
+                            <td><ScoreBadge val={r.answer_relevance_score} /></td>
+                            <td className={styles.muted}>{r.latency_ms != null ? `${r.latency_ms}ms` : "—"}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
         </div>
     );
 };
@@ -719,47 +679,44 @@ const RegistrationsPanel = () => {
                     <p style={{ fontSize: "0.85rem", color: "var(--text-3)", marginBottom: "1.5rem" }}>
                         {regs.length} firm{regs.length !== 1 ? "s" : ""} awaiting payment verification and activation.
                     </p>
-                    <div className={styles.tableWrap}>
-                        <table className={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th>Firm</th>
-                                    <th>Owner</th>
-                                    <th>Email</th>
-                                    <th>Plan</th>
-                                    <th>City</th>
-                                    <th>Registered</th>
-                                    <th>Action</th>
+                    <Table>
+                        <thead>
+                            <tr>
+                                <th>Firm</th>
+                                <th>Owner</th>
+                                <th>Email</th>
+                                <th>Plan</th>
+                                <th>City</th>
+                                <th>Registered</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {regs.map(r => (
+                                <tr key={r.org_id}>
+                                    <td style={{ fontWeight: 600, color: "var(--text-1)" }}>{r.name}</td>
+                                    <td>{r.owner_name ?? "—"}</td>
+                                    <td>
+                                        <a href={`mailto:${r.owner_email}`} style={{ color: "var(--gold)", textDecoration: "none" }}>
+                                            {r.owner_email ?? "—"}
+                                        </a>
+                                    </td>
+                                    <td><PlanBadge plan={r.plan} /></td>
+                                    <td className={styles.muted}>{r.city ?? "—"}</td>
+                                    <td className={styles.muted}>{fmtDate(r.created_at)}</td>
+                                    <td>
+                                        <Button
+                                            size="sm"
+                                            loading={approving === r.org_id}
+                                            onClick={() => approve(r.org_id, r.name)}
+                                        >
+                                            Approve
+                                        </Button>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {regs.map(r => (
-                                    <tr key={r.org_id}>
-                                        <td style={{ fontWeight: 600, color: "var(--text-1)" }}>{r.name}</td>
-                                        <td>{r.owner_name ?? "—"}</td>
-                                        <td>
-                                            <a href={`mailto:${r.owner_email}`} style={{ color: "var(--gold)", textDecoration: "none" }}>
-                                                {r.owner_email ?? "—"}
-                                            </a>
-                                        </td>
-                                        <td><PlanBadge plan={r.plan} /></td>
-                                        <td className={styles.muted}>{r.city ?? "—"}</td>
-                                        <td className={styles.muted}>{fmtDate(r.created_at)}</td>
-                                        <td>
-                                            <button
-                                                className={styles.btnPrimary}
-                                                style={{ padding: "0.4rem 0.9rem", fontSize: "0.78rem" }}
-                                                disabled={approving === r.org_id}
-                                                onClick={() => approve(r.org_id, r.name)}
-                                            >
-                                                {approving === r.org_id ? "Approving…" : "Approve"}
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                            ))}
+                        </tbody>
+                    </Table>
                 </>
             )}
         </div>
@@ -1062,73 +1019,71 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
 
     return (
         <div className={styles.panelContent}>
-            <div className={styles.toolbar}>
+            <div className={styles.panelToolbar}>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-                    <select className={styles.select} value={filterOrg} onChange={e => setFilterOrg(e.target.value)}>
+                    <select className={styles.formSelect} value={filterOrg} onChange={e => setFilterOrg(e.target.value)}>
                         <option value="all">All organizations</option>
                         {orgs.map(o => <option key={o.org_id} value={o.org_id}>{o.name}</option>)}
                     </select>
-                    <select className={styles.select} value={filterType} onChange={e => setFilterType(e.target.value)}>
+                    <select className={styles.formSelect} value={filterType} onChange={e => setFilterType(e.target.value)}>
                         <option value="all">All events</option>
                         {Object.entries(ADMIN_EVENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
-                    <input type="date" className={styles.input} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="From" />
-                    <input type="date" className={styles.input} value={dateTo}   onChange={e => setDateTo(e.target.value)}   title="To" />
+                    <input type="date" className={styles.formInput} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="From" />
+                    <input type="date" className={styles.formInput} value={dateTo}   onChange={e => setDateTo(e.target.value)}   title="To" />
                     <span className={styles.muted} style={{ fontSize: "0.8rem" }}>{total} event{total !== 1 ? "s" : ""}</span>
                 </div>
-                <button className={styles.btnSecondary} onClick={exportCsv} disabled={logs.length === 0}>↓ Export CSV</button>
+                <Button variant="ghost" size="sm" onClick={exportCsv} disabled={logs.length === 0}>↓ Export CSV</Button>
             </div>
 
             {loading ? (
-                <div className={styles.empty}>Loading…</div>
+                <div className={styles.emptyState}>Loading…</div>
             ) : logs.length === 0 ? (
-                <div className={styles.empty}>No events match the selected filters.</div>
+                <div className={styles.emptyState}>No events match the selected filters.</div>
             ) : (
                 <>
-                    <div className={styles.tableWrap}>
-                        <table className={styles.table}>
-                            <thead><tr>
-                                <th>Timestamp</th><th>Org</th><th>Event</th><th>Actor</th><th>Role</th><th>Resource</th><th>IP</th><th>Details</th>
-                            </tr></thead>
-                            <tbody>
-                                {logs.map(l => {
-                                    const orgName = orgs.find(o => o.org_id === l.org_id)?.name ?? l.org_id ?? "—";
-                                    let detailStr = "";
-                                    if (l.details) {
-                                        try {
-                                            const parsed = JSON.parse(l.details);
-                                            if (parsed.query) detailStr = `"${parsed.query}"`;
-                                            else if (parsed.email) detailStr = parsed.email;
-                                            else detailStr = Object.entries(parsed).filter(([,v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(", ");
-                                        } catch { detailStr = l.details; }
-                                    }
-                                    return (
-                                        <tr key={l.log_id}>
-                                            <td className={styles.muted} style={{ whiteSpace: "nowrap", fontSize: "0.78rem" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
-                                            <td style={{ fontSize: "0.8rem" }}>{orgName}</td>
-                                            <td style={{ fontSize: "0.8rem", fontWeight: 600 }}>{ADMIN_EVENT_LABELS[l.event_type] ?? l.event_type}</td>
-                                            <td style={{ fontSize: "0.8rem" }}>{l.actor_name ?? "—"}</td>
-                                            <td className={styles.muted}>{l.actor_role ?? "—"}</td>
-                                            <td className={styles.muted} style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                {[l.resource_type, l.resource_name].filter(Boolean).join(": ") || "—"}
-                                            </td>
-                                            <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
-                                            <td className={styles.muted} style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
-                                                {detailStr || "—"}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                    <Table>
+                        <thead><tr>
+                            <th>Timestamp</th><th>Org</th><th>Event</th><th>Actor</th><th>Role</th><th>Resource</th><th>IP</th><th>Details</th>
+                        </tr></thead>
+                        <tbody>
+                            {logs.map(l => {
+                                const orgName = orgs.find(o => o.org_id === l.org_id)?.name ?? l.org_id ?? "—";
+                                let detailStr = "";
+                                if (l.details) {
+                                    try {
+                                        const parsed = JSON.parse(l.details);
+                                        if (parsed.query) detailStr = `"${parsed.query}"`;
+                                        else if (parsed.email) detailStr = parsed.email;
+                                        else detailStr = Object.entries(parsed).filter(([,v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(", ");
+                                    } catch { detailStr = l.details; }
+                                }
+                                return (
+                                    <tr key={l.log_id}>
+                                        <td className={styles.muted} style={{ whiteSpace: "nowrap", fontSize: "0.78rem" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
+                                        <td style={{ fontSize: "0.8rem" }}>{orgName}</td>
+                                        <td style={{ fontSize: "0.8rem", fontWeight: 600 }}>{ADMIN_EVENT_LABELS[l.event_type] ?? l.event_type}</td>
+                                        <td style={{ fontSize: "0.8rem" }}>{l.actor_name ?? "—"}</td>
+                                        <td className={styles.muted}>{l.actor_role ?? "—"}</td>
+                                        <td className={styles.muted} style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                            {[l.resource_type, l.resource_name].filter(Boolean).join(": ") || "—"}
+                                        </td>
+                                        <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
+                                        <td className={styles.muted} style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
+                                            {detailStr || "—"}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </Table>
                     {totalPages > 1 && (
                         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem", justifyContent: "center" }}>
-                            <button className={styles.btnSecondary} disabled={page === 0}
-                                onClick={() => { setPage(page - 1); load(page - 1); }}>← Prev</button>
+                            <Button variant="ghost" size="sm" disabled={page === 0}
+                                onClick={() => { setPage(page - 1); load(page - 1); }}>← Prev</Button>
                             <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Page {page + 1} of {totalPages}</span>
-                            <button className={styles.btnSecondary} disabled={page >= totalPages - 1}
-                                onClick={() => { setPage(page + 1); load(page + 1); }}>Next →</button>
+                            <Button variant="ghost" size="sm" disabled={page >= totalPages - 1}
+                                onClick={() => { setPage(page + 1); load(page + 1); }}>Next →</Button>
                         </div>
                     )}
                 </>
@@ -1156,10 +1111,8 @@ interface CaseLawDoc {
 
 const PUBLISHERS = ["PLD", "SCMR", "MLD", "CLC", "OTHER"];
 
-const STATUS_BADGE: Record<string, string> = {
-    ready:      "#2e9e4f",
-    processing: "#b8964c",
-    error:      "#e05260",
+const CASE_LAW_STATUS_TONE: Record<string, BadgeTone> = {
+    ready: "green", processing: "amber", error: "red",
 };
 
 function fmtBytesAdmin(b: number): string {
@@ -1181,7 +1134,7 @@ const FeatureAccessPanel = () => {
     const [err,     setErr]     = useState<string | null>(null);
 
     const api = (path: string, opts?: RequestInit) =>
-        fetch(path, { ...opts, headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}`, "Content-Type": "application/json", ...(opts?.headers || {}) } });
+        fetch(path, { ...opts, headers: { Authorization: `Bearer ${sessionStorage.getItem("pe_token") ?? ""}`, "Content-Type": "application/json", ...(opts?.headers || {}) } });
 
     const load = async () => {
         setLoading(true); setErr(null);
@@ -1257,58 +1210,52 @@ const FeatureAccessPanel = () => {
         { label: "System",      keys: ["audit"] },
     ];
 
-    if (loading) return <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-3)" }}>Loading feature flags…</div>;
-
     return (
-        <div style={{ padding: "1.5rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-                <h2 style={{ margin: 0, fontSize: 18, color: "var(--text-1)" }}>Feature Access Control</h2>
-                <span style={{ fontSize: 13, color: "var(--text-3)" }}>Toggle features on/off per organisation. Changes take effect immediately.</span>
+        <div className={styles.panelContent}>
+            <div className={styles.panelToolbar}>
+                <span className={styles.muted}>Toggle features on/off per organisation. Changes take effect immediately.</span>
                 <input
+                    className={styles.formInput}
                     placeholder="Search organisations…"
                     value={search} onChange={e => setSearch(e.target.value)}
-                    style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-1)", color: "var(--text-1)", fontSize: 13, width: 220 }}
+                    style={{ marginLeft: "auto", width: 220 }}
                 />
             </div>
-            {err && <div style={{ color: "#e53e3e", marginBottom: 12, fontSize: 13 }}>Error: {err}</div>}
+            {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>Error: {err}</div>}
 
-            {filtered.length === 0 && <div style={{ color: "var(--text-3)", textAlign: "center", padding: "3rem" }}>No organisations found.</div>}
-
-            {filtered.map(org => {
+            {loading ? (
+                <div className={styles.muted} style={{ textAlign: "center", padding: "3rem" }}>Loading feature flags…</div>
+            ) : filtered.length === 0 ? (
+                <div className={styles.muted} style={{ textAlign: "center", padding: "3rem" }}>No organisations found.</div>
+            ) : filtered.map(org => {
                 const isSaving = saving === org.org_id;
                 const enabledCount = keys.filter(k => org.flags[k] !== false).length;
                 return (
                     <div key={org.org_id} style={{
                         background: "var(--bg-1)", border: "1px solid var(--border)",
-                        borderRadius: 10, marginBottom: 16, overflow: "hidden"
+                        borderRadius: "var(--radius)", marginBottom: "1rem", overflow: "hidden"
                     }}>
                         {/* Org header */}
                         <div style={{
-                            display: "flex", alignItems: "center", gap: 10, padding: "12px 16px",
+                            display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.75rem 1rem",
                             borderBottom: "1px solid var(--border)", background: "var(--bg-0)"
                         }}>
-                            <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text-1)" }}>{org.name}</span>
-                            <span style={{ fontSize: 12, color: "var(--text-3)", marginRight: "auto" }}>
+                            <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text-1)" }}>{org.name}</span>
+                            <span className={styles.muted} style={{ marginRight: "auto" }}>
                                 {enabledCount}/{keys.length} features enabled
                             </span>
-                            {isSaving && <span style={{ fontSize: 12, color: "var(--gold)" }}>Saving…</span>}
-                            <button
-                                onClick={() => enableAll(org.org_id)}
-                                disabled={isSaving}
-                                style={{ fontSize: 12, padding: "3px 10px", borderRadius: 5, border: "1px solid #38a169", background: "transparent", color: "#38a169", cursor: "pointer" }}
-                            >Enable All</button>
-                            <button
-                                onClick={() => disableAll(org.org_id)}
-                                disabled={isSaving}
-                                style={{ fontSize: 12, padding: "3px 10px", borderRadius: 5, border: "1px solid #e53e3e", background: "transparent", color: "#e53e3e", cursor: "pointer" }}
-                            >Disable All</button>
+                            {isSaving && <span style={{ fontSize: "0.75rem", color: "var(--gold)" }}>Saving…</span>}
+                            <Button variant="ghost" size="sm" style={{ borderColor: "#16a34a", color: "#16a34a" }}
+                                onClick={() => enableAll(org.org_id)} disabled={isSaving}>Enable All</Button>
+                            <Button variant="ghost" size="sm" style={{ borderColor: "#dc2626", color: "#dc2626" }}
+                                onClick={() => disableAll(org.org_id)} disabled={isSaving}>Disable All</Button>
                         </div>
 
                         {/* Feature groups */}
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 1, background: "var(--border)" }}>
                             {featureGroups.map(group => (
-                                <div key={group.label} style={{ background: "var(--bg-1)", padding: "12px 16px" }}>
-                                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                                <div key={group.label} style={{ background: "var(--bg-1)", padding: "0.75rem 1rem" }}>
+                                    <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 1, marginBottom: "0.5rem" }}>
                                         {group.label}
                                     </div>
                                     {group.keys.map(fk => {
@@ -1316,9 +1263,9 @@ const FeatureAccessPanel = () => {
                                         return (
                                             <label key={fk} style={{
                                                 display: "flex", alignItems: "center", justifyContent: "space-between",
-                                                padding: "5px 0", cursor: "pointer", gap: 8
+                                                padding: "0.3rem 0", cursor: "pointer", gap: "0.5rem"
                                             }}>
-                                                <span style={{ fontSize: 13, color: enabled ? "var(--text-1)" : "var(--text-3)" }}>
+                                                <span style={{ fontSize: "0.82rem", color: enabled ? "var(--text-1)" : "var(--text-3)" }}>
                                                     {labels[fk] || fk}
                                                 </span>
                                                 {/* Toggle switch */}
@@ -1326,16 +1273,16 @@ const FeatureAccessPanel = () => {
                                                     onClick={() => !isSaving && toggle(org.org_id, fk, enabled)}
                                                     style={{
                                                         display: "inline-flex", alignItems: "center",
-                                                        width: 40, height: 22, borderRadius: 11,
+                                                        width: 40, height: 22, borderRadius: "var(--radius-pill, 11px)",
                                                         background: enabled ? "var(--gold)" : "var(--border)",
                                                         position: "relative", cursor: isSaving ? "not-allowed" : "pointer",
-                                                        transition: "background 0.2s", flexShrink: 0
+                                                        transition: "background var(--transition-fast, 0.2s)", flexShrink: 0
                                                     }}
                                                 >
                                                     <span style={{
                                                         position: "absolute", width: 16, height: 16, borderRadius: "50%",
                                                         background: "#fff", left: enabled ? 21 : 3,
-                                                        transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
+                                                        transition: "left var(--transition-fast, 0.2s)", boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
                                                     }} />
                                                 </span>
                                             </label>
@@ -1419,10 +1366,10 @@ const AdminCaseLawPanel = () => {
     };
 
     return (
-        <div className={styles.panelBody}>
+        <div className={styles.panelContent}>
             {/* ── Upload form ── */}
-            <div className={styles.card} style={{ marginBottom: "1.5rem" }}>
-                <div className={styles.cardTitle}>Upload Case Law Document</div>
+            <div style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1.75rem", marginBottom: "1.5rem" }}>
+                <div className={styles.sectionTitle}>Upload Case Law Document</div>
                 <p style={{ fontSize: "0.82rem", color: "var(--text-3)", marginBottom: "1.25rem" }}>
                     Upload a PDF volume of PLD, SCMR, MLD, or CLC. It will be indexed into the shared
                     case law pool and will appear in every user's AI search results automatically.
@@ -1473,14 +1420,13 @@ const AdminCaseLawPanel = () => {
                     </div>
                 </div>
 
-                <button
-                    className={styles.btnGold}
+                <Button
                     style={{ marginTop: "1.25rem" }}
                     onClick={handleUpload}
-                    disabled={uploading}
+                    loading={uploading}
                 >
-                    {uploading ? "Uploading…" : "Upload & Index"}
-                </button>
+                    Upload & Index
+                </Button>
             </div>
 
             {/* ── Publisher filter + doc list ── */}
@@ -1504,7 +1450,7 @@ const AdminCaseLawPanel = () => {
                     No case law documents uploaded yet. Use the form above to add PLD or SCMR volumes.
                 </div>
             ) : (
-                <table className={styles.table}>
+                <Table>
                     <thead>
                         <tr>
                             <th>Title</th>
@@ -1521,39 +1467,33 @@ const AdminCaseLawPanel = () => {
                         {docs.map(doc => (
                             <tr key={doc.doc_id}>
                                 <td style={{ fontWeight: 500 }}>{doc.title}</td>
-                                <td>
-                                    <span className={styles.badge} style={{ background: "var(--gold-dim)", color: "var(--gold)", border: "1px solid var(--gold-border)" }}>
-                                        {doc.publisher}
-                                    </span>
-                                </td>
+                                <td><Badge tone="gold">{doc.publisher}</Badge></td>
                                 <td style={{ color: "var(--text-3)" }}>{doc.year ?? "—"}</td>
                                 <td style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>{doc.court ?? "—"}</td>
                                 <td style={{ color: "var(--text-3)" }}>{fmtBytesAdmin(doc.size_bytes)}</td>
                                 <td>
-                                    <span style={{
-                                        fontSize: "0.75rem", fontWeight: 600,
-                                        color: STATUS_BADGE[doc.status] ?? "var(--text-3)",
-                                    }}>
+                                    <Badge tone={CASE_LAW_STATUS_TONE[doc.status] ?? "gray"}>
                                         {doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}
                                         {doc.status === "error" && doc.error_msg && (
                                             <span title={doc.error_msg} style={{ marginLeft: "0.3rem", cursor: "help" }}>⚠</span>
                                         )}
-                                    </span>
+                                    </Badge>
                                 </td>
                                 <td style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>{doc.created_at?.slice(0, 10)}</td>
                                 <td>
-                                    <button
-                                        className={styles.btnDanger}
+                                    <Button
+                                        variant="danger"
+                                        size="sm"
                                         onClick={() => handleDelete(doc.doc_id)}
-                                        disabled={deleting === doc.doc_id}
+                                        loading={deleting === doc.doc_id}
                                     >
-                                        {deleting === doc.doc_id ? "…" : "Remove"}
-                                    </button>
+                                        Remove
+                                    </Button>
                                 </td>
                             </tr>
                         ))}
                     </tbody>
-                </table>
+                </Table>
             )}
         </div>
     );

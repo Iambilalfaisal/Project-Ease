@@ -161,3 +161,6 @@ data/**/*.md5
 # Compiled Bicep output (from `az bicep build`)
 infra/main.json
 infra/main.test.json
+
+# Handoff .md
+HANDOFF.md

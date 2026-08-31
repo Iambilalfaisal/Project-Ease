@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
 import styles from "./ClientPortal.module.css";
+import { Badge, Button, EmptyState, BadgeTone } from "../../components/ui";
+
+const MATTER_STATUS_TONE: Record<string, BadgeTone> = {
+    active: "green", closed: "gray", pending: "gold", settled: "blue",
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -185,9 +190,9 @@ export default function ClientPortal() {
                             {info.matter_status && (
                                 <div className={styles.matterField}>
                                     <span className={styles.matterLabel}>Status</span>
-                                    <span className={`${styles.matterValue} ${styles[`status_${info.matter_status?.toLowerCase()}`] ?? ""}`}>
+                                    <Badge tone={MATTER_STATUS_TONE[info.matter_status.toLowerCase()] ?? "gray"}>
                                         {info.matter_status}
-                                    </span>
+                                    </Badge>
                                 </div>
                             )}
                         </div>
@@ -202,12 +207,7 @@ export default function ClientPortal() {
                     </h2>
 
                     {docs.length === 0 ? (
-                        <div className={styles.emptyDocs}>
-                            <p>No documents have been shared with you yet.</p>
-                            <p style={{ marginTop: "0.35rem", fontSize: "0.8rem", color: "var(--text-3)" }}>
-                                Your legal representative will add documents here as your matter progresses.
-                            </p>
-                        </div>
+                        <EmptyState message="No documents have been shared with you yet. Your legal representative will add documents here as your matter progresses." />
                     ) : (
                         <div className={styles.docList}>
                             {docs.map(doc => (
@@ -221,13 +221,13 @@ export default function ClientPortal() {
                                             {doc.category_name && ` · ${doc.category_name}`}
                                         </div>
                                     </div>
-                                    <button
-                                        className={styles.downloadBtn}
+                                    <Button
+                                        size="sm"
                                         onClick={() => download(doc)}
-                                        disabled={downloading === doc.doc_id}
+                                        loading={downloading === doc.doc_id}
                                     >
-                                        {downloading === doc.doc_id ? "…" : "↓ Download"}
-                                    </button>
+                                        ↓ Download
+                                    </Button>
                                 </div>
                             ))}
                         </div>

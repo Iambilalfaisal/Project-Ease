@@ -21,6 +21,9 @@
     --border:        rgba(255, 255, 255, 0.07);
     --border-md:     rgba(255, 255, 255, 0.11);
     --shadow:        0 4px 28px rgba(0, 0, 0, 0.40);
+    --shadow-sm:     0 2px 10px rgba(0, 0, 0, 0.28);
+    --shadow-lg:     0 16px 48px rgba(0, 0, 0, 0.50);
+    --shadow-gold:   0 8px 24px rgba(201, 168, 76, 0.30);
     --danger:        #F87171;
     --success:       #4ADE80;
     --warning:       #FBBF24;
@@ -44,6 +47,9 @@
     --border:        rgba(0, 0, 0, 0.08);
     --border-md:     rgba(0, 0, 0, 0.13);
     --shadow:        0 4px 28px rgba(0, 0, 0, 0.08);
+    --shadow-sm:     0 2px 10px rgba(0, 0, 0, 0.05);
+    --shadow-lg:     0 16px 48px rgba(0, 0, 0, 0.14);
+    --shadow-gold:   0 8px 24px rgba(156, 122, 40, 0.22);
     --danger:        #DC2626;
     --success:       #16A34A;
     --warning:       #D97706;
@@ -51,6 +57,45 @@
     --sans:          "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
     --radius:        12px;
     --radius-lg:     20px;
+}
+
+/* ── Spacing / typography / motion — theme-independent ───────────────────── */
+:root {
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 2.5rem;
+    --space-8: 3rem;
+
+    --text-xs: 0.72rem;
+    --text-sm: 0.82rem;
+    --text-base: 0.94rem;
+    --text-md: 1.05rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.6rem;
+    --text-2xl: 2rem;
+    --text-display: clamp(2.4rem, 5vw, 3.6rem);
+
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --weight-bold: 700;
+
+    --tracking-tight: -0.02em;
+    --tracking-normal: 0em;
+    --tracking-wide: 0.03em;
+    --tracking-eyebrow: 0.12em;
+
+    --radius-sm: 8px;
+    --radius-pill: 100px;
+
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-fast: 0.15s;
+    --transition-base: 0.22s;
+    --transition-slow: 0.35s;
 }
 
 html {

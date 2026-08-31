@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import readNDJSONStream from "ndjson-readablestream";
 import styles from "./EmployeePortal.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
+import { Table } from "../../components/ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -455,52 +456,41 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
 
 // ── Documents Panel ───────────────────────────────────────────────────────────
 
-const DocumentsPanel = ({ docs }: { docs: DocFile[] }) => {
-    if (docs.length === 0) {
-        return (
-            <div className={styles.panelContent}>
-                <div className={styles.emptyDocs}>
-                    No documents are accessible to you yet. Ask your manager to assign category permissions.
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div className={styles.panelContent}>
-            <table className={styles.docTable}>
-                <thead>
-                    <tr>
-                        <th>Document</th>
-                        <th>Category</th>
-                        <th>Size</th>
-                        <th>Uploaded</th>
-                        <th>Status</th>
+const DocumentsPanel = ({ docs }: { docs: DocFile[] }) => (
+    <div className={styles.panelContent}>
+        <Table empty={docs.length === 0}
+            emptyMessage="No documents are accessible to you yet. Ask your manager to assign category permissions.">
+            <thead>
+                <tr>
+                    <th>Document</th>
+                    <th>Category</th>
+                    <th>Size</th>
+                    <th>Uploaded</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {docs.map(doc => (
+                    <tr key={doc.doc_id}>
+                        <td><span className={styles.docName}>{doc.filename}</span></td>
+                        <td>
+                            {doc.category_name
+                                ? <span className={styles.catBadge}>{doc.category_name}</span>
+                                : <span style={{ color: "var(--text-3)" }}>—</span>}
+                        </td>
+                        <td style={{ color: "var(--text-3)" }}>{fmtBytes(doc.size_bytes ?? 0)}</td>
+                        <td style={{ color: "var(--text-3)" }}>{fmtDate(doc.uploaded_at ?? "")}</td>
+                        <td>
+                            {doc.status === "ready"      && <span className={styles.statusReady}>Ready</span>}
+                            {doc.status === "processing" && <span className={styles.statusProc}>Processing…</span>}
+                            {doc.status === "error"      && <span className={styles.statusError}>Error</span>}
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    {docs.map(doc => (
-                        <tr key={doc.doc_id}>
-                            <td><span className={styles.docName}>{doc.filename}</span></td>
-                            <td>
-                                {doc.category_name
-                                    ? <span className={styles.catBadge}>{doc.category_name}</span>
-                                    : <span style={{ color: "var(--text-3)" }}>—</span>}
-                            </td>
-                            <td style={{ color: "var(--text-3)" }}>{fmtBytes(doc.size_bytes ?? 0)}</td>
-                            <td style={{ color: "var(--text-3)" }}>{fmtDate(doc.uploaded_at ?? "")}</td>
-                            <td>
-                                {doc.status === "ready"      && <span className={styles.statusReady}>Ready</span>}
-                                {doc.status === "processing" && <span className={styles.statusProc}>Processing…</span>}
-                                {doc.status === "error"      && <span className={styles.statusError}>Error</span>}
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
-};
+                ))}
+            </tbody>
+        </Table>
+    </div>
+);
 
 // ── Profile Panel ─────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import styles from "./OwnerPortal.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
 import { queueWrite, initOfflineSync, fetchWithCache, getPendingCount } from "../../offline/offlineQueue";
+import { Table, Modal, Badge, Button, EmptyState, BadgeTone } from "../../components/ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -686,6 +687,20 @@ const STATUS_BADGE: Record<string, string> = {
     Withdrawn: "badgeRed",
 };
 
+// Adapter for panels migrated to the shared <Badge> component — converts the
+// legacy CSS-module-class-name maps above (STATUS_BADGE, INVOICE_STATUS_BADGE, …)
+// into a typed tone without changing those maps' shared string type.
+function badgeClassToTone(cls: string | undefined): BadgeTone {
+    switch (cls) {
+        case "badgeGreen": return "green";
+        case "badgeAmber": return "amber";
+        case "badgeGold":  return "gold";
+        case "badgeRed":   return "red";
+        case "badgeBlue":  return "blue";
+        default:           return "gray";
+    }
+}
+
 function groupDocsByCategory(docs: MatterDoc[]): [string, MatterDoc[]][] {
     const groups: Record<string, MatterDoc[]> = {};
     docs.forEach(d => {
@@ -893,154 +908,153 @@ const ClientsPanel = () => {
     };
 
     const PortalModal = () => (
-        <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setPortalClient(null); }}>
-            <div className={styles.modal} style={{ maxWidth: 560 }}>
-                <h3 className={styles.modalTitle}>🔗 Share Portal — {portalClient?.name}</h3>
-                <p style={{ fontSize: "0.82rem", color: "var(--text-3)", marginBottom: "1rem", lineHeight: 1.5 }}>
-                    Generate a secure link for your client to view their documents online. Links expire automatically.
-                </p>
+        <Modal
+            open={!!portalClient}
+            onClose={() => setPortalClient(null)}
+            title={`🔗 Share Portal — ${portalClient?.name ?? ""}`}
+            maxWidth={560}
+            footer={<Button variant="ghost" onClick={() => setPortalClient(null)}>Close</Button>}
+        >
+            <p style={{ fontSize: "0.82rem", color: "var(--text-3)", marginBottom: "1rem", lineHeight: 1.5 }}>
+                Generate a secure link for your client to view their documents online. Links expire automatically.
+            </p>
 
-                {/* Generate new link form */}
-                <div className={styles.portalForm}>
-                    <h4 className={styles.portalFormTitle}>Generate New Link</h4>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Matter (optional)</label>
-                            <select className={styles.formSelect} value={portalForm.matter_id} onChange={e => setPortalForm({ ...portalForm, matter_id: e.target.value })}>
-                                <option value="">— All matters —</option>
-                                {portalMatters.map(m => (
-                                    <option key={m.matter_id} value={m.matter_id}>{m.title}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Expires in (days)</label>
-                            <select className={styles.formSelect} value={portalForm.expires_days} onChange={e => setPortalForm({ ...portalForm, expires_days: e.target.value })}>
-                                <option value="7">7 days</option>
-                                <option value="30">30 days</option>
-                                <option value="90">90 days</option>
-                                <option value="365">1 year</option>
-                                <option value="">Never expires</option>
-                            </select>
-                        </div>
-                        <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                            <label className={styles.formLabel}>Label (optional)</label>
-                            <input className={styles.formInput} value={portalForm.label} onChange={e => setPortalForm({ ...portalForm, label: e.target.value })} placeholder="e.g. Court documents — July 2026" />
-                        </div>
+            {/* Generate new link form */}
+            <div className={styles.portalForm}>
+                <h4 className={styles.portalFormTitle}>Generate New Link</h4>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Matter (optional)</label>
+                        <select className={styles.formSelect} value={portalForm.matter_id} onChange={e => setPortalForm({ ...portalForm, matter_id: e.target.value })}>
+                            <option value="">— All matters —</option>
+                            {portalMatters.map(m => (
+                                <option key={m.matter_id} value={m.matter_id}>{m.title}</option>
+                            ))}
+                        </select>
                     </div>
-                    <button className={styles.btnPrimary} style={{ marginTop: "0.75rem" }} onClick={createPortalLink} disabled={portalCreating}>
-                        {portalCreating ? "Generating…" : "Generate Link"}
-                    </button>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Expires in (days)</label>
+                        <select className={styles.formSelect} value={portalForm.expires_days} onChange={e => setPortalForm({ ...portalForm, expires_days: e.target.value })}>
+                            <option value="7">7 days</option>
+                            <option value="30">30 days</option>
+                            <option value="90">90 days</option>
+                            <option value="365">1 year</option>
+                            <option value="">Never expires</option>
+                        </select>
+                    </div>
+                    <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                        <label className={styles.formLabel}>Label (optional)</label>
+                        <input className={styles.formInput} value={portalForm.label} onChange={e => setPortalForm({ ...portalForm, label: e.target.value })} placeholder="e.g. Court documents — July 2026" />
+                    </div>
                 </div>
+                <Button style={{ marginTop: "0.75rem" }} onClick={createPortalLink} loading={portalCreating}>
+                    Generate Link
+                </Button>
+            </div>
 
-                {/* Newly created link */}
-                {newTokenUrl && (
-                    <div className={styles.portalNewLink}>
-                        <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.4rem", fontWeight: 600 }}>
-                            ✅ Link generated — copy and send to your client:
-                        </div>
-                        <div className={styles.portalLinkRow}>
-                            <code className={styles.portalLinkCode}>{newTokenUrl}</code>
-                            <button className={styles.portalCopyBtn} onClick={() => copyToClipboard(newTokenUrl)}>
-                                {copied ? "✓ Copied" : "Copy"}
-                            </button>
-                        </div>
+            {/* Newly created link */}
+            {newTokenUrl && (
+                <div className={styles.portalNewLink}>
+                    <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.4rem", fontWeight: 600 }}>
+                        ✅ Link generated — copy and send to your client:
+                    </div>
+                    <div className={styles.portalLinkRow}>
+                        <code className={styles.portalLinkCode}>{newTokenUrl}</code>
+                        <button className={styles.portalCopyBtn} onClick={() => copyToClipboard(newTokenUrl)}>
+                            {copied ? "✓ Copied" : "Copy"}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Existing tokens */}
+            <div style={{ marginTop: "1.25rem" }}>
+                <h4 className={styles.portalFormTitle}>Active Links</h4>
+                {portalLoading ? (
+                    <div style={{ fontSize: "0.82rem", color: "var(--text-3)" }}>Loading…</div>
+                ) : portalTokens.filter(t => t.is_active).length === 0 ? (
+                    <div style={{ fontSize: "0.82rem", color: "var(--text-3)" }}>No active portal links yet.</div>
+                ) : (
+                    <div className={styles.portalTokenList}>
+                        {portalTokens.filter(t => t.is_active).map(t => {
+                            const tUrl = `${window.location.origin}${window.location.pathname}#/portal?token=${t.token}`;
+                            return (
+                                <div key={t.token_id} className={styles.portalTokenRow}>
+                                    <div className={styles.portalTokenInfo}>
+                                        <span className={styles.portalTokenLabel}>{t.label || "Portal Link"}</span>
+                                        <span className={styles.portalTokenMeta}>
+                                            Created {t.created_at?.slice(0, 10)}
+                                            {t.expires_at && ` · Expires ${t.expires_at.slice(0, 10)}`}
+                                            {t.matter_id && " · Matter-scoped"}
+                                        </span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
+                                        <button className={styles.portalCopyBtn} onClick={() => copyToClipboard(tUrl)}>Copy</button>
+                                        <Button variant="danger" size="sm" disabled={revoking === t.token_id} onClick={() => revokePortalToken(t.token_id)}>
+                                            {revoking === t.token_id ? "…" : "Revoke"}
+                                        </Button>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
-
-                {/* Existing tokens */}
-                <div style={{ marginTop: "1.25rem" }}>
-                    <h4 className={styles.portalFormTitle}>Active Links</h4>
-                    {portalLoading ? (
-                        <div style={{ fontSize: "0.82rem", color: "var(--text-3)" }}>Loading…</div>
-                    ) : portalTokens.filter(t => t.is_active).length === 0 ? (
-                        <div style={{ fontSize: "0.82rem", color: "var(--text-3)" }}>No active portal links yet.</div>
-                    ) : (
-                        <div className={styles.portalTokenList}>
-                            {portalTokens.filter(t => t.is_active).map(t => {
-                                const tUrl = `${window.location.origin}${window.location.pathname}#/portal?token=${t.token}`;
-                                return (
-                                    <div key={t.token_id} className={styles.portalTokenRow}>
-                                        <div className={styles.portalTokenInfo}>
-                                            <span className={styles.portalTokenLabel}>{t.label || "Portal Link"}</span>
-                                            <span className={styles.portalTokenMeta}>
-                                                Created {t.created_at?.slice(0, 10)}
-                                                {t.expires_at && ` · Expires ${t.expires_at.slice(0, 10)}`}
-                                                {t.matter_id && " · Matter-scoped"}
-                                            </span>
-                                        </div>
-                                        <div style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
-                                            <button className={styles.portalCopyBtn} onClick={() => copyToClipboard(tUrl)}>Copy</button>
-                                            <button className={styles.actionBtnDanger} style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
-                                                disabled={revoking === t.token_id} onClick={() => revokePortalToken(t.token_id)}>
-                                                {revoking === t.token_id ? "…" : "Revoke"}
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-
-                <div className={styles.modalActions}>
-                    <button className={styles.btnGhost} onClick={() => setPortalClient(null)}>Close</button>
-                </div>
             </div>
-        </div>
+        </Modal>
     );
 
     const ClientModal = () => (
-        <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
-            <div className={styles.modal} style={{ maxWidth: 480 }}>
-                <h3 className={styles.modalTitle}>{editMode ? "Edit Client" : "Add Client"}</h3>
-                {formErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {formErr}</div>}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                        <label className={styles.formLabel}>Name *</label>
-                        <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Client or firm name" autoFocus />
-                    </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Type</label>
-                        <select className={styles.formSelect} value={form.client_type} onChange={e => setForm({ ...form, client_type: e.target.value as any })}>
-                            <option>Individual</option>
-                            <option>Corporate</option>
-                        </select>
-                    </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Phone</label>
-                        <input className={styles.formInput} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+92 300 0000000" />
-                    </div>
-                    <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                        <label className={styles.formLabel}>Email</label>
-                        <input className={styles.formInput} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="client@example.com" />
-                    </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>CNIC / NTN</label>
-                        <input className={styles.formInput} value={form.cnic_ntn} onChange={e => setForm({ ...form, cnic_ntn: e.target.value })} placeholder="42201-0000000-0" />
-                    </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Address</label>
-                        <input className={styles.formInput} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="City, Province" />
-                    </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Referral Source</label>
-                        <select className={styles.formSelect} value={form.referral_source} onChange={e => setForm({ ...form, referral_source: e.target.value })}>
-                            <option value="">Not specified</option>
-                            {REFERRAL_SOURCES.map(s => <option key={s}>{s}</option>)}
-                        </select>
-                    </div>
-                    <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                        <label className={styles.formLabel}>Notes</label>
-                        <input className={styles.formInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional internal notes" />
-                    </div>
+        <Modal
+            open={showModal}
+            onClose={() => setShowModal(false)}
+            title={editMode ? "Edit Client" : "Add Client"}
+            footer={<>
+                <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+                <Button onClick={saveClient} loading={saving}>Save</Button>
+            </>}
+        >
+            {formErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {formErr}</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Name *</label>
+                    <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Client or firm name" autoFocus />
                 </div>
-                <div className={styles.modalActions}>
-                    <button className={styles.btnGhost} onClick={() => setShowModal(false)}>Cancel</button>
-                    <button className={styles.btnPrimary} onClick={saveClient} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Type</label>
+                    <select className={styles.formSelect} value={form.client_type} onChange={e => setForm({ ...form, client_type: e.target.value as any })}>
+                        <option>Individual</option>
+                        <option>Corporate</option>
+                    </select>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Phone</label>
+                    <input className={styles.formInput} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+92 300 0000000" />
+                </div>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Email</label>
+                    <input className={styles.formInput} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="client@example.com" />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>CNIC / NTN</label>
+                    <input className={styles.formInput} value={form.cnic_ntn} onChange={e => setForm({ ...form, cnic_ntn: e.target.value })} placeholder="42201-0000000-0" />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Address</label>
+                    <input className={styles.formInput} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="City, Province" />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Referral Source</label>
+                    <select className={styles.formSelect} value={form.referral_source} onChange={e => setForm({ ...form, referral_source: e.target.value })}>
+                        <option value="">Not specified</option>
+                        {REFERRAL_SOURCES.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                </div>
+                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                    <label className={styles.formLabel}>Notes</label>
+                    <input className={styles.formInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional internal notes" />
                 </div>
             </div>
-        </div>
+        </Modal>
     );
 
     // ─ Detail view ─
@@ -1048,7 +1062,7 @@ const ClientsPanel = () => {
         return (
             <div className={styles.panelContent}>
                 <button className={styles.backBtn} onClick={() => setDetail(null)}>← Back to Clients</button>
-                <div className={styles.detailHeader}>
+                <div className={styles.matterDetailHeader} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
                         <h2 className={styles.detailTitle}>{detail.name}</h2>
                         <span className={detail.client_type === "Corporate" ? styles.badgeGold : styles.badgeGray} style={{ marginTop: "0.35rem", display: "inline-block" }}>
@@ -1056,8 +1070,8 @@ const ClientsPanel = () => {
                         </span>
                     </div>
                     <div style={{ display: "flex", gap: "0.5rem" }}>
-                        <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openEdit(detail)}>Edit</button>
-                        <button className={styles.actionBtnDanger} style={{ fontSize: "0.8rem" }} onClick={() => removeClient(detail)}>Delete</button>
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(detail)}>Edit</Button>
+                        <Button variant="danger" size="sm" onClick={() => removeClient(detail)}>Delete</Button>
                     </div>
                 </div>
 
@@ -1073,29 +1087,23 @@ const ClientsPanel = () => {
                 <div className={styles.sectionTitle} style={{ marginTop: "1.75rem" }}>
                     Matters ({detail.matters.length})
                 </div>
-                {detail.matters.length === 0 ? (
-                    <div className={styles.emptyHint}>No matters yet for this client.</div>
-                ) : (
-                    <div className={styles.tableWrap}>
-                        <table className={styles.table}>
-                            <thead><tr>
-                                <th>Title</th><th>Type</th><th>Status</th><th>Court</th><th>Case #</th><th>Filed</th>
-                            </tr></thead>
-                            <tbody>
-                                {detail.matters.map(m => (
-                                    <tr key={m.matter_id}>
-                                        <td><strong>{m.title}</strong></td>
-                                        <td className={styles.muted}>{m.matter_type}</td>
-                                        <td><span className={(styles as any)[STATUS_BADGE[m.status] ?? "badgeGray"]}>{m.status}</span></td>
-                                        <td className={styles.muted}>{m.court_name ?? "—"}</td>
-                                        <td className={styles.muted}>{m.case_number ?? "—"}</td>
-                                        <td className={styles.muted}>{m.filing_date ?? "—"}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                <Table empty={detail.matters.length === 0} emptyMessage="No matters yet for this client.">
+                    <thead><tr>
+                        <th>Title</th><th>Type</th><th>Status</th><th>Court</th><th>Case #</th><th>Filed</th>
+                    </tr></thead>
+                    <tbody>
+                        {detail.matters.map(m => (
+                            <tr key={m.matter_id}>
+                                <td><strong>{m.title}</strong></td>
+                                <td className={styles.muted}>{m.matter_type}</td>
+                                <td><Badge tone={badgeClassToTone(STATUS_BADGE[m.status])}>{m.status}</Badge></td>
+                                <td className={styles.muted}>{m.court_name ?? "—"}</td>
+                                <td className={styles.muted}>{m.case_number ?? "—"}</td>
+                                <td className={styles.muted}>{m.filing_date ?? "—"}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </Table>
                 {showModal && <ClientModal />}
             </div>
         );
@@ -1106,146 +1114,130 @@ const ClientsPanel = () => {
         <div className={styles.panelContent}>
             <div className={styles.panelToolbar}>
                 <span className={styles.resultCount}>{clients.length} client{clients.length !== 1 ? "s" : ""}</span>
-                <button className={styles.btnPrimary} onClick={openAdd}>+ Add Client</button>
+                <Button onClick={openAdd}>+ Add Client</Button>
             </div>
-            {loading ? (
-                <div className={styles.emptyHint}>Loading…</div>
-            ) : clients.length === 0 ? (
-                <div className={styles.emptyHint}>No clients yet. Add your first client to start tracking matters.</div>
-            ) : (
-                <div className={styles.tableWrap}>
-                    <table className={styles.table}>
-                        <thead><tr>
-                            <th>Name</th><th>Type</th><th>Referral Source</th><th>Email</th><th>Phone</th><th>Matters</th><th>Actions</th>
-                        </tr></thead>
-                        <tbody>
-                            {clients.map(c => (
-                                <tr key={c.client_id}>
-                                    <td>
-                                        <button className={styles.linkBtn} onClick={() => openDetail(c)}>{c.name}</button>
-                                    </td>
-                                    <td><span className={c.client_type === "Corporate" ? styles.badgeGold : styles.badgeGray}>{c.client_type}</span></td>
-                                    <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{c.referral_source ?? <span style={{ color: "var(--text-3)" }}>—</span>}</td>
-                                    <td className={styles.muted}>{c.email ?? "—"}</td>
-                                    <td className={styles.muted}>{c.phone ?? "—"}</td>
-                                    <td className={styles.muted}>{c.matter_count ?? 0}</td>
-                                    <td style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                                        <button className={styles.actionBtn} onClick={() => openDetail(c)}>View</button>
-                                        <button className={styles.actionBtn} onClick={() => openEdit(c)}>Edit</button>
-                                        <button className={styles.actionBtnPortal} onClick={() => openPortal(c)}>Share Portal</button>
-                                        <button className={styles.actionBtn} onClick={() => openTrustLedger(c)}>Trust A/C</button>
-                                        <button className={styles.actionBtnDanger} disabled={removing === c.client_id} onClick={() => removeClient(c)}>
-                                            {removing === c.client_id ? "…" : "Delete"}
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+            <Table
+                loading={loading}
+                empty={!loading && clients.length === 0}
+                emptyMessage="No clients yet. Add your first client to start tracking matters."
+            >
+                <thead><tr>
+                    <th>Name</th><th>Type</th><th>Referral Source</th><th>Email</th><th>Phone</th><th>Matters</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                    {clients.map(c => (
+                        <tr key={c.client_id}>
+                            <td>
+                                <button className={styles.linkBtn} onClick={() => openDetail(c)}>{c.name}</button>
+                            </td>
+                            <td><Badge tone={c.client_type === "Corporate" ? "gold" : "gray"}>{c.client_type}</Badge></td>
+                            <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{c.referral_source ?? <span style={{ color: "var(--text-3)" }}>—</span>}</td>
+                            <td className={styles.muted}>{c.email ?? "—"}</td>
+                            <td className={styles.muted}>{c.phone ?? "—"}</td>
+                            <td className={styles.muted}>{c.matter_count ?? 0}</td>
+                            <td style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                                <Button variant="ghost" size="sm" onClick={() => openDetail(c)}>View</Button>
+                                <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>Edit</Button>
+                                <button className={styles.actionBtnPortal} onClick={() => openPortal(c)}>Share Portal</button>
+                                <Button variant="ghost" size="sm" onClick={() => openTrustLedger(c)}>Trust A/C</Button>
+                                <Button variant="danger" size="sm" disabled={removing === c.client_id} onClick={() => removeClient(c)}>
+                                    {removing === c.client_id ? "…" : "Delete"}
+                                </Button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
             {showModal && <ClientModal />}
             {portalClient && <PortalModal />}
 
             {/* ── Trust Ledger Sheet — Task #154 ── */}
-            {trustClient && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setTrustClient(null); }}>
-                    <div className={styles.modal} style={{ maxWidth: 680 }}>
-                        <div className={styles.modalHeader}>
-                            <h3 className={styles.modalTitle}>💰 Trust / Advance Ledger — {trustClient.name}</h3>
-                            <button className={styles.modalClose} onClick={() => setTrustClient(null)}>✕</button>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-                            <div>
-                                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Running Balance: </span>
-                                <strong style={{ fontSize: "1.1rem", color: trustBalance >= 0 ? "#16a34a" : "#dc2626" }}>
-                                    PKR {trustBalance.toLocaleString()}
-                                </strong>
-                                {trustBalance < 0 && <span style={{ marginLeft: "0.5rem", fontSize: "0.78rem", color: "#dc2626" }}>(Overdrawn)</span>}
-                            </div>
-                            <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => { setTlForm({ ...BLANK_TL }); setTlErr(""); setShowTLModal(true); }}>+ Add Entry</button>
-                        </div>
-                        {trustLoading ? (
-                            <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                        ) : trustEntries.length === 0 ? (
-                            <div className={styles.emptyHint}>No entries yet. Record advance payments received from the client (Credit) or disbursements made on their behalf (Debit).</div>
-                        ) : (
-                            <table className={styles.feeTable}>
-                                <thead><tr>
-                                    <th>Date</th>
-                                    <th>Type</th>
-                                    <th>Description</th>
-                                    <th>Amount</th>
-                                    <th>Balance</th>
-                                    <th>Ref</th>
-                                    <th style={{ width: 50 }}></th>
-                                </tr></thead>
-                                <tbody>
-                                    {trustEntries.map(e => (
-                                        <tr key={e.ledger_id}>
-                                            <td className={styles.muted}>{e.txn_date}</td>
-                                            <td>
-                                                <span style={{ padding: "2px 8px", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: 600, background: e.txn_type === "Credit" ? "#dcfce7" : "#fee2e2", color: e.txn_type === "Credit" ? "#16a34a" : "#dc2626" }}>
-                                                    {e.txn_type}
-                                                </span>
-                                            </td>
-                                            <td>{e.description}</td>
-                                            <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                                                <span style={{ color: e.txn_type === "Credit" ? "#16a34a" : "#dc2626" }}>
-                                                    {e.txn_type === "Credit" ? "+" : "−"}PKR {e.amount_pkr.toLocaleString()}
-                                                </span>
-                                            </td>
-                                            <td style={{ fontVariantNumeric: "tabular-nums", color: e.balance_pkr < 0 ? "#dc2626" : "var(--text-1)" }}>
-                                                PKR {e.balance_pkr.toLocaleString()}
-                                            </td>
-                                            <td className={styles.muted} style={{ fontSize: "0.78rem" }}>{e.reference_no || "—"}</td>
-                                            <td>
-                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 6px" }} onClick={() => deleteTLEntry(e.ledger_id)}>Del</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-
-                        {showTLModal && (
-                            <div style={{ marginTop: "1.25rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
-                                <h4 style={{ marginBottom: "0.75rem", fontSize: "0.9rem" }}>New Entry</h4>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Type</label>
-                                        <select className={styles.formInput} value={tlForm.txn_type} onChange={e => setTlForm(f => ({ ...f, txn_type: e.target.value }))}>
-                                            <option>Credit</option>
-                                            <option>Debit</option>
-                                        </select>
-                                    </div>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Date *</label>
-                                        <input type="date" className={styles.formInput} value={tlForm.txn_date} onChange={e => setTlForm(f => ({ ...f, txn_date: e.target.value }))} />
-                                    </div>
-                                    <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
-                                        <label className={styles.formLabel}>Description *</label>
-                                        <input className={styles.formInput} value={tlForm.description} onChange={e => setTlForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Advance received for Supreme Court appeal" />
-                                    </div>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Amount (PKR) *</label>
-                                        <input type="number" className={styles.formInput} min={0} value={tlForm.amount_pkr} onChange={e => setTlForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
-                                    </div>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Reference No.</label>
-                                        <input className={styles.formInput} value={tlForm.reference_no} onChange={e => setTlForm(f => ({ ...f, reference_no: e.target.value }))} placeholder="Cheque / receipt no." />
-                                    </div>
-                                </div>
-                                {tlErr && <div className={styles.formError}>{tlErr}</div>}
-                                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.75rem" }}>
-                                    <button className={styles.btnGhost} onClick={() => setShowTLModal(false)}>Cancel</button>
-                                    <button className={styles.btnPrimary} onClick={saveTLEntry} disabled={tlSaving}>{tlSaving ? "Saving…" : "Save Entry"}</button>
-                                </div>
-                            </div>
-                        )}
+            <Modal
+                open={!!trustClient}
+                onClose={() => setTrustClient(null)}
+                title={`💰 Trust / Advance Ledger — ${trustClient?.name ?? ""}`}
+                maxWidth={680}
+            >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                    <div>
+                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Running Balance: </span>
+                        <strong style={{ fontSize: "1.1rem", color: trustBalance >= 0 ? "var(--success)" : "var(--danger)" }}>
+                            PKR {trustBalance.toLocaleString()}
+                        </strong>
+                        {trustBalance < 0 && <span style={{ marginLeft: "0.5rem", fontSize: "0.78rem", color: "var(--danger)" }}>(Overdrawn)</span>}
                     </div>
+                    <Button size="sm" onClick={() => { setTlForm({ ...BLANK_TL }); setTlErr(""); setShowTLModal(true); }}>+ Add Entry</Button>
                 </div>
-            )}
+                <Table dense loading={trustLoading} empty={!trustLoading && trustEntries.length === 0}
+                    emptyMessage="No entries yet. Record advance payments received from the client (Credit) or disbursements made on their behalf (Debit).">
+                    <thead><tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Balance</th>
+                        <th>Ref</th>
+                        <th style={{ width: 50 }}></th>
+                    </tr></thead>
+                    <tbody>
+                        {trustEntries.map(e => (
+                            <tr key={e.ledger_id}>
+                                <td className={styles.muted}>{e.txn_date}</td>
+                                <td><Badge tone={e.txn_type === "Credit" ? "green" : "red"}>{e.txn_type}</Badge></td>
+                                <td>{e.description}</td>
+                                <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                                    <span style={{ color: e.txn_type === "Credit" ? "var(--success)" : "var(--danger)" }}>
+                                        {e.txn_type === "Credit" ? "+" : "−"}PKR {e.amount_pkr.toLocaleString()}
+                                    </span>
+                                </td>
+                                <td style={{ fontVariantNumeric: "tabular-nums", color: e.balance_pkr < 0 ? "var(--danger)" : "var(--text-1)" }}>
+                                    PKR {e.balance_pkr.toLocaleString()}
+                                </td>
+                                <td className={styles.muted} style={{ fontSize: "0.78rem" }}>{e.reference_no || "—"}</td>
+                                <td>
+                                    <Button variant="danger" size="sm" onClick={() => deleteTLEntry(e.ledger_id)}>Del</Button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </Table>
+
+                {showTLModal && (
+                    <div style={{ marginTop: "1.25rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+                        <h4 style={{ marginBottom: "0.75rem", fontSize: "0.9rem" }}>New Entry</h4>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Type</label>
+                                <select className={styles.formInput} value={tlForm.txn_type} onChange={e => setTlForm(f => ({ ...f, txn_type: e.target.value }))}>
+                                    <option>Credit</option>
+                                    <option>Debit</option>
+                                </select>
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Date *</label>
+                                <input type="date" className={styles.formInput} value={tlForm.txn_date} onChange={e => setTlForm(f => ({ ...f, txn_date: e.target.value }))} />
+                            </div>
+                            <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
+                                <label className={styles.formLabel}>Description *</label>
+                                <input className={styles.formInput} value={tlForm.description} onChange={e => setTlForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Advance received for Supreme Court appeal" />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Amount (PKR) *</label>
+                                <input type="number" className={styles.formInput} min={0} value={tlForm.amount_pkr} onChange={e => setTlForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Reference No.</label>
+                                <input className={styles.formInput} value={tlForm.reference_no} onChange={e => setTlForm(f => ({ ...f, reference_no: e.target.value }))} placeholder="Cheque / receipt no." />
+                            </div>
+                        </div>
+                        {tlErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{tlErr}</div>}
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.75rem" }}>
+                            <Button variant="ghost" onClick={() => setShowTLModal(false)}>Cancel</Button>
+                            <Button onClick={saveTLEntry} loading={tlSaving}>Save Entry</Button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };
@@ -2932,10 +2924,9 @@ const MattersPanel = () => {
                             onChange={e => setNewCourtName(e.target.value)}
                             onKeyDown={e => e.key === "Enter" && addCourt()}
                             style={{ fontSize: "0.8rem", padding: "0.35rem 0.7rem" }} />
-                        <button className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.35rem 0.75rem", whiteSpace: "nowrap" }}
-                            onClick={addCourt} disabled={addingCourt || !newCourtName.trim()}>
+                        <Button variant="ghost" onClick={addCourt} disabled={addingCourt || !newCourtName.trim()}>
                             {addingCourt ? "…" : "+ Add"}
-                        </button>
+                        </Button>
                     </div>
                 </div>
                 <div className={styles.formGroup}>
@@ -2950,10 +2941,10 @@ const MattersPanel = () => {
                     <label className={styles.formLabel}>Opposing Party</label>
                     <div style={{ display: "flex", gap: "0.5rem" }}>
                         <input className={styles.formInput} value={form.opposing_party} onChange={e => setForm({ ...form, opposing_party: e.target.value })} placeholder="Name of opposing counsel or party" style={{ flex: 1 }} />
-                        <button type="button" className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.35rem 0.75rem", whiteSpace: "nowrap", borderColor: "#dc2626", color: "#dc2626" }}
+                        <Button type="button" variant="ghost" style={{ borderColor: "#dc2626", color: "#dc2626" }}
                             onClick={checkConflicts} disabled={conflictChecking}>
                             {conflictChecking ? "Checking…" : "⚖ Check Conflicts"}
-                        </button>
+                        </Button>
                     </div>
                 </div>
                 <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
@@ -3043,8 +3034,8 @@ const MattersPanel = () => {
                 </div>
             </div>
             <div className={styles.modalActions}>
-                <button className={styles.btnGhost} onClick={onCancel}>Cancel</button>
-                <button className={styles.btnPrimary} onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save Matter"}</button>
+                <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+                <Button onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save Matter"}</Button>
             </div>
         </>
     );
@@ -3058,7 +3049,7 @@ const MattersPanel = () => {
                     <button className={styles.backBtn} onClick={() => setDetail(null)}>← Back to Matters</button>
                     {!editDetail && (
                         <div style={{ display: "flex", gap: "0.5rem", marginLeft: "auto" }}>
-                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => {
+                            <Button variant="ghost" size="sm" onClick={() => {
                                 setForm({
                                     client_id: detail.client_id, title: detail.title,
                                     matter_type: detail.matter_type, status: detail.status,
@@ -3077,13 +3068,12 @@ const MattersPanel = () => {
                                     matter_stage: detail.matter_stage ?? "",
                                 });
                                 setFormErr(null); setEditDetail(true);
-                            }}>Edit</button>
+                            }}>Edit</Button>
                             <button className={styles.actionBtnDanger} style={{ fontSize: "0.8rem" }} onClick={() => removeMatter(detail)}>Delete</button>
                             {detail.case_number && (
-                                <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }}
-                                    onClick={checkLhcStatus} disabled={lhcChecking}>
+                                <Button variant="ghost" size="sm" onClick={checkLhcStatus} disabled={lhcChecking}>
                                     {lhcChecking ? "Checking…" : "🏛 LHC Status"}
-                                </button>
+                                </Button>
                             )}
                         </div>
                     )}
@@ -3092,7 +3082,7 @@ const MattersPanel = () => {
                     <div style={{ margin: "0.5rem 0", padding: "0.75rem 1rem", borderRadius: "var(--radius)", border: "1px solid var(--border)", background: lhcResult.status === "ok" ? "var(--bg-1)" : "rgba(220,38,38,0.06)", fontSize: "0.82rem" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <strong>{lhcResult.status === "ok" ? "🏛 LHC Result" : lhcResult.status === "unavailable" ? "⚠ LHC lookup not yet configured" : "✗ LHC lookup error"}</strong>
-                            <button className={styles.btnGhost} style={{ fontSize: "0.72rem", padding: "1px 6px" }} onClick={() => setLhcResult(null)}>✕</button>
+                            <Button variant="ghost" size="sm" style={{ fontSize: "0.72rem", padding: "1px 6px" }} onClick={() => setLhcResult(null)}>✕</Button>
                         </div>
                         {lhcResult.message && <div className={styles.muted} style={{ marginTop: "0.25rem" }}>{lhcResult.message}</div>}
                         {lhcResult.raw_text && <pre style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap", fontSize: "0.78rem", maxHeight: 200, overflow: "auto" }}>{lhcResult.raw_text}</pre>}
@@ -3109,7 +3099,7 @@ const MattersPanel = () => {
                         <div>
                             <h2 className={styles.detailTitle}>{detail.title}</h2>
                             <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-                                <span className={(styles as any)[STATUS_BADGE[detail.status] ?? "badgeGray"]}>{detail.status}</span>
+                                <Badge tone={badgeClassToTone(STATUS_BADGE[detail.status])}>{detail.status}</Badge>
                                 <span className={styles.badgeGray}>{detail.matter_type}</span>
                                 {detail.team_name && <span className={styles.badgeGold}>👥 {detail.team_name}</span>}
                             </div>
@@ -3153,7 +3143,7 @@ const MattersPanel = () => {
                                         {detail.vakalatnama_status ?? "Pending"}
                                     </span>
                                     {VAKALATNAMA_STATUSES.filter(s => s !== (detail.vakalatnama_status ?? "Pending")).map(s => (
-                                        <button key={s} className={styles.btnGhost} style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem" }}
+                                        <Button key={s} variant="ghost" size="sm"
                                             onClick={async () => {
                                                 const r = await fetch(`/matters/${detail.matter_id}`, {
                                                     method: "PATCH",
@@ -3167,7 +3157,7 @@ const MattersPanel = () => {
                                                 }
                                             }}>
                                             → {s}
-                                        </button>
+                                        </Button>
                                     ))}
                                 </span>
                             </div>
@@ -3190,7 +3180,7 @@ const MattersPanel = () => {
                                         {detail.priority ?? "Normal"}
                                     </span>
                                     {MATTER_PRIORITIES.filter(p => p !== (detail.priority ?? "Normal")).map(p => (
-                                        <button key={p} className={styles.btnGhost} style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem" }}
+                                        <Button key={p} variant="ghost" size="sm"
                                             onClick={async () => {
                                                 const r = await fetch(`/matters/${detail.matter_id}`, {
                                                     method: "PATCH",
@@ -3204,7 +3194,7 @@ const MattersPanel = () => {
                                                 }
                                             }}>
                                             → {p}
-                                        </button>
+                                        </Button>
                                     ))}
                                 </span>
                             </div>
@@ -3231,7 +3221,7 @@ const MattersPanel = () => {
                 <div className={styles.adversePartiesSection}>
                     <div className={styles.adversePartiesSectionHeader}>
                         <span className={styles.adversePartiesSectionTitle}>⚖ Opposing Parties</span>
-                        <button className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.25rem 0.65rem" }} onClick={() => openPartyModal()}>+ Add</button>
+                        <Button variant="ghost" size="sm" onClick={() => openPartyModal()}>+ Add</Button>
                     </div>
                     {adverseParties.length === 0 ? (
                         <span className={styles.muted} style={{ fontSize: "0.8rem" }}>None recorded.</span>
@@ -3262,46 +3252,42 @@ const MattersPanel = () => {
                 </div>
 
                 {/* ── Adverse Party modal ── */}
-                {showPartyModal && (
-                    <div className={styles.overlay} onClick={() => setShowPartyModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
-                            <div className={styles.modalTitle}>{editParty ? "Edit Opposing Party" : "Add Opposing Party"}</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                                    <label className={styles.formLabel}>Party Name *</label>
-                                    <input className={styles.formInput} value={partyForm.party_name} onChange={e => setPartyForm(f => ({ ...f, party_name: e.target.value }))} placeholder="e.g. Muhammad Arif Khan" autoFocus />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Party Type</label>
-                                    <select className={styles.formSelect} value={partyForm.party_type} onChange={e => setPartyForm(f => ({ ...f, party_type: e.target.value }))}>
-                                        {["Individual", "Company", "Government", "Other"].map(t => <option key={t}>{t}</option>)}
-                                    </select>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Counsel Name</label>
-                                    <input className={styles.formInput} value={partyForm.counsel_name} onChange={e => setPartyForm(f => ({ ...f, counsel_name: e.target.value }))} placeholder="Opposing advocate" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Counsel Phone</label>
-                                    <input className={styles.formInput} value={partyForm.counsel_phone} onChange={e => setPartyForm(f => ({ ...f, counsel_phone: e.target.value }))} placeholder="+92 300 0000000" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Counsel Firm</label>
-                                    <input className={styles.formInput} value={partyForm.counsel_firm} onChange={e => setPartyForm(f => ({ ...f, counsel_firm: e.target.value }))} placeholder="Law firm name" />
-                                </div>
-                                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                                    <label className={styles.formLabel}>Notes</label>
-                                    <input className={styles.formInput} value={partyForm.notes} onChange={e => setPartyForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any relevant notes…" />
-                                </div>
-                            </div>
-                            {partyErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{partyErr}</div>}
-                            <div className={styles.modalActions}>
-                                <button className={styles.btnGhost} onClick={() => setShowPartyModal(false)} disabled={partySaving}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveParty} disabled={partySaving}>{partySaving ? "Saving…" : editParty ? "Save Changes" : "Add Party"}</button>
-                            </div>
+                <Modal open={showPartyModal} onClose={() => setShowPartyModal(false)} maxWidth={460}
+                    title={editParty ? "Edit Opposing Party" : "Add Opposing Party"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowPartyModal(false)} disabled={partySaving}>Cancel</Button>
+                        <Button onClick={saveParty} disabled={partySaving}>{partySaving ? "Saving…" : editParty ? "Save Changes" : "Add Party"}</Button>
+                    </>}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                            <label className={styles.formLabel}>Party Name *</label>
+                            <input className={styles.formInput} value={partyForm.party_name} onChange={e => setPartyForm(f => ({ ...f, party_name: e.target.value }))} placeholder="e.g. Muhammad Arif Khan" autoFocus />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Party Type</label>
+                            <select className={styles.formSelect} value={partyForm.party_type} onChange={e => setPartyForm(f => ({ ...f, party_type: e.target.value }))}>
+                                {["Individual", "Company", "Government", "Other"].map(t => <option key={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Counsel Name</label>
+                            <input className={styles.formInput} value={partyForm.counsel_name} onChange={e => setPartyForm(f => ({ ...f, counsel_name: e.target.value }))} placeholder="Opposing advocate" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Counsel Phone</label>
+                            <input className={styles.formInput} value={partyForm.counsel_phone} onChange={e => setPartyForm(f => ({ ...f, counsel_phone: e.target.value }))} placeholder="+92 300 0000000" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Counsel Firm</label>
+                            <input className={styles.formInput} value={partyForm.counsel_firm} onChange={e => setPartyForm(f => ({ ...f, counsel_firm: e.target.value }))} placeholder="Law firm name" />
+                        </div>
+                        <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
+                            <label className={styles.formLabel}>Notes</label>
+                            <input className={styles.formInput} value={partyForm.notes} onChange={e => setPartyForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any relevant notes…" />
                         </div>
                     </div>
-                )}
+                    {partyErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginTop: "0.6rem" }}>{partyErr}</div>}
+                </Modal>
 
                 {/* Detail tabs */}
                 <div className={styles.detailTabBar}>
@@ -3391,9 +3377,9 @@ const MattersPanel = () => {
                 {detailTab === "documents" && (<>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{(detail.documents ?? []).length} document{(detail.documents ?? []).length !== 1 ? "s" : ""} linked</span>
-                        <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={openLinkModal}>
+                        <Button variant="ghost" size="sm" onClick={openLinkModal}>
                             + Link Documents
-                        </button>
+                        </Button>
                     </div>
                     {grouped.length === 0 ? (
                         <div className={styles.emptyHint}>No documents linked yet. Click "Link Documents" to attach files from your library.</div>
@@ -3438,62 +3424,56 @@ const MattersPanel = () => {
                                     </div>
                                     <div style={{ display: "flex", gap: "0.5rem" }}>
                                         {unbilled.length > 0 && (
-                                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }}
-                                                disabled={genInvLoading} onClick={generateInvoice}>
+                                            <Button variant="ghost" size="sm" disabled={genInvLoading} onClick={generateInvoice}>
                                                 {genInvLoading ? "Creating…" : "Generate Invoice"}
-                                            </button>
+                                            </Button>
                                         )}
-                                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openFeeModal()}>
+                                        <Button size="sm" onClick={() => openFeeModal()}>
                                             + Add Fee
-                                        </button>
+                                        </Button>
                                     </div>
                                 </div>
 
-                                {feesLoading ? (
-                                    <div className={styles.emptyHint}>Loading…</div>
-                                ) : fees.length === 0 ? (
-                                    <div className={styles.emptyHint}>No fees recorded yet. Click "+ Add Fee" to start tracking.</div>
-                                ) : (
-                                    <div className={styles.tableWrap}>
-                                        <table className={styles.table}>
-                                            <thead><tr>
-                                                <th>Description</th><th>Type</th><th>Date</th>
-                                                <th style={{ textAlign: "right" }}>Amount (PKR)</th>
-                                                <th>Paid</th><th>Invoice</th><th>Actions</th>
-                                            </tr></thead>
-                                            <tbody>
-                                                {fees.map(fee => (
-                                                    <tr key={fee.fee_id} style={{ opacity: fee.is_paid ? 0.6 : 1 }}>
-                                                        <td>{fee.description}{fee.notes && <span className={styles.muted}> · {fee.notes}</span>}</td>
-                                                        <td className={styles.muted}>{fee.fee_type}</td>
-                                                        <td className={styles.muted}>{fee.fee_date}</td>
-                                                        <td style={{ textAlign: "right", fontWeight: 600 }}>{fee.amount.toLocaleString("en-PK")}</td>
-                                                        <td>
-                                                            <button
-                                                                className={fee.is_paid ? styles.badgeGreen : styles.badgeGray}
-                                                                style={{ border: "none", cursor: "pointer", fontSize: "0.72rem" }}
-                                                                onClick={() => toggleFeePaid(fee)}>
-                                                                {fee.is_paid ? "Paid" : "Unpaid"}
-                                                            </button>
-                                                        </td>
-                                                        <td className={styles.muted}>{fee.invoice_id ? <span className={styles.badgeBlue} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
-                                                        <td style={{ display: "flex", gap: "0.35rem" }}>
-                                                            <button className={styles.actionBtn} onClick={() => openFeeModal(fee)}>Edit</button>
-                                                            <button className={styles.actionBtnDanger} onClick={() => deleteFee(fee)}>Delete</button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                            <tfoot>
-                                                <tr>
-                                                    <td colSpan={3} style={{ textAlign: "right", fontWeight: 600, color: "var(--text-2)", fontSize: "0.82rem" }}>Total</td>
-                                                    <td style={{ textAlign: "right", fontWeight: 700, color: "var(--text-1)" }}>{totalAll.toLocaleString("en-PK")}</td>
-                                                    <td colSpan={3} />
-                                                </tr>
-                                            </tfoot>
-                                        </table>
-                                    </div>
-                                )}
+                                <Table loading={feesLoading} empty={fees.length === 0}
+                                    emptyMessage='No fees recorded yet. Click "+ Add Fee" to start tracking.'>
+                                    <thead><tr>
+                                        <th>Description</th><th>Type</th><th>Date</th>
+                                        <th style={{ textAlign: "right" }}>Amount (PKR)</th>
+                                        <th>Paid</th><th>Invoice</th><th>Actions</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {fees.map(fee => (
+                                            <tr key={fee.fee_id} style={{ opacity: fee.is_paid ? 0.6 : 1 }}>
+                                                <td>{fee.description}{fee.notes && <span className={styles.muted}> · {fee.notes}</span>}</td>
+                                                <td className={styles.muted}>{fee.fee_type}</td>
+                                                <td className={styles.muted}>{fee.fee_date}</td>
+                                                <td style={{ textAlign: "right", fontWeight: 600 }}>{fee.amount.toLocaleString("en-PK")}</td>
+                                                <td>
+                                                    <button
+                                                        className={fee.is_paid ? styles.badgeGreen : styles.badgeGray}
+                                                        style={{ border: "none", cursor: "pointer", fontSize: "0.72rem" }}
+                                                        onClick={() => toggleFeePaid(fee)}>
+                                                        {fee.is_paid ? "Paid" : "Unpaid"}
+                                                    </button>
+                                                </td>
+                                                <td className={styles.muted}>{fee.invoice_id ? <span className={styles.badgeBlue} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
+                                                <td style={{ display: "flex", gap: "0.35rem" }}>
+                                                    <button className={styles.actionBtn} onClick={() => openFeeModal(fee)}>Edit</button>
+                                                    <button className={styles.actionBtnDanger} onClick={() => deleteFee(fee)}>Delete</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    {fees.length > 0 && (
+                                        <tfoot>
+                                            <tr>
+                                                <td colSpan={3} style={{ textAlign: "right", fontWeight: 600, color: "var(--text-2)", fontSize: "0.82rem" }}>Total</td>
+                                                <td style={{ textAlign: "right", fontWeight: 700, color: "var(--text-1)" }}>{totalAll.toLocaleString("en-PK")}</td>
+                                                <td colSpan={3} />
+                                            </tr>
+                                        </tfoot>
+                                    )}
+                                </Table>
                             </>
                         );
                     })()}
@@ -3514,7 +3494,7 @@ const MattersPanel = () => {
                                 ) : null;
                             })()}
                         </div>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openOrderModal()}>+ Add Order</button>
+                        <Button size="sm" onClick={() => openOrderModal()}>+ Add Order</Button>
                     </div>
                     {ordersLoading ? (
                         <div className={styles.emptyHint}>Loading…</div>
@@ -3576,14 +3556,14 @@ const MattersPanel = () => {
                                 <div className={styles.timerDisplay}>{fmtElapsed(timerElapsed)}</div>
                                 <div className={styles.timerControls}>
                                     {!timerRunning ? (
-                                        <button className={styles.btnPrimary} style={{ fontSize: "0.82rem" }} onClick={startTimer}>▶ Start Timer</button>
+                                        <Button size="sm" onClick={startTimer}>▶ Start Timer</Button>
                                     ) : (
                                         <button className={styles.btnGold} style={{ fontSize: "0.82rem" }} onClick={stopTimer}>⏹ Stop &amp; Log</button>
                                     )}
                                     {timerElapsed > 0 && !timerRunning && (
-                                        <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={resetTimer}>Reset</button>
+                                        <Button variant="ghost" size="sm" onClick={resetTimer}>Reset</Button>
                                     )}
-                                    <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openTimeModal()}>+ Manual Entry</button>
+                                    <Button variant="ghost" size="sm" onClick={() => openTimeModal()}>+ Manual Entry</Button>
                                 </div>
                             </div>
 
@@ -3593,137 +3573,120 @@ const MattersPanel = () => {
                                 <span>Unbilled billable: <strong style={{ color: "var(--gold)" }}>{fmtDuration(billMins)}</strong></span>
                                 <span>Value: <strong>{totalValue.toLocaleString("en-PK")} PKR</strong></span>
                                 {selectedEntries.size > 0 && (
-                                    <button className={styles.btnPrimary} style={{ fontSize: "0.8rem", marginLeft: "auto" }}
-                                        onClick={() => setShowBillModal(true)}>
+                                    <Button size="sm" style={{ marginLeft: "auto" }} onClick={() => setShowBillModal(true)}>
                                         Convert {selectedEntries.size} to Fee
-                                    </button>
+                                    </Button>
                                 )}
                             </div>
 
                             {/* Entries table */}
-                            {timeLoading ? (
-                                <div className={styles.emptyHint}>Loading…</div>
-                            ) : timeEntries.length === 0 ? (
-                                <div className={styles.emptyHint}>No time logged yet. Start the timer or add a manual entry.</div>
-                            ) : (
-                                <div className={styles.tableWrap}>
-                                    <table className={styles.table}>
-                                        <thead><tr>
-                                            <th style={{ width: 32 }}></th>
-                                            <th>Date</th><th>Description</th><th>Duration</th>
-                                            <th>Rate (PKR/hr)</th><th>Value</th><th>Billable</th><th>Billed</th><th>Actions</th>
-                                        </tr></thead>
-                                        <tbody>
-                                            {timeEntries.map(e => {
-                                                const val = Math.round(e.duration_minutes / 60 * e.hourly_rate);
-                                                const canSelect = e.billable === 1 && !e.fee_id;
-                                                const checked   = selectedEntries.has(e.entry_id);
-                                                return (
-                                                    <tr key={e.entry_id} style={{ opacity: e.fee_id ? 0.55 : 1 }}>
-                                                        <td>
-                                                            {canSelect && (
-                                                                <input type="checkbox" checked={checked}
-                                                                    onChange={() => {
-                                                                        setSelectedEntries(prev => {
-                                                                            const n = new Set(prev);
-                                                                            checked ? n.delete(e.entry_id) : n.add(e.entry_id);
-                                                                            return n;
-                                                                        });
-                                                                    }} />
-                                                            )}
-                                                        </td>
-                                                        <td className={styles.muted}>{e.entry_date}</td>
-                                                        <td>{e.description || <span className={styles.muted}>—</span>}</td>
-                                                        <td><strong>{fmtDuration(e.duration_minutes)}</strong></td>
-                                                        <td className={styles.muted}>{e.hourly_rate > 0 ? e.hourly_rate.toLocaleString("en-PK") : "—"}</td>
-                                                        <td>{val > 0 ? val.toLocaleString("en-PK") : "—"}</td>
-                                                        <td>{e.billable === 1 ? <span className={styles.badgeGreen} style={{ fontSize: "0.68rem" }}>Yes</span> : <span className={styles.badgeGray} style={{ fontSize: "0.68rem" }}>No</span>}</td>
-                                                        <td>{e.fee_id ? <span className={styles.badgeBlue} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
-                                                        <td style={{ display: "flex", gap: "0.35rem" }}>
-                                                            <button className={styles.actionBtn} onClick={() => openTimeModal(e)} disabled={!!e.fee_id}>Edit</button>
-                                                            <button className={styles.actionBtnDanger} onClick={() => deleteTimeEntryUI(e)} disabled={!!e.fee_id}>Delete</button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
+                            <Table loading={timeLoading} empty={timeEntries.length === 0}
+                                emptyMessage="No time logged yet. Start the timer or add a manual entry.">
+                                <thead><tr>
+                                    <th style={{ width: 32 }}></th>
+                                    <th>Date</th><th>Description</th><th>Duration</th>
+                                    <th>Rate (PKR/hr)</th><th>Value</th><th>Billable</th><th>Billed</th><th>Actions</th>
+                                </tr></thead>
+                                <tbody>
+                                    {timeEntries.map(e => {
+                                        const val = Math.round(e.duration_minutes / 60 * e.hourly_rate);
+                                        const canSelect = e.billable === 1 && !e.fee_id;
+                                        const checked   = selectedEntries.has(e.entry_id);
+                                        return (
+                                            <tr key={e.entry_id} style={{ opacity: e.fee_id ? 0.55 : 1 }}>
+                                                <td>
+                                                    {canSelect && (
+                                                        <input type="checkbox" checked={checked}
+                                                            onChange={() => {
+                                                                setSelectedEntries(prev => {
+                                                                    const n = new Set(prev);
+                                                                    checked ? n.delete(e.entry_id) : n.add(e.entry_id);
+                                                                    return n;
+                                                                });
+                                                            }} />
+                                                    )}
+                                                </td>
+                                                <td className={styles.muted}>{e.entry_date}</td>
+                                                <td>{e.description || <span className={styles.muted}>—</span>}</td>
+                                                <td><strong>{fmtDuration(e.duration_minutes)}</strong></td>
+                                                <td className={styles.muted}>{e.hourly_rate > 0 ? e.hourly_rate.toLocaleString("en-PK") : "—"}</td>
+                                                <td>{val > 0 ? val.toLocaleString("en-PK") : "—"}</td>
+                                                <td>{e.billable === 1 ? <span className={styles.badgeGreen} style={{ fontSize: "0.68rem" }}>Yes</span> : <span className={styles.badgeGray} style={{ fontSize: "0.68rem" }}>No</span>}</td>
+                                                <td>{e.fee_id ? <span className={styles.badgeBlue} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
+                                                <td style={{ display: "flex", gap: "0.35rem" }}>
+                                                    <button className={styles.actionBtn} onClick={() => openTimeModal(e)} disabled={!!e.fee_id}>Edit</button>
+                                                    <button className={styles.actionBtnDanger} onClick={() => deleteTimeEntryUI(e)} disabled={!!e.fee_id}>Delete</button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </Table>
 
                             {/* Convert to fee modal */}
-                            {showBillModal && (
-                                <div className={styles.overlay} onClick={() => setShowBillModal(false)}>
-                                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
-                                        <div className={styles.modalTitle}>Convert Time to Fee</div>
-                                        <p style={{ fontSize: "0.85rem", color: "var(--text-2)", marginBottom: "1rem" }}>
-                                            This will create a single fee entry from {selectedEntries.size} selected time entries and mark them as billed.
-                                        </p>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Fee Description</label>
-                                            <input className={styles.formInput} value={billDesc}
-                                                onChange={e => setBillDesc(e.target.value)}
-                                                placeholder="e.g. Legal services — July 2025" />
-                                        </div>
-                                        <div className={styles.modalActions}>
-                                            <button className={styles.btnGhost} onClick={() => setShowBillModal(false)} disabled={billing}>Cancel</button>
-                                            <button className={styles.btnPrimary} onClick={billSelected} disabled={billing}>{billing ? "Creating…" : "Create Fee"}</button>
-                                        </div>
-                                    </div>
+                            <Modal open={showBillModal} onClose={() => setShowBillModal(false)} maxWidth={420} title="Convert Time to Fee"
+                                footer={<>
+                                    <Button variant="ghost" onClick={() => setShowBillModal(false)} disabled={billing}>Cancel</Button>
+                                    <Button onClick={billSelected} disabled={billing}>{billing ? "Creating…" : "Create Fee"}</Button>
+                                </>}>
+                                <p style={{ fontSize: "0.85rem", color: "var(--text-2)", marginBottom: "1rem" }}>
+                                    This will create a single fee entry from {selectedEntries.size} selected time entries and mark them as billed.
+                                </p>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Fee Description</label>
+                                    <input className={styles.formInput} value={billDesc}
+                                        onChange={e => setBillDesc(e.target.value)}
+                                        placeholder="e.g. Legal services — July 2025" />
                                 </div>
-                            )}
+                            </Modal>
 
                             {/* Time entry add/edit modal */}
-                            {showTimeModal && (
-                                <div className={styles.overlay} onClick={() => setShowTimeModal(false)}>
-                                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
-                                        <div className={styles.modalTitle}>{editTimeEntry ? "Edit Time Entry" : "Log Time"}</div>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Description</label>
-                                            <input className={styles.formInput} value={timeForm.description}
-                                                onChange={e => setTimeForm(f => ({ ...f, description: e.target.value }))}
-                                                placeholder="e.g. Court appearance, research, drafting" autoFocus />
-                                        </div>
-                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
-                                            <div className={styles.formGroup}>
-                                                <label className={styles.formLabel}>Hours</label>
-                                                <input type="number" min="0" className={styles.formInput} value={timeForm.hours}
-                                                    onChange={e => setTimeForm(f => ({ ...f, hours: e.target.value }))} placeholder="0" />
-                                            </div>
-                                            <div className={styles.formGroup}>
-                                                <label className={styles.formLabel}>Minutes</label>
-                                                <input type="number" min="0" max="59" className={styles.formInput} value={timeForm.minutes}
-                                                    onChange={e => setTimeForm(f => ({ ...f, minutes: e.target.value }))} placeholder="30" />
-                                            </div>
-                                            <div className={styles.formGroup}>
-                                                <label className={styles.formLabel}>Date</label>
-                                                <input type="date" className={styles.formInput} value={timeForm.entry_date}
-                                                    onChange={e => setTimeForm(f => ({ ...f, entry_date: e.target.value }))} />
-                                            </div>
-                                        </div>
-                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                            <div className={styles.formGroup}>
-                                                <label className={styles.formLabel}>Hourly Rate (PKR)</label>
-                                                <input type="number" min="0" className={styles.formInput} value={timeForm.hourly_rate}
-                                                    onChange={e => setTimeForm(f => ({ ...f, hourly_rate: e.target.value }))} placeholder="e.g. 5000" />
-                                            </div>
-                                            <div className={styles.formGroup}>
-                                                <label className={styles.formLabel}>Billable?</label>
-                                                <select className={styles.formSelect} value={timeForm.billable ? "yes" : "no"}
-                                                    onChange={e => setTimeForm(f => ({ ...f, billable: e.target.value === "yes" }))}>
-                                                    <option value="yes">Yes</option>
-                                                    <option value="no">No</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        {timeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{timeErr}</div>}
-                                        <div className={styles.modalActions}>
-                                            <button className={styles.btnGhost} onClick={() => setShowTimeModal(false)} disabled={timeSaving}>Cancel</button>
-                                            <button className={styles.btnPrimary} onClick={saveTimeEntry} disabled={timeSaving}>{timeSaving ? "Saving…" : editTimeEntry ? "Save Changes" : "Log Time"}</button>
-                                        </div>
+                            <Modal open={showTimeModal} onClose={() => setShowTimeModal(false)} maxWidth={440}
+                                title={editTimeEntry ? "Edit Time Entry" : "Log Time"}
+                                footer={<>
+                                    <Button variant="ghost" onClick={() => setShowTimeModal(false)} disabled={timeSaving}>Cancel</Button>
+                                    <Button onClick={saveTimeEntry} disabled={timeSaving}>{timeSaving ? "Saving…" : editTimeEntry ? "Save Changes" : "Log Time"}</Button>
+                                </>}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Description</label>
+                                    <input className={styles.formInput} value={timeForm.description}
+                                        onChange={e => setTimeForm(f => ({ ...f, description: e.target.value }))}
+                                        placeholder="e.g. Court appearance, research, drafting" autoFocus />
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Hours</label>
+                                        <input type="number" min="0" className={styles.formInput} value={timeForm.hours}
+                                            onChange={e => setTimeForm(f => ({ ...f, hours: e.target.value }))} placeholder="0" />
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Minutes</label>
+                                        <input type="number" min="0" max="59" className={styles.formInput} value={timeForm.minutes}
+                                            onChange={e => setTimeForm(f => ({ ...f, minutes: e.target.value }))} placeholder="30" />
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Date</label>
+                                        <input type="date" className={styles.formInput} value={timeForm.entry_date}
+                                            onChange={e => setTimeForm(f => ({ ...f, entry_date: e.target.value }))} />
                                     </div>
                                 </div>
-                            )}
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Hourly Rate (PKR)</label>
+                                        <input type="number" min="0" className={styles.formInput} value={timeForm.hourly_rate}
+                                            onChange={e => setTimeForm(f => ({ ...f, hourly_rate: e.target.value }))} placeholder="e.g. 5000" />
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label className={styles.formLabel}>Billable?</label>
+                                        <select className={styles.formSelect} value={timeForm.billable ? "yes" : "no"}
+                                            onChange={e => setTimeForm(f => ({ ...f, billable: e.target.value === "yes" }))}>
+                                            <option value="yes">Yes</option>
+                                            <option value="no">No</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                {timeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginTop: "0.6rem" }}>{timeErr}</div>}
+                            </Modal>
                         </>
                     );
                 })()}
@@ -3733,7 +3696,7 @@ const MattersPanel = () => {
                     <>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                             <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{matterNotes.length} note{matterNotes.length !== 1 ? "s" : ""}</span>
-                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openNoteModal()}>+ Add Note</button>
+                            <Button variant="ghost" size="sm" onClick={() => openNoteModal()}>+ Add Note</Button>
                         </div>
 
                         {notesLoading ? (
@@ -3760,38 +3723,34 @@ const MattersPanel = () => {
                         )}
 
                         {/* Note add/edit modal */}
-                        {showNoteModal && (
-                            <div className={styles.overlay} onClick={() => setShowNoteModal(false)}>
-                                <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
-                                    <div className={styles.modalTitle}>{editNote ? "Edit Note" : "Add Note"}</div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Type</label>
-                                            <select className={styles.formSelect} value={noteForm.note_type}
-                                                onChange={e => setNoteForm(f => ({ ...f, note_type: e.target.value }))}>
-                                                {NOTE_TYPES_UI.map(t => <option key={t}>{t}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Date</label>
-                                            <input type="date" className={styles.formInput} value={noteForm.note_date}
-                                                onChange={e => setNoteForm(f => ({ ...f, note_date: e.target.value }))} />
-                                        </div>
-                                    </div>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Note *</label>
-                                        <textarea className={styles.formInput} rows={5} value={noteForm.note_text}
-                                            onChange={e => setNoteForm(f => ({ ...f, note_text: e.target.value }))}
-                                            placeholder="Enter note details…" autoFocus />
-                                    </div>
-                                    {noteErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{noteErr}</div>}
-                                    <div className={styles.modalActions}>
-                                        <button className={styles.btnGhost} onClick={() => setShowNoteModal(false)} disabled={noteSaving}>Cancel</button>
-                                        <button className={styles.btnPrimary} onClick={saveNote} disabled={noteSaving}>{noteSaving ? "Saving…" : editNote ? "Save Changes" : "Add Note"}</button>
-                                    </div>
+                        <Modal open={showNoteModal} onClose={() => setShowNoteModal(false)} maxWidth={480}
+                            title={editNote ? "Edit Note" : "Add Note"}
+                            footer={<>
+                                <Button variant="ghost" onClick={() => setShowNoteModal(false)} disabled={noteSaving}>Cancel</Button>
+                                <Button onClick={saveNote} disabled={noteSaving}>{noteSaving ? "Saving…" : editNote ? "Save Changes" : "Add Note"}</Button>
+                            </>}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Type</label>
+                                    <select className={styles.formSelect} value={noteForm.note_type}
+                                        onChange={e => setNoteForm(f => ({ ...f, note_type: e.target.value }))}>
+                                        {NOTE_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Date</label>
+                                    <input type="date" className={styles.formInput} value={noteForm.note_date}
+                                        onChange={e => setNoteForm(f => ({ ...f, note_date: e.target.value }))} />
                                 </div>
                             </div>
-                        )}
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Note *</label>
+                                <textarea className={styles.formInput} rows={5} value={noteForm.note_text}
+                                    onChange={e => setNoteForm(f => ({ ...f, note_text: e.target.value }))}
+                                    placeholder="Enter note details…" autoFocus />
+                            </div>
+                            {noteErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginTop: "0.6rem" }}>{noteErr}</div>}
+                        </Modal>
                     </>
                 )}
 
@@ -3803,97 +3762,86 @@ const MattersPanel = () => {
                                 {docRequests.length} request{docRequests.length !== 1 ? "s" : ""} &nbsp;·&nbsp;
                                 {docRequests.filter(r => r.status === "Received").length} received
                             </span>
-                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openDocReqModal()}>+ Add Request</button>
+                            <Button variant="ghost" size="sm" onClick={() => openDocReqModal()}>+ Add Request</Button>
                         </div>
 
-                        {docReqLoading ? (
-                            <div className={styles.emptyHint}>Loading…</div>
-                        ) : docRequests.length === 0 ? (
-                            <div className={styles.emptyHint}>No document requests yet. Track what you've asked from the client.</div>
-                        ) : (
-                            <div className={styles.tableWrap}>
-                                <table className={styles.table}>
-                                    <thead><tr>
-                                        <th>Document</th><th>Requested</th><th>Due</th><th>Status</th><th>Received</th><th>Notes</th><th>Actions</th>
-                                    </tr></thead>
-                                    <tbody>
-                                        {docRequests.map(r => (
-                                            <tr key={r.request_id}>
-                                                <td><strong>{r.doc_name}</strong></td>
-                                                <td className={styles.muted}>{r.requested_date}</td>
-                                                <td className={styles.muted}>{r.due_date ?? "—"}</td>
-                                                <td>
-                                                    <span className={
-                                                        r.status === "Received" ? styles.badgeGreen :
-                                                        r.status === "Overdue"  ? styles.limBadgeCritical :
-                                                        r.status === "Waived"   ? styles.badgeGray : styles.badgeAmber
-                                                    } style={{ fontSize: "0.7rem" }}>{r.status}</span>
-                                                </td>
-                                                <td className={styles.muted}>{r.received_date ?? "—"}</td>
-                                                <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.notes ?? "—"}</td>
-                                                <td style={{ display: "flex", gap: "0.35rem" }}>
-                                                    {r.status === "Pending" && (
-                                                        <button className={styles.actionBtn} style={{ fontSize: "0.72rem" }} onClick={() => markDocReqReceived(r)}>✓ Received</button>
-                                                    )}
-                                                    <button className={styles.actionBtn} onClick={() => openDocReqModal(r)}>Edit</button>
-                                                    <button className={styles.actionBtnDanger} onClick={() => deleteDocReqUI(r.request_id)}>Delete</button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
+                        <Table loading={docReqLoading} empty={docRequests.length === 0}
+                            emptyMessage="No document requests yet. Track what you've asked from the client.">
+                            <thead><tr>
+                                <th>Document</th><th>Requested</th><th>Due</th><th>Status</th><th>Received</th><th>Notes</th><th>Actions</th>
+                            </tr></thead>
+                            <tbody>
+                                {docRequests.map(r => (
+                                    <tr key={r.request_id}>
+                                        <td><strong>{r.doc_name}</strong></td>
+                                        <td className={styles.muted}>{r.requested_date}</td>
+                                        <td className={styles.muted}>{r.due_date ?? "—"}</td>
+                                        <td>
+                                            <span className={
+                                                r.status === "Received" ? styles.badgeGreen :
+                                                r.status === "Overdue"  ? styles.limBadgeCritical :
+                                                r.status === "Waived"   ? styles.badgeGray : styles.badgeAmber
+                                            } style={{ fontSize: "0.7rem" }}>{r.status}</span>
+                                        </td>
+                                        <td className={styles.muted}>{r.received_date ?? "—"}</td>
+                                        <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.notes ?? "—"}</td>
+                                        <td style={{ display: "flex", gap: "0.35rem" }}>
+                                            {r.status === "Pending" && (
+                                                <button className={styles.actionBtn} style={{ fontSize: "0.72rem" }} onClick={() => markDocReqReceived(r)}>✓ Received</button>
+                                            )}
+                                            <button className={styles.actionBtn} onClick={() => openDocReqModal(r)}>Edit</button>
+                                            <button className={styles.actionBtnDanger} onClick={() => deleteDocReqUI(r.request_id)}>Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
 
                         {/* Doc request modal */}
-                        {showDocReqModal && (
-                            <div className={styles.overlay} onClick={() => setShowDocReqModal(false)}>
-                                <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
-                                    <div className={styles.modalTitle}>{editDocReq ? "Edit Document Request" : "Add Document Request"}</div>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Document Name *</label>
-                                        <input className={styles.formInput} value={docReqForm.doc_name}
-                                            onChange={e => setDocReqForm(f => ({ ...f, doc_name: e.target.value }))}
-                                            placeholder="e.g. CNIC copy, Property title deed, Prior judgments" autoFocus />
-                                    </div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Requested Date</label>
-                                            <input type="date" className={styles.formInput} value={docReqForm.requested_date}
-                                                onChange={e => setDocReqForm(f => ({ ...f, requested_date: e.target.value }))} />
-                                        </div>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Due Date</label>
-                                            <input type="date" className={styles.formInput} value={docReqForm.due_date}
-                                                onChange={e => setDocReqForm(f => ({ ...f, due_date: e.target.value }))} />
-                                        </div>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Status</label>
-                                            <select className={styles.formSelect} value={docReqForm.status}
-                                                onChange={e => setDocReqForm(f => ({ ...f, status: e.target.value }))}>
-                                                {DOC_REQUEST_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Received Date</label>
-                                            <input type="date" className={styles.formInput} value={docReqForm.received_date}
-                                                onChange={e => setDocReqForm(f => ({ ...f, received_date: e.target.value }))} />
-                                        </div>
-                                    </div>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Notes</label>
-                                        <input className={styles.formInput} value={docReqForm.notes}
-                                            onChange={e => setDocReqForm(f => ({ ...f, notes: e.target.value }))}
-                                            placeholder="Optional — e.g. remind client on Monday" />
-                                    </div>
-                                    {docReqErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{docReqErr}</div>}
-                                    <div className={styles.modalActions}>
-                                        <button className={styles.btnGhost} onClick={() => setShowDocReqModal(false)} disabled={docReqSaving}>Cancel</button>
-                                        <button className={styles.btnPrimary} onClick={saveDocReq} disabled={docReqSaving}>{docReqSaving ? "Saving…" : editDocReq ? "Save Changes" : "Add Request"}</button>
-                                    </div>
+                        <Modal open={showDocReqModal} onClose={() => setShowDocReqModal(false)} maxWidth={500}
+                            title={editDocReq ? "Edit Document Request" : "Add Document Request"}
+                            footer={<>
+                                <Button variant="ghost" onClick={() => setShowDocReqModal(false)} disabled={docReqSaving}>Cancel</Button>
+                                <Button onClick={saveDocReq} disabled={docReqSaving}>{docReqSaving ? "Saving…" : editDocReq ? "Save Changes" : "Add Request"}</Button>
+                            </>}>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Document Name *</label>
+                                <input className={styles.formInput} value={docReqForm.doc_name}
+                                    onChange={e => setDocReqForm(f => ({ ...f, doc_name: e.target.value }))}
+                                    placeholder="e.g. CNIC copy, Property title deed, Prior judgments" autoFocus />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Requested Date</label>
+                                    <input type="date" className={styles.formInput} value={docReqForm.requested_date}
+                                        onChange={e => setDocReqForm(f => ({ ...f, requested_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Due Date</label>
+                                    <input type="date" className={styles.formInput} value={docReqForm.due_date}
+                                        onChange={e => setDocReqForm(f => ({ ...f, due_date: e.target.value }))} />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Status</label>
+                                    <select className={styles.formSelect} value={docReqForm.status}
+                                        onChange={e => setDocReqForm(f => ({ ...f, status: e.target.value }))}>
+                                        {DOC_REQUEST_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Received Date</label>
+                                    <input type="date" className={styles.formInput} value={docReqForm.received_date}
+                                        onChange={e => setDocReqForm(f => ({ ...f, received_date: e.target.value }))} />
                                 </div>
                             </div>
-                        )}
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <input className={styles.formInput} value={docReqForm.notes}
+                                    onChange={e => setDocReqForm(f => ({ ...f, notes: e.target.value }))}
+                                    placeholder="Optional — e.g. remind client on Monday" />
+                            </div>
+                            {docReqErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginTop: "0.6rem" }}>{docReqErr}</div>}
+                        </Modal>
                     </>
                 )}
 
@@ -3904,101 +3852,90 @@ const MattersPanel = () => {
                             <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
                                 {witnesses.length} witness{witnesses.length !== 1 ? "es" : ""}
                             </span>
-                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => openWitnessModal()}>+ Add Witness</button>
+                            <Button variant="ghost" size="sm" onClick={() => openWitnessModal()}>+ Add Witness</Button>
                         </div>
 
-                        {witnessLoading ? (
-                            <div className={styles.emptyHint}>Loading…</div>
-                        ) : witnesses.length === 0 ? (
-                            <div className={styles.emptyHint}>No witnesses recorded. Add prosecution, defence, and expert witnesses.</div>
-                        ) : (
-                            <div className={styles.tableWrap}>
-                                <table className={styles.table}>
-                                    <thead><tr>
-                                        <th>Name</th><th>Type</th><th>Contact</th><th>Statement</th><th>Notes</th><th>Actions</th>
-                                    </tr></thead>
-                                    <tbody>
-                                        {witnesses.map(w => (
-                                            <tr key={w.witness_id}>
-                                                <td><strong>{w.witness_name}</strong></td>
-                                                <td>
-                                                    <span className={styles.witnessTypeBadge} data-wtype={w.witness_type}>
-                                                        {w.witness_type}
-                                                    </span>
-                                                </td>
-                                                <td className={styles.muted}>{w.contact_number ?? "—"}</td>
-                                                <td>
-                                                    <span className={
-                                                        w.statement_status === "Filed"           ? styles.badgeGreen  :
-                                                        w.statement_status === "Cross-Examined"  ? styles.badgeBlue   :
-                                                        w.statement_status === "Taken"           ? styles.badgeAmber  : styles.badgeGray
-                                                    } style={{ fontSize: "0.7rem" }}>{w.statement_status}</span>
-                                                </td>
-                                                <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.notes ?? "—"}</td>
-                                                <td style={{ display: "flex", gap: "0.35rem" }}>
-                                                    <button className={styles.actionBtn} onClick={() => openWitnessModal(w)}>Edit</button>
-                                                    <button className={styles.actionBtnDanger} onClick={() => deleteWitnessUI(w.witness_id)}>Delete</button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
+                        <Table loading={witnessLoading} empty={witnesses.length === 0}
+                            emptyMessage="No witnesses recorded. Add prosecution, defence, and expert witnesses.">
+                            <thead><tr>
+                                <th>Name</th><th>Type</th><th>Contact</th><th>Statement</th><th>Notes</th><th>Actions</th>
+                            </tr></thead>
+                            <tbody>
+                                {witnesses.map(w => (
+                                    <tr key={w.witness_id}>
+                                        <td><strong>{w.witness_name}</strong></td>
+                                        <td>
+                                            <span className={styles.witnessTypeBadge} data-wtype={w.witness_type}>
+                                                {w.witness_type}
+                                            </span>
+                                        </td>
+                                        <td className={styles.muted}>{w.contact_number ?? "—"}</td>
+                                        <td>
+                                            <span className={
+                                                w.statement_status === "Filed"           ? styles.badgeGreen  :
+                                                w.statement_status === "Cross-Examined"  ? styles.badgeBlue   :
+                                                w.statement_status === "Taken"           ? styles.badgeAmber  : styles.badgeGray
+                                            } style={{ fontSize: "0.7rem" }}>{w.statement_status}</span>
+                                        </td>
+                                        <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.notes ?? "—"}</td>
+                                        <td style={{ display: "flex", gap: "0.35rem" }}>
+                                            <button className={styles.actionBtn} onClick={() => openWitnessModal(w)}>Edit</button>
+                                            <button className={styles.actionBtnDanger} onClick={() => deleteWitnessUI(w.witness_id)}>Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
 
                         {/* Witness add/edit modal */}
-                        {showWitnessModal && (
-                            <div className={styles.overlay} onClick={() => setShowWitnessModal(false)}>
-                                <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
-                                    <div className={styles.modalTitle}>{editWitness ? "Edit Witness" : "Add Witness"}</div>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Full Name *</label>
-                                        <input className={styles.formInput} value={witnessForm.witness_name}
-                                            onChange={e => setWitnessForm(f => ({ ...f, witness_name: e.target.value }))}
-                                            placeholder="e.g. Muhammad Ali Shah" autoFocus />
-                                    </div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Witness Type</label>
-                                            <select className={styles.formSelect} value={witnessForm.witness_type}
-                                                onChange={e => setWitnessForm(f => ({ ...f, witness_type: e.target.value }))}>
-                                                {WITNESS_TYPES_UI.map(t => <option key={t}>{t}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Statement Status</label>
-                                            <select className={styles.formSelect} value={witnessForm.statement_status}
-                                                onChange={e => setWitnessForm(f => ({ ...f, statement_status: e.target.value }))}>
-                                                {STATEMENT_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Contact Number</label>
-                                            <input className={styles.formInput} value={witnessForm.contact_number}
-                                                onChange={e => setWitnessForm(f => ({ ...f, contact_number: e.target.value }))}
-                                                placeholder="e.g. 0300-1234567" />
-                                        </div>
-                                        <div className={styles.formGroup}>
-                                            <label className={styles.formLabel}>Address</label>
-                                            <input className={styles.formInput} value={witnessForm.address}
-                                                onChange={e => setWitnessForm(f => ({ ...f, address: e.target.value }))}
-                                                placeholder="City / area" />
-                                        </div>
-                                    </div>
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Notes</label>
-                                        <input className={styles.formInput} value={witnessForm.notes}
-                                            onChange={e => setWitnessForm(f => ({ ...f, notes: e.target.value }))}
-                                            placeholder="Reliability, relationship to case, etc." />
-                                    </div>
-                                    {witnessErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{witnessErr}</div>}
-                                    <div className={styles.modalActions}>
-                                        <button className={styles.btnGhost} onClick={() => setShowWitnessModal(false)} disabled={witnessSaving}>Cancel</button>
-                                        <button className={styles.btnPrimary} onClick={saveWitness} disabled={witnessSaving}>{witnessSaving ? "Saving…" : editWitness ? "Save Changes" : "Add Witness"}</button>
-                                    </div>
+                        <Modal open={showWitnessModal} onClose={() => setShowWitnessModal(false)} maxWidth={500}
+                            title={editWitness ? "Edit Witness" : "Add Witness"}
+                            footer={<>
+                                <Button variant="ghost" onClick={() => setShowWitnessModal(false)} disabled={witnessSaving}>Cancel</Button>
+                                <Button onClick={saveWitness} disabled={witnessSaving}>{witnessSaving ? "Saving…" : editWitness ? "Save Changes" : "Add Witness"}</Button>
+                            </>}>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Full Name *</label>
+                                <input className={styles.formInput} value={witnessForm.witness_name}
+                                    onChange={e => setWitnessForm(f => ({ ...f, witness_name: e.target.value }))}
+                                    placeholder="e.g. Muhammad Ali Shah" autoFocus />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Witness Type</label>
+                                    <select className={styles.formSelect} value={witnessForm.witness_type}
+                                        onChange={e => setWitnessForm(f => ({ ...f, witness_type: e.target.value }))}>
+                                        {WITNESS_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Statement Status</label>
+                                    <select className={styles.formSelect} value={witnessForm.statement_status}
+                                        onChange={e => setWitnessForm(f => ({ ...f, statement_status: e.target.value }))}>
+                                        {STATEMENT_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Contact Number</label>
+                                    <input className={styles.formInput} value={witnessForm.contact_number}
+                                        onChange={e => setWitnessForm(f => ({ ...f, contact_number: e.target.value }))}
+                                        placeholder="e.g. 0300-1234567" />
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Address</label>
+                                    <input className={styles.formInput} value={witnessForm.address}
+                                        onChange={e => setWitnessForm(f => ({ ...f, address: e.target.value }))}
+                                        placeholder="City / area" />
                                 </div>
                             </div>
-                        )}
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Notes</label>
+                                <input className={styles.formInput} value={witnessForm.notes}
+                                    onChange={e => setWitnessForm(f => ({ ...f, notes: e.target.value }))}
+                                    placeholder="Reliability, relationship to case, etc." />
+                            </div>
+                            {witnessErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginTop: "0.6rem" }}>{witnessErr}</div>}
+                        </Modal>
                     </>
                 )}
 
@@ -4008,46 +3945,41 @@ const MattersPanel = () => {
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
                             {matterDeadlines.filter(d => !d.completed).length} open · {matterDeadlines.filter(d => d.completed).length} done
                         </span>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openDeadlineModal()}>+ Add Deadline</button>
+                        <Button size="sm" onClick={() => openDeadlineModal()}>+ Add Deadline</Button>
                     </div>
-                    {deadlinesLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : matterDeadlines.length === 0 ? (
-                        <div className={styles.emptyHint}>No deadlines yet. Add internal tasks and due dates to stay on track.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th style={{ width: 32 }}></th>
-                                <th>Title</th>
-                                <th>Due Date</th>
-                                <th>Priority</th>
-                                <th style={{ width: 80 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {matterDeadlines.map(dl => {
-                                    const isOverdue = !dl.completed && dl.due_date < new Date().toISOString().slice(0, 10);
-                                    const priorityColour = dl.priority === "High" ? "var(--red, #dc2626)" : dl.priority === "Medium" ? "var(--amber, #d97706)" : "var(--text-2)";
-                                    return (
-                                        <tr key={dl.deadline_id} style={{ opacity: dl.completed ? 0.5 : 1 }}>
-                                            <td>
-                                                <input type="checkbox" checked={dl.completed === 1} onChange={() => toggleDeadlineComplete(dl)} title={dl.completed ? "Mark incomplete" : "Mark complete"} />
-                                            </td>
-                                            <td style={{ textDecoration: dl.completed ? "line-through" : "none", color: isOverdue ? "var(--red, #dc2626)" : undefined }}>
-                                                {dl.title}
-                                                {isOverdue && <span style={{ fontSize: "0.7rem", marginLeft: 6, fontWeight: 600, color: "var(--red, #dc2626)" }}>OVERDUE</span>}
-                                            </td>
-                                            <td style={{ whiteSpace: "nowrap", color: isOverdue && !dl.completed ? "var(--red, #dc2626)" : undefined }}>{dl.due_date}</td>
-                                            <td><span style={{ fontSize: "0.75rem", fontWeight: 600, color: priorityColour }}>{dl.priority}</span></td>
-                                            <td style={{ display: "flex", gap: 4 }}>
-                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openDeadlineModal(dl)}>Edit</button>
-                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteDeadlineUI(dl.deadline_id)}>Del</button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={deadlinesLoading} empty={matterDeadlines.length === 0}
+                        emptyMessage="No deadlines yet. Add internal tasks and due dates to stay on track.">
+                        <thead><tr>
+                            <th style={{ width: 32 }}></th>
+                            <th>Title</th>
+                            <th>Due Date</th>
+                            <th>Priority</th>
+                            <th style={{ width: 80 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {matterDeadlines.map(dl => {
+                                const isOverdue = !dl.completed && dl.due_date < new Date().toISOString().slice(0, 10);
+                                const priorityColour = dl.priority === "High" ? "var(--red, #dc2626)" : dl.priority === "Medium" ? "var(--amber, #d97706)" : "var(--text-2)";
+                                return (
+                                    <tr key={dl.deadline_id} style={{ opacity: dl.completed ? 0.5 : 1 }}>
+                                        <td>
+                                            <input type="checkbox" checked={dl.completed === 1} onChange={() => toggleDeadlineComplete(dl)} title={dl.completed ? "Mark incomplete" : "Mark complete"} />
+                                        </td>
+                                        <td style={{ textDecoration: dl.completed ? "line-through" : "none", color: isOverdue ? "var(--red, #dc2626)" : undefined }}>
+                                            {dl.title}
+                                            {isOverdue && <span style={{ fontSize: "0.7rem", marginLeft: 6, fontWeight: 600, color: "var(--red, #dc2626)" }}>OVERDUE</span>}
+                                        </td>
+                                        <td style={{ whiteSpace: "nowrap", color: isOverdue && !dl.completed ? "var(--red, #dc2626)" : undefined }}>{dl.due_date}</td>
+                                        <td><span style={{ fontSize: "0.75rem", fontWeight: 600, color: priorityColour }}>{dl.priority}</span></td>
+                                        <td style={{ display: "flex", gap: 4 }}>
+                                            <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openDeadlineModal(dl)}>Edit</Button>
+                                            <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteDeadlineUI(dl.deadline_id)}>Del</Button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </Table>
                 </>)}
 
                 {/* ── Expenses tab ── */}
@@ -4059,39 +3991,36 @@ const MattersPanel = () => {
                                 <> · Billable: PKR {matterExpenses.filter(e => e.billable).reduce((s, e) => s + e.amount_pkr, 0).toLocaleString()}</>
                             )}
                         </span>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openExpenseModal()}>+ Add Expense</button>
+                        <Button size="sm" onClick={() => openExpenseModal()}>+ Add Expense</Button>
                     </div>
-                    {expensesLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : matterExpenses.length === 0 ? (
-                        <div className={styles.emptyHint}>No expenses recorded yet. Track disbursements like court fees, filing charges, and travel costs here.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Date</th>
-                                <th>Description</th>
-                                <th>Category</th>
-                                <th style={{ textAlign: "right" }}>Amount (PKR)</th>
-                                <th>Billable</th>
-                                <th>Receipt</th>
-                                <th style={{ width: 80 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {matterExpenses.map(exp => (
-                                    <tr key={exp.expense_id}>
-                                        <td style={{ whiteSpace: "nowrap" }}>{exp.expense_date}</td>
-                                        <td>{exp.description}</td>
-                                        <td><span style={{ fontSize: "0.75rem", background: "var(--bg-2)", padding: "2px 6px", borderRadius: "var(--radius)" }}>{exp.category}</span></td>
-                                        <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{exp.amount_pkr.toLocaleString()}</td>
-                                        <td style={{ textAlign: "center" }}>{exp.billable ? "✓" : "—"}</td>
-                                        <td style={{ fontSize: "0.75rem", color: "var(--text-2)" }}>{exp.receipt_ref || "—"}</td>
-                                        <td style={{ display: "flex", gap: 4 }}>
-                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openExpenseModal(exp)}>Edit</button>
-                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteExpenseUI(exp.expense_id)}>Del</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
+                    <Table loading={expensesLoading} empty={matterExpenses.length === 0}
+                        emptyMessage="No expenses recorded yet. Track disbursements like court fees, filing charges, and travel costs here.">
+                        <thead><tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Category</th>
+                            <th style={{ textAlign: "right" }}>Amount (PKR)</th>
+                            <th>Billable</th>
+                            <th>Receipt</th>
+                            <th style={{ width: 80 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {matterExpenses.map(exp => (
+                                <tr key={exp.expense_id}>
+                                    <td style={{ whiteSpace: "nowrap" }}>{exp.expense_date}</td>
+                                    <td>{exp.description}</td>
+                                    <td><span style={{ fontSize: "0.75rem", background: "var(--bg-2)", padding: "2px 6px", borderRadius: "var(--radius)" }}>{exp.category}</span></td>
+                                    <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{exp.amount_pkr.toLocaleString()}</td>
+                                    <td style={{ textAlign: "center" }}>{exp.billable ? "✓" : "—"}</td>
+                                    <td style={{ fontSize: "0.75rem", color: "var(--text-2)" }}>{exp.receipt_ref || "—"}</td>
+                                    <td style={{ display: "flex", gap: 4 }}>
+                                        <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openExpenseModal(exp)}>Edit</Button>
+                                        <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteExpenseUI(exp.expense_id)}>Del</Button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        {matterExpenses.length > 0 && (
                             <tfoot>
                                 <tr>
                                     <td colSpan={3} style={{ fontWeight: 600, fontSize: "0.85rem" }}>Total</td>
@@ -4101,8 +4030,8 @@ const MattersPanel = () => {
                                     <td colSpan={3}></td>
                                 </tr>
                             </tfoot>
-                        </table>
-                    )}
+                        )}
+                    </Table>
                 </>)}
 
                 {/* ── Correspondence tab ── */}
@@ -4111,47 +4040,42 @@ const MattersPanel = () => {
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
                             {correspondence.filter(c => c.direction === "Sent").length} sent · {correspondence.filter(c => c.direction === "Received").length} received
                         </span>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openCorrModal()}>+ Add Entry</button>
+                        <Button size="sm" onClick={() => openCorrModal()}>+ Add Entry</Button>
                     </div>
-                    {corrLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : correspondence.length === 0 ? (
-                        <div className={styles.emptyHint}>No correspondence recorded yet. Log letters, emails, and notices sent or received.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Date</th>
-                                <th>Dir.</th>
-                                <th>Type</th>
-                                <th>Subject</th>
-                                <th>Party</th>
-                                <th>Ref #</th>
-                                <th style={{ width: 80 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {correspondence.map(c => (
-                                    <tr key={c.corr_id}>
-                                        <td style={{ whiteSpace: "nowrap" }}>{c.corr_date}</td>
-                                        <td>
-                                            <span style={{
-                                                fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", borderRadius: "var(--radius)",
-                                                background: c.direction === "Sent" ? "rgba(var(--gold-rgb,212,160,23),0.15)" : "rgba(59,130,246,0.12)",
-                                                color: c.direction === "Sent" ? "var(--gold)" : "#3b82f6",
-                                            }}>{c.direction}</span>
-                                        </td>
-                                        <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>{c.corr_type}</td>
-                                        <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.subject}>{c.subject}</td>
-                                        <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>{c.party || "—"}</td>
-                                        <td style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>{c.reference_no || "—"}</td>
-                                        <td style={{ display: "flex", gap: 4 }}>
-                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCorrModal(c)}>Edit</button>
-                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCorrUI(c.corr_id)}>Del</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={corrLoading} empty={correspondence.length === 0}
+                        emptyMessage="No correspondence recorded yet. Log letters, emails, and notices sent or received.">
+                        <thead><tr>
+                            <th>Date</th>
+                            <th>Dir.</th>
+                            <th>Type</th>
+                            <th>Subject</th>
+                            <th>Party</th>
+                            <th>Ref #</th>
+                            <th style={{ width: 80 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {correspondence.map(c => (
+                                <tr key={c.corr_id}>
+                                    <td style={{ whiteSpace: "nowrap" }}>{c.corr_date}</td>
+                                    <td>
+                                        <span style={{
+                                            fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", borderRadius: "var(--radius)",
+                                            background: c.direction === "Sent" ? "rgba(var(--gold-rgb,212,160,23),0.15)" : "rgba(59,130,246,0.12)",
+                                            color: c.direction === "Sent" ? "var(--gold)" : "#3b82f6",
+                                        }}>{c.direction}</span>
+                                    </td>
+                                    <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>{c.corr_type}</td>
+                                    <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.subject}>{c.subject}</td>
+                                    <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>{c.party || "—"}</td>
+                                    <td style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>{c.reference_no || "—"}</td>
+                                    <td style={{ display: "flex", gap: 4 }}>
+                                        <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCorrModal(c)}>Edit</Button>
+                                        <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCorrUI(c.corr_id)}>Del</Button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </Table>
                 </>)}
 
                 {/* ── Relief tab ── */}
@@ -4160,49 +4084,44 @@ const MattersPanel = () => {
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
                             {matterRelief.filter(r => r.status === "Granted").length} granted · {matterRelief.filter(r => r.status === "Pending").length} pending · {matterRelief.filter(r => r.status === "Rejected").length} rejected
                         </span>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openReliefModal()}>+ Add Application</button>
+                        <Button size="sm" onClick={() => openReliefModal()}>+ Add Application</Button>
                     </div>
-                    {reliefLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : matterRelief.length === 0 ? (
-                        <div className={styles.emptyHint}>No bail or interim relief applications recorded. Add bail, stay orders, injunctions, and other interim orders here.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Court / Judge</th>
-                                <th>Status</th>
-                                <th>Surety (PKR)</th>
-                                <th style={{ width: 80 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {matterRelief.map(r => {
-                                    const statusColour = r.status === "Granted" ? "#16a34a" : r.status === "Rejected" || r.status === "Recalled" ? "#dc2626" : r.status === "Pending" ? "var(--gold)" : "var(--text-2)";
-                                    return (
-                                        <tr key={r.relief_id}>
-                                            <td style={{ whiteSpace: "nowrap" }}>{r.application_date}</td>
-                                            <td style={{ fontSize: "0.82rem" }}>{r.relief_type}</td>
-                                            <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>
-                                                {r.court || "—"}{r.judge ? ` / ${r.judge}` : ""}
-                                            </td>
-                                            <td>
-                                                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: statusColour }}>{r.status}</span>
-                                            </td>
-                                            <td style={{ fontSize: "0.82rem", fontVariantNumeric: "tabular-nums" }}>
-                                                {r.surety_amount_pkr !== null ? r.surety_amount_pkr.toLocaleString() : "—"}
-                                                {r.surety_name ? <span style={{ color: "var(--text-2)", fontSize: "0.75rem" }}> ({r.surety_name})</span> : null}
-                                            </td>
-                                            <td style={{ display: "flex", gap: 4 }}>
-                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openReliefModal(r)}>Edit</button>
-                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteReliefUI(r.relief_id)}>Del</button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={reliefLoading} empty={matterRelief.length === 0}
+                        emptyMessage="No bail or interim relief applications recorded. Add bail, stay orders, injunctions, and other interim orders here.">
+                        <thead><tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Court / Judge</th>
+                            <th>Status</th>
+                            <th>Surety (PKR)</th>
+                            <th style={{ width: 80 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {matterRelief.map(r => {
+                                const statusColour = r.status === "Granted" ? "#16a34a" : r.status === "Rejected" || r.status === "Recalled" ? "#dc2626" : r.status === "Pending" ? "var(--gold)" : "var(--text-2)";
+                                return (
+                                    <tr key={r.relief_id}>
+                                        <td style={{ whiteSpace: "nowrap" }}>{r.application_date}</td>
+                                        <td style={{ fontSize: "0.82rem" }}>{r.relief_type}</td>
+                                        <td style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>
+                                            {r.court || "—"}{r.judge ? ` / ${r.judge}` : ""}
+                                        </td>
+                                        <td>
+                                            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: statusColour }}>{r.status}</span>
+                                        </td>
+                                        <td style={{ fontSize: "0.82rem", fontVariantNumeric: "tabular-nums" }}>
+                                            {r.surety_amount_pkr !== null ? r.surety_amount_pkr.toLocaleString() : "—"}
+                                            {r.surety_name ? <span style={{ color: "var(--text-2)", fontSize: "0.75rem" }}> ({r.surety_name})</span> : null}
+                                        </td>
+                                        <td style={{ display: "flex", gap: 4 }}>
+                                            <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openReliefModal(r)}>Edit</Button>
+                                            <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteReliefUI(r.relief_id)}>Del</Button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </Table>
                 </>)}
 
                 {/* ── Court Fees tab ── */}
@@ -4214,105 +4133,96 @@ const MattersPanel = () => {
                                 {" · "}Calculated: <strong>PKR {courtFeeList.reduce((s, r) => s + r.calculated_fee, 0).toLocaleString()}</strong>
                             </span>
                         </div>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openCFModal()}>+ Add Payment</button>
+                        <Button size="sm" onClick={() => openCFModal()}>+ Add Payment</Button>
                     </div>
                     <div style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 0.9rem", marginBottom: "0.75rem", fontSize: "0.78rem", color: "var(--text-2)" }}>
                         ℹ Punjab Court Fees Act slab calculator (ad valorem). Rates are approximate — verify current gazette for exact amounts.
                     </div>
-                    {courtFeeLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : courtFeeList.length === 0 ? (
-                        <div className={styles.emptyHint}>No court fee records yet. Use this tab to track court fee calculations, challan numbers, and payments for this matter.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Date</th>
-                                <th>Claim (PKR)</th>
-                                <th>Type</th>
-                                <th>Calculated</th>
-                                <th>Paid</th>
-                                <th>Challan No.</th>
-                                <th style={{ width: 80 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {courtFeeList.map(r => (
-                                    <tr key={r.fee_payment_id}>
-                                        <td style={{ fontSize: "0.82rem" }}>{r.payment_date || "—"}</td>
-                                        <td style={{ fontSize: "0.82rem" }}>PKR {r.claim_amount_pkr.toLocaleString()}</td>
-                                        <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{r.fee_type}</td>
-                                        <td style={{ fontSize: "0.82rem", fontWeight: 600 }}>PKR {r.calculated_fee.toLocaleString()}</td>
-                                        <td style={{ fontSize: "0.82rem", color: r.actual_paid >= r.calculated_fee ? "#16a34a" : "#dc2626", fontWeight: 600 }}>PKR {r.actual_paid.toLocaleString()}</td>
-                                        <td style={{ fontSize: "0.78rem", fontFamily: "monospace" }}>{r.challan_no || "—"}</td>
-                                        <td style={{ display: "flex", gap: 4 }}>
-                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCFModal(r)}>Edit</button>
-                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCFUI(r.fee_payment_id)}>Del</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={courtFeeLoading} empty={courtFeeList.length === 0}
+                        emptyMessage="No court fee records yet. Use this tab to track court fee calculations, challan numbers, and payments for this matter.">
+                        <thead><tr>
+                            <th>Date</th>
+                            <th>Claim (PKR)</th>
+                            <th>Type</th>
+                            <th>Calculated</th>
+                            <th>Paid</th>
+                            <th>Challan No.</th>
+                            <th style={{ width: 80 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {courtFeeList.map(r => (
+                                <tr key={r.fee_payment_id}>
+                                    <td style={{ fontSize: "0.82rem" }}>{r.payment_date || "—"}</td>
+                                    <td style={{ fontSize: "0.82rem" }}>PKR {r.claim_amount_pkr.toLocaleString()}</td>
+                                    <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{r.fee_type}</td>
+                                    <td style={{ fontSize: "0.82rem", fontWeight: 600 }}>PKR {r.calculated_fee.toLocaleString()}</td>
+                                    <td style={{ fontSize: "0.82rem", color: r.actual_paid >= r.calculated_fee ? "#16a34a" : "#dc2626", fontWeight: 600 }}>PKR {r.actual_paid.toLocaleString()}</td>
+                                    <td style={{ fontSize: "0.78rem", fontFamily: "monospace" }}>{r.challan_no || "—"}</td>
+                                    <td style={{ display: "flex", gap: 4 }}>
+                                        <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCFModal(r)}>Edit</Button>
+                                        <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCFUI(r.fee_payment_id)}>Del</Button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </Table>
                 </>)}
 
                 {/* ── Court Fee modal ── */}
-                {showCFModal && (
-                    <div className={styles.overlay} onClick={() => setShowCFModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
-                            <div className={styles.modalTitle}>{editCF ? "Edit Court Fee" : "Add Court Fee Payment"}</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Claim Amount (PKR)</label>
-                                    <input type="number" className={styles.formInput} min={0} value={cfForm.claim_amount_pkr}
-                                        onChange={e => { const v = parseFloat(e.target.value) || 0; setCfForm(f => ({ ...f, claim_amount_pkr: v })); previewCourtFee(v, cfForm.fee_type); }} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Fee Type</label>
-                                    <select className={styles.formInput} value={cfForm.fee_type} onChange={e => { setCfForm(f => ({ ...f, fee_type: e.target.value })); previewCourtFee(cfForm.claim_amount_pkr, e.target.value); }}>
-                                        {COURT_FEE_TYPES_UI.map(t => <option key={t}>{t}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            {cfCalcPreview !== null && (
-                                <div style={{ background: "var(--bg-1)", border: "1px solid var(--gold)", borderRadius: "var(--radius)", padding: "0.5rem 0.75rem", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
-                                    📐 Calculated court fee: <strong>PKR {cfCalcPreview.toLocaleString()}</strong>
-                                </div>
-                            )}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Calculated Fee (PKR)</label>
-                                    <input type="number" className={styles.formInput} min={0} value={cfForm.calculated_fee} onChange={e => setCfForm(f => ({ ...f, calculated_fee: parseFloat(e.target.value) || 0 }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Actual Paid (PKR)</label>
-                                    <input type="number" className={styles.formInput} min={0} value={cfForm.actual_paid} onChange={e => setCfForm(f => ({ ...f, actual_paid: parseFloat(e.target.value) || 0 }))} />
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Payment Date</label>
-                                    <input type="date" className={styles.formInput} value={cfForm.payment_date} onChange={e => setCfForm(f => ({ ...f, payment_date: e.target.value }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Challan No.</label>
-                                    <input className={styles.formInput} value={cfForm.challan_no} onChange={e => setCfForm(f => ({ ...f, challan_no: e.target.value }))} placeholder="Treasury challan number" />
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Court</label>
-                                <input className={styles.formInput} value={cfForm.court} onChange={e => setCfForm(f => ({ ...f, court: e.target.value }))} placeholder="Optional" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={2} value={cfForm.notes} onChange={e => setCfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
-                            </div>
-                            {cfErr && <div className={styles.formError}>{cfErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowCFModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveCF} disabled={cfSaving}>{cfSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showCFModal} onClose={() => setShowCFModal(false)} maxWidth={480}
+                    title={editCF ? "Edit Court Fee" : "Add Court Fee Payment"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowCFModal(false)}>Cancel</Button>
+                        <Button onClick={saveCF} disabled={cfSaving}>{cfSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Claim Amount (PKR)</label>
+                            <input type="number" className={styles.formInput} min={0} value={cfForm.claim_amount_pkr}
+                                onChange={e => { const v = parseFloat(e.target.value) || 0; setCfForm(f => ({ ...f, claim_amount_pkr: v })); previewCourtFee(v, cfForm.fee_type); }} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Fee Type</label>
+                            <select className={styles.formInput} value={cfForm.fee_type} onChange={e => { setCfForm(f => ({ ...f, fee_type: e.target.value })); previewCourtFee(cfForm.claim_amount_pkr, e.target.value); }}>
+                                {COURT_FEE_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                            </select>
                         </div>
                     </div>
-                )}
+                    {cfCalcPreview !== null && (
+                        <div style={{ background: "var(--bg-1)", border: "1px solid var(--gold)", borderRadius: "var(--radius)", padding: "0.5rem 0.75rem", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                            📐 Calculated court fee: <strong>PKR {cfCalcPreview.toLocaleString()}</strong>
+                        </div>
+                    )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Calculated Fee (PKR)</label>
+                            <input type="number" className={styles.formInput} min={0} value={cfForm.calculated_fee} onChange={e => setCfForm(f => ({ ...f, calculated_fee: parseFloat(e.target.value) || 0 }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Actual Paid (PKR)</label>
+                            <input type="number" className={styles.formInput} min={0} value={cfForm.actual_paid} onChange={e => setCfForm(f => ({ ...f, actual_paid: parseFloat(e.target.value) || 0 }))} />
+                        </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Payment Date</label>
+                            <input type="date" className={styles.formInput} value={cfForm.payment_date} onChange={e => setCfForm(f => ({ ...f, payment_date: e.target.value }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Challan No.</label>
+                            <input className={styles.formInput} value={cfForm.challan_no} onChange={e => setCfForm(f => ({ ...f, challan_no: e.target.value }))} placeholder="Treasury challan number" />
+                        </div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Court</label>
+                        <input className={styles.formInput} value={cfForm.court} onChange={e => setCfForm(f => ({ ...f, court: e.target.value }))} placeholder="Optional" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={2} value={cfForm.notes} onChange={e => setCfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                    </div>
+                    {cfErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{cfErr}</div>}
+                </Modal>
 
                 {/* ── Associate Fees tab — Task #153 ── */}
                 {detailTab === "assocfees" && (<>
@@ -4327,94 +4237,82 @@ const MattersPanel = () => {
                                 </span>
                             )}
                         </div>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openAFModal()}>+ Add Fee</button>
+                        <Button size="sm" onClick={() => openAFModal()}>+ Add Fee</Button>
                     </div>
-                    {assocFeeLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : assocFeeList.length === 0 ? (
-                        <div className={styles.emptyHint}>No associate fee records yet. Track fees paid to junior advocates, wakeels, or associates who appeared on behalf of the firm.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Advocate</th>
-                                <th>Bar No.</th>
-                                <th>Appearance Date</th>
-                                <th>Amount (PKR)</th>
-                                <th>Status</th>
-                                <th>Payment Date</th>
-                                <th style={{ width: 90 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {assocFeeList.map(r => (
-                                    <tr key={r.assoc_fee_id} style={{ background: r.paid ? "transparent" : "rgba(220,38,38,0.04)" }}>
-                                        <td><strong>{r.advocate_name}</strong></td>
-                                        <td className={styles.muted}>{r.bar_no || "—"}</td>
-                                        <td>{r.appearance_date || "—"}</td>
-                                        <td>PKR {r.amount_pkr.toLocaleString()}</td>
-                                        <td>
-                                            <span style={{ padding: "2px 8px", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: 600, background: r.paid ? "#dcfce7" : "#fee2e2", color: r.paid ? "#16a34a" : "#dc2626" }}>
-                                                {r.paid ? "Paid" : "Unpaid"}
-                                            </span>
-                                        </td>
-                                        <td className={styles.muted}>{r.payment_date || "—"}</td>
-                                        <td style={{ display: "flex", gap: "0.25rem" }}>
-                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openAFModal(r)}>Edit</button>
-                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteAssocFeeUI(r.assoc_fee_id)}>Del</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={assocFeeLoading} empty={assocFeeList.length === 0}
+                        emptyMessage="No associate fee records yet. Track fees paid to junior advocates, wakeels, or associates who appeared on behalf of the firm.">
+                        <thead><tr>
+                            <th>Advocate</th>
+                            <th>Bar No.</th>
+                            <th>Appearance Date</th>
+                            <th>Amount (PKR)</th>
+                            <th>Status</th>
+                            <th>Payment Date</th>
+                            <th style={{ width: 90 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {assocFeeList.map(r => (
+                                <tr key={r.assoc_fee_id} style={{ background: r.paid ? "transparent" : "rgba(220,38,38,0.04)" }}>
+                                    <td><strong>{r.advocate_name}</strong></td>
+                                    <td className={styles.muted}>{r.bar_no || "—"}</td>
+                                    <td>{r.appearance_date || "—"}</td>
+                                    <td>PKR {r.amount_pkr.toLocaleString()}</td>
+                                    <td>
+                                        <span style={{ padding: "2px 8px", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: 600, background: r.paid ? "#dcfce7" : "#fee2e2", color: r.paid ? "#16a34a" : "#dc2626" }}>
+                                            {r.paid ? "Paid" : "Unpaid"}
+                                        </span>
+                                    </td>
+                                    <td className={styles.muted}>{r.payment_date || "—"}</td>
+                                    <td style={{ display: "flex", gap: "0.25rem" }}>
+                                        <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openAFModal(r)}>Edit</Button>
+                                        <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteAssocFeeUI(r.assoc_fee_id)}>Del</Button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </Table>
                 </>)}
 
-                {showAFModal && (
-                    <div className={styles.modalOverlay}>
-                        <div className={styles.modal} style={{ maxWidth: 480 }}>
-                            <div className={styles.modalHeader}>
-                                <h3 className={styles.modalTitle}>{editAF ? "Edit Associate Fee" : "Add Associate Fee"}</h3>
-                                <button className={styles.modalClose} onClick={() => setShowAFModal(false)}>✕</button>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Advocate Name *</label>
-                                <input className={styles.formInput} value={afForm.advocate_name} onChange={e => setAfForm(f => ({ ...f, advocate_name: e.target.value }))} placeholder="Full name" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Bar Registration No.</label>
-                                <input className={styles.formInput} value={afForm.bar_no} onChange={e => setAfForm(f => ({ ...f, bar_no: e.target.value }))} placeholder="Optional" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Appearance Date</label>
-                                <input type="date" className={styles.formInput} value={afForm.appearance_date} onChange={e => setAfForm(f => ({ ...f, appearance_date: e.target.value }))} />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Amount (PKR) *</label>
-                                <input type="number" className={styles.formInput} min={0} value={afForm.amount_pkr} onChange={e => setAfForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} placeholder="0" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel} style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                                    <input type="checkbox" checked={!!afForm.paid} onChange={e => setAfForm(f => ({ ...f, paid: e.target.checked ? 1 : 0 }))} />
-                                    Mark as Paid
-                                </label>
-                            </div>
-                            {afForm.paid ? (
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Payment Date</label>
-                                    <input type="date" className={styles.formInput} value={afForm.payment_date} onChange={e => setAfForm(f => ({ ...f, payment_date: e.target.value }))} />
-                                </div>
-                            ) : null}
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={2} value={afForm.notes} onChange={e => setAfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
-                            </div>
-                            {afErr && <div className={styles.formError}>{afErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowAFModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveAssocFee} disabled={afSaving}>{afSaving ? "Saving…" : "Save"}</button>
-                            </div>
-                        </div>
+                <Modal open={showAFModal} onClose={() => setShowAFModal(false)} maxWidth={480}
+                    title={editAF ? "Edit Associate Fee" : "Add Associate Fee"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowAFModal(false)}>Cancel</Button>
+                        <Button onClick={saveAssocFee} disabled={afSaving}>{afSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Advocate Name *</label>
+                        <input className={styles.formInput} value={afForm.advocate_name} onChange={e => setAfForm(f => ({ ...f, advocate_name: e.target.value }))} placeholder="Full name" />
                     </div>
-                )}
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Bar Registration No.</label>
+                        <input className={styles.formInput} value={afForm.bar_no} onChange={e => setAfForm(f => ({ ...f, bar_no: e.target.value }))} placeholder="Optional" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Appearance Date</label>
+                        <input type="date" className={styles.formInput} value={afForm.appearance_date} onChange={e => setAfForm(f => ({ ...f, appearance_date: e.target.value }))} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Amount (PKR) *</label>
+                        <input type="number" className={styles.formInput} min={0} value={afForm.amount_pkr} onChange={e => setAfForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} placeholder="0" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel} style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                            <input type="checkbox" checked={!!afForm.paid} onChange={e => setAfForm(f => ({ ...f, paid: e.target.checked ? 1 : 0 }))} />
+                            Mark as Paid
+                        </label>
+                    </div>
+                    {afForm.paid ? (
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Payment Date</label>
+                            <input type="date" className={styles.formInput} value={afForm.payment_date} onChange={e => setAfForm(f => ({ ...f, payment_date: e.target.value }))} />
+                        </div>
+                    ) : null}
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={2} value={afForm.notes} onChange={e => setAfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                    </div>
+                    {afErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{afErr}</div>}
+                </Modal>
 
                 {/* ── Cheques tab — Task #155 ── */}
                 {detailTab === "cheques" && (<>
@@ -4427,213 +4325,192 @@ const MattersPanel = () => {
                                 </span>
                             )}
                         </div>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openCHQModal()}>+ Add Cheque</button>
+                        <Button size="sm" onClick={() => openCHQModal()}>+ Add Cheque</Button>
                     </div>
-                    {chequeLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : chequeList.length === 0 ? (
-                        <div className={styles.emptyHint}>No cheque records yet. Track post-dated, undated, or bearer cheques received from clients as security or payment.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Cheque No.</th>
-                                <th>Bank</th>
-                                <th>Amount</th>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Status</th>
-                                <th style={{ width: 90 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {chequeList.map(c => {
-                                    const statusColor = c.status === "Cleared" ? "#16a34a" : c.status === "Bounced" ? "#dc2626" : c.status === "Presented" ? "#2563eb" : c.status === "Returned" || c.status === "Cancelled" ? "#9ca3af" : "var(--text-2)";
-                                    return (
-                                        <tr key={c.cheque_id}>
-                                            <td><strong>{c.cheque_no}</strong></td>
-                                            <td className={styles.muted}>{c.bank_name || "—"}{c.account_title ? ` / ${c.account_title}` : ""}</td>
-                                            <td>PKR {c.amount_pkr.toLocaleString()}</td>
-                                            <td className={styles.muted}>{c.cheque_date || "Undated"}</td>
-                                            <td><span style={{ fontSize: "0.78rem" }}>{c.cheque_type}</span></td>
-                                            <td><span style={{ fontWeight: 600, fontSize: "0.8rem", color: statusColor }}>{c.status}</span></td>
-                                            <td style={{ display: "flex", gap: "0.25rem" }}>
-                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCHQModal(c)}>Edit</button>
-                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCHQUI(c.cheque_id)}>Del</button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={chequeLoading} empty={chequeList.length === 0}
+                        emptyMessage="No cheque records yet. Track post-dated, undated, or bearer cheques received from clients as security or payment.">
+                        <thead><tr>
+                            <th>Cheque No.</th>
+                            <th>Bank</th>
+                            <th>Amount</th>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th style={{ width: 90 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {chequeList.map(c => {
+                                const statusColor = c.status === "Cleared" ? "#16a34a" : c.status === "Bounced" ? "#dc2626" : c.status === "Presented" ? "#2563eb" : c.status === "Returned" || c.status === "Cancelled" ? "#9ca3af" : "var(--text-2)";
+                                return (
+                                    <tr key={c.cheque_id}>
+                                        <td><strong>{c.cheque_no}</strong></td>
+                                        <td className={styles.muted}>{c.bank_name || "—"}{c.account_title ? ` / ${c.account_title}` : ""}</td>
+                                        <td>PKR {c.amount_pkr.toLocaleString()}</td>
+                                        <td className={styles.muted}>{c.cheque_date || "Undated"}</td>
+                                        <td><span style={{ fontSize: "0.78rem" }}>{c.cheque_type}</span></td>
+                                        <td><span style={{ fontWeight: 600, fontSize: "0.8rem", color: statusColor }}>{c.status}</span></td>
+                                        <td style={{ display: "flex", gap: "0.25rem" }}>
+                                            <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openCHQModal(c)}>Edit</Button>
+                                            <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteCHQUI(c.cheque_id)}>Del</Button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </Table>
                 </>)}
 
-                {showCHQModal && (
-                    <div className={styles.modalOverlay}>
-                        <div className={styles.modal} style={{ maxWidth: 500 }}>
-                            <div className={styles.modalHeader}>
-                                <h3 className={styles.modalTitle}>{editCHQ ? "Edit Cheque" : "Add Cheque"}</h3>
-                                <button className={styles.modalClose} onClick={() => setShowCHQModal(false)}>✕</button>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Cheque No. *</label>
-                                    <input className={styles.formInput} value={chqForm.cheque_no} onChange={e => setChqForm(f => ({ ...f, cheque_no: e.target.value }))} placeholder="e.g. 000123" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Amount (PKR)</label>
-                                    <input type="number" className={styles.formInput} min={0} value={chqForm.amount_pkr} onChange={e => setChqForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Bank Name</label>
-                                    <input className={styles.formInput} value={chqForm.bank_name} onChange={e => setChqForm(f => ({ ...f, bank_name: e.target.value }))} placeholder="e.g. HBL" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Account Title</label>
-                                    <input className={styles.formInput} value={chqForm.account_title} onChange={e => setChqForm(f => ({ ...f, account_title: e.target.value }))} placeholder="Optional" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Cheque Date</label>
-                                    <input type="date" className={styles.formInput} value={chqForm.cheque_date} onChange={e => setChqForm(f => ({ ...f, cheque_date: e.target.value }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Type</label>
-                                    <select className={styles.formInput} value={chqForm.cheque_type} onChange={e => setChqForm(f => ({ ...f, cheque_type: e.target.value }))}>
-                                        {["Post-Dated", "Undated", "Bearer", "Crossed"].map(t => <option key={t}>{t}</option>)}
-                                    </select>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Status</label>
-                                    <select className={styles.formInput} value={chqForm.status} onChange={e => setChqForm(f => ({ ...f, status: e.target.value }))}>
-                                        {["Held", "Presented", "Cleared", "Bounced", "Returned", "Cancelled"].map(s => <option key={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Received Date</label>
-                                    <input type="date" className={styles.formInput} value={chqForm.received_date} onChange={e => setChqForm(f => ({ ...f, received_date: e.target.value }))} />
-                                </div>
-                                <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
-                                    <label className={styles.formLabel}>Notes</label>
-                                    <textarea className={styles.formInput} rows={2} value={chqForm.notes} onChange={e => setChqForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
-                                </div>
-                            </div>
-                            {chqErr && <div className={styles.formError}>{chqErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowCHQModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveCHQ} disabled={chqSaving}>{chqSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showCHQModal} onClose={() => setShowCHQModal(false)} maxWidth={500}
+                    title={editCHQ ? "Edit Cheque" : "Add Cheque"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowCHQModal(false)}>Cancel</Button>
+                        <Button onClick={saveCHQ} disabled={chqSaving}>{chqSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Cheque No. *</label>
+                            <input className={styles.formInput} value={chqForm.cheque_no} onChange={e => setChqForm(f => ({ ...f, cheque_no: e.target.value }))} placeholder="e.g. 000123" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Amount (PKR)</label>
+                            <input type="number" className={styles.formInput} min={0} value={chqForm.amount_pkr} onChange={e => setChqForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Bank Name</label>
+                            <input className={styles.formInput} value={chqForm.bank_name} onChange={e => setChqForm(f => ({ ...f, bank_name: e.target.value }))} placeholder="e.g. HBL" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Account Title</label>
+                            <input className={styles.formInput} value={chqForm.account_title} onChange={e => setChqForm(f => ({ ...f, account_title: e.target.value }))} placeholder="Optional" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Cheque Date</label>
+                            <input type="date" className={styles.formInput} value={chqForm.cheque_date} onChange={e => setChqForm(f => ({ ...f, cheque_date: e.target.value }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Type</label>
+                            <select className={styles.formInput} value={chqForm.cheque_type} onChange={e => setChqForm(f => ({ ...f, cheque_type: e.target.value }))}>
+                                {["Post-Dated", "Undated", "Bearer", "Crossed"].map(t => <option key={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Status</label>
+                            <select className={styles.formInput} value={chqForm.status} onChange={e => setChqForm(f => ({ ...f, status: e.target.value }))}>
+                                {["Held", "Presented", "Cleared", "Bounced", "Returned", "Cancelled"].map(s => <option key={s}>{s}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Received Date</label>
+                            <input type="date" className={styles.formInput} value={chqForm.received_date} onChange={e => setChqForm(f => ({ ...f, received_date: e.target.value }))} />
+                        </div>
+                        <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
+                            <label className={styles.formLabel}>Notes</label>
+                            <textarea className={styles.formInput} rows={2} value={chqForm.notes} onChange={e => setChqForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                         </div>
                     </div>
-                )}
+                    {chqErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{chqErr}</div>}
+                </Modal>
 
                 {/* ── Challan tab ── */}
                 {detailTab === "challan" && (<>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Charge sheet / challan submissions</span>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openChallanModal()}>+ Add Challan</button>
+                        <Button size="sm" onClick={() => openChallanModal()}>+ Add Challan</Button>
                     </div>
-                    {challanLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : matterChallanList.length === 0 ? (
-                        <div className={styles.emptyHint}>No challan records yet. Track when police submits the charge sheet, whether it was submitted in time, and how many witnesses were included.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>In Time</th>
-                                <th>Witnesses</th>
-                                <th>Court</th>
-                                <th>Status</th>
-                                <th style={{ width: 80 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {matterChallanList.map(c => {
-                                    const statusColour = c.status === "Accepted" ? "#16a34a" : c.status === "Returned" ? "#dc2626" : c.status === "Submitted" ? "#2563eb" : "var(--text-2)";
-                                    return (
-                                        <tr key={c.challan_id}>
-                                            <td style={{ fontSize: "0.82rem" }}>{c.challan_date || "—"}</td>
-                                            <td style={{ fontSize: "0.82rem" }}>{c.challan_type}</td>
-                                            <td style={{ textAlign: "center" }}>
-                                                {c.submitted_in_time
-                                                    ? <span style={{ color: "#16a34a", fontWeight: 700, fontSize: "0.8rem" }}>✓ Yes</span>
-                                                    : <span style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.8rem" }}>✗ No</span>}
-                                            </td>
-                                            <td style={{ textAlign: "center", fontSize: "0.82rem" }}>{c.witnesses_count}</td>
-                                            <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{c.challan_court || "—"}</td>
-                                            <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: statusColour }}>{c.status}</span></td>
-                                            <td style={{ display: "flex", gap: 4 }}>
-                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openChallanModal(c)}>Edit</button>
-                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteChallanUI(c.challan_id)}>Del</button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={challanLoading} empty={matterChallanList.length === 0}
+                        emptyMessage="No challan records yet. Track when police submits the charge sheet, whether it was submitted in time, and how many witnesses were included.">
+                        <thead><tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>In Time</th>
+                            <th>Witnesses</th>
+                            <th>Court</th>
+                            <th>Status</th>
+                            <th style={{ width: 80 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {matterChallanList.map(c => {
+                                const statusColour = c.status === "Accepted" ? "#16a34a" : c.status === "Returned" ? "#dc2626" : c.status === "Submitted" ? "#2563eb" : "var(--text-2)";
+                                return (
+                                    <tr key={c.challan_id}>
+                                        <td style={{ fontSize: "0.82rem" }}>{c.challan_date || "—"}</td>
+                                        <td style={{ fontSize: "0.82rem" }}>{c.challan_type}</td>
+                                        <td style={{ textAlign: "center" }}>
+                                            {c.submitted_in_time
+                                                ? <span style={{ color: "#16a34a", fontWeight: 700, fontSize: "0.8rem" }}>✓ Yes</span>
+                                                : <span style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.8rem" }}>✗ No</span>}
+                                        </td>
+                                        <td style={{ textAlign: "center", fontSize: "0.82rem" }}>{c.witnesses_count}</td>
+                                        <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{c.challan_court || "—"}</td>
+                                        <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: statusColour }}>{c.status}</span></td>
+                                        <td style={{ display: "flex", gap: 4 }}>
+                                            <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openChallanModal(c)}>Edit</Button>
+                                            <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteChallanUI(c.challan_id)}>Del</Button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </Table>
                 </>)}
 
                 {/* ── Challan modal ── */}
-                {showChallanModal && (
-                    <div className={styles.overlay} onClick={() => setShowChallanModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
-                            <div className={styles.modalTitle}>{editChallan ? "Edit Challan" : "Add Challan"}</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Challan Date</label>
-                                    <input type="date" className={styles.formInput} value={challanForm.challan_date} onChange={e => setChallanForm(f => ({ ...f, challan_date: e.target.value }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Type</label>
-                                    <select className={styles.formInput} value={challanForm.challan_type} onChange={e => setChallanForm(f => ({ ...f, challan_type: e.target.value }))}>
-                                        {CHALLAN_TYPES_UI.map(t => <option key={t}>{t}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: "0.75rem", alignItems: "center" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                                    <input type="checkbox" id="ch-in-time" checked={challanForm.submitted_in_time} onChange={e => setChallanForm(f => ({ ...f, submitted_in_time: e.target.checked }))} />
-                                    <label htmlFor="ch-in-time" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>Submitted in Time</label>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Witnesses</label>
-                                    <input type="number" className={styles.formInput} min={0} value={challanForm.witnesses_count} onChange={e => setChallanForm(f => ({ ...f, witnesses_count: parseInt(e.target.value) || 0 }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Status</label>
-                                    <select className={styles.formInput} value={challanForm.status} onChange={e => setChallanForm(f => ({ ...f, status: e.target.value }))}>
-                                        {CHALLAN_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Court</label>
-                                <input className={styles.formInput} value={challanForm.challan_court} onChange={e => setChallanForm(f => ({ ...f, challan_court: e.target.value }))} placeholder="Optional" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={2} value={challanForm.notes} onChange={e => setChallanForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
-                            </div>
-                            {challanErr && <div className={styles.formError}>{challanErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowChallanModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveChallan} disabled={challanSaving}>{challanSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showChallanModal} onClose={() => setShowChallanModal(false)} maxWidth={460}
+                    title={editChallan ? "Edit Challan" : "Add Challan"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowChallanModal(false)}>Cancel</Button>
+                        <Button onClick={saveChallan} disabled={challanSaving}>{challanSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Challan Date</label>
+                            <input type="date" className={styles.formInput} value={challanForm.challan_date} onChange={e => setChallanForm(f => ({ ...f, challan_date: e.target.value }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Type</label>
+                            <select className={styles.formInput} value={challanForm.challan_type} onChange={e => setChallanForm(f => ({ ...f, challan_type: e.target.value }))}>
+                                {CHALLAN_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                            </select>
                         </div>
                     </div>
-                )}
+                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: "0.75rem", alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <input type="checkbox" id="ch-in-time" checked={challanForm.submitted_in_time} onChange={e => setChallanForm(f => ({ ...f, submitted_in_time: e.target.checked }))} />
+                            <label htmlFor="ch-in-time" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>Submitted in Time</label>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Witnesses</label>
+                            <input type="number" className={styles.formInput} min={0} value={challanForm.witnesses_count} onChange={e => setChallanForm(f => ({ ...f, witnesses_count: parseInt(e.target.value) || 0 }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Status</label>
+                            <select className={styles.formInput} value={challanForm.status} onChange={e => setChallanForm(f => ({ ...f, status: e.target.value }))}>
+                                {CHALLAN_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Court</label>
+                        <input className={styles.formInput} value={challanForm.challan_court} onChange={e => setChallanForm(f => ({ ...f, challan_court: e.target.value }))} placeholder="Optional" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={2} value={challanForm.notes} onChange={e => setChallanForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                    </div>
+                    {challanErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{challanErr}</div>}
+                </Modal>
 
                 {/* ── FIR tab ── */}
                 {detailTab === "fir" && (<>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>First Information Reports &amp; police station records</span>
                         <div style={{ display: "flex", gap: "0.5rem" }}>
-                            <label className={styles.btnSecondary} style={{ fontSize: "0.8rem", cursor: "pointer" }}>
+                            <label className={styles.btnGhost} style={{ fontSize: "0.8rem", cursor: "pointer" }}>
                                 📷 Scan FIR (beta)
                                 <input type="file" accept="image/*,.pdf" style={{ display: "none" }}
                                     onChange={e => { const file = e.target.files?.[0]; if (file) { openFirModal(); scanFirFile(file); } e.target.value = ""; }} />
                             </label>
-                            <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openFirModal()}>+ Add FIR</button>
+                            <Button size="sm" onClick={() => openFirModal()}>+ Add FIR</Button>
                         </div>
                     </div>
                     {firLoading ? (
@@ -4650,8 +4527,8 @@ const MattersPanel = () => {
                                             <span style={{ color: "var(--text-2)", fontSize: "0.82rem", marginLeft: "0.75rem" }}>P/S {f.police_station}{f.district ? `, ${f.district}` : ""}</span>
                                         </div>
                                         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openFirModal(f)}>Edit</button>
-                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteFirUI(f.fir_id)}>Del</button>
+                                            <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openFirModal(f)}>Edit</Button>
+                                            <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteFirUI(f.fir_id)}>Del</Button>
                                         </div>
                                     </div>
                                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "0.4rem 1rem", marginTop: "0.6rem", fontSize: "0.8rem", color: "var(--text-2)" }}>
@@ -4670,71 +4547,67 @@ const MattersPanel = () => {
                 </>)}
 
                 {/* ── FIR modal ── */}
-                {showFirModal && (
-                    <div className={styles.overlay} onClick={() => setShowFirModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
-                            <div className={styles.modalTitle}>{editFir ? "Edit FIR Record" : "Add FIR Record"}</div>
-                            {firScanning && <div className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.6rem" }}>🔍 Reading document…</div>}
-                            {firScanErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.82rem", marginBottom: "0.6rem" }}>{firScanErr}</div>}
-                            {firScanRawText && !firScanning && (
-                                <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.75rem" }}>
-                                    ✓ Fields below were AI-extracted from the scanned document — please verify each one before saving.
-                                </div>
-                            )}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>FIR Number *</label>
-                                    <input className={styles.formInput} value={firForm.fir_number} onChange={e => setFirForm(f => ({ ...f, fir_number: e.target.value }))} placeholder="e.g. 123/2024" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>FIR Date</label>
-                                    <input type="date" className={styles.formInput} value={firForm.fir_date} onChange={e => setFirForm(f => ({ ...f, fir_date: e.target.value }))} />
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Police Station *</label>
-                                    <input className={styles.formInput} value={firForm.police_station} onChange={e => setFirForm(f => ({ ...f, police_station: e.target.value }))} placeholder="e.g. Gulberg" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>District</label>
-                                    <input className={styles.formInput} value={firForm.district} onChange={e => setFirForm(f => ({ ...f, district: e.target.value }))} placeholder="e.g. Lahore" />
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Investigating Officer</label>
-                                    <input className={styles.formInput} value={firForm.io_name} onChange={e => setFirForm(f => ({ ...f, io_name: e.target.value }))} placeholder="IO Name / Rank" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Arrest Date</label>
-                                    <input type="date" className={styles.formInput} value={firForm.arrest_date} onChange={e => setFirForm(f => ({ ...f, arrest_date: e.target.value }))} />
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Complainant</label>
-                                <input className={styles.formInput} value={firForm.complainant} onChange={e => setFirForm(f => ({ ...f, complainant: e.target.value }))} placeholder="Name of complainant" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Sections at time of FIR</label>
-                                <input className={styles.formInput} value={firForm.sections_at_fir} onChange={e => setFirForm(f => ({ ...f, sections_at_fir: e.target.value }))} placeholder="e.g. 302, 324 PPC" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Sections after Challan</label>
-                                <input className={styles.formInput} value={firForm.sections_after_challan} onChange={e => setFirForm(f => ({ ...f, sections_after_challan: e.target.value }))} placeholder="e.g. 302, 109 PPC (if changed)" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={2} value={firForm.notes} onChange={e => setFirForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
-                            </div>
-                            {firErr && <div className={styles.formError}>{firErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowFirModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveFir} disabled={firSaving}>{firSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showFirModal} onClose={() => setShowFirModal(false)} maxWidth={520}
+                    title={editFir ? "Edit FIR Record" : "Add FIR Record"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowFirModal(false)}>Cancel</Button>
+                        <Button onClick={saveFir} disabled={firSaving}>{firSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    {firScanning && <div className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.6rem" }}>🔍 Reading document…</div>}
+                    {firScanErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.82rem", marginBottom: "0.6rem" }}>{firScanErr}</div>}
+                    {firScanRawText && !firScanning && (
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.75rem" }}>
+                            ✓ Fields below were AI-extracted from the scanned document — please verify each one before saving.
+                        </div>
+                    )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>FIR Number *</label>
+                            <input className={styles.formInput} value={firForm.fir_number} onChange={e => setFirForm(f => ({ ...f, fir_number: e.target.value }))} placeholder="e.g. 123/2024" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>FIR Date</label>
+                            <input type="date" className={styles.formInput} value={firForm.fir_date} onChange={e => setFirForm(f => ({ ...f, fir_date: e.target.value }))} />
                         </div>
                     </div>
-                )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Police Station *</label>
+                            <input className={styles.formInput} value={firForm.police_station} onChange={e => setFirForm(f => ({ ...f, police_station: e.target.value }))} placeholder="e.g. Gulberg" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>District</label>
+                            <input className={styles.formInput} value={firForm.district} onChange={e => setFirForm(f => ({ ...f, district: e.target.value }))} placeholder="e.g. Lahore" />
+                        </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Investigating Officer</label>
+                            <input className={styles.formInput} value={firForm.io_name} onChange={e => setFirForm(f => ({ ...f, io_name: e.target.value }))} placeholder="IO Name / Rank" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Arrest Date</label>
+                            <input type="date" className={styles.formInput} value={firForm.arrest_date} onChange={e => setFirForm(f => ({ ...f, arrest_date: e.target.value }))} />
+                        </div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Complainant</label>
+                        <input className={styles.formInput} value={firForm.complainant} onChange={e => setFirForm(f => ({ ...f, complainant: e.target.value }))} placeholder="Name of complainant" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Sections at time of FIR</label>
+                        <input className={styles.formInput} value={firForm.sections_at_fir} onChange={e => setFirForm(f => ({ ...f, sections_at_fir: e.target.value }))} placeholder="e.g. 302, 324 PPC" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Sections after Challan</label>
+                        <input className={styles.formInput} value={firForm.sections_after_challan} onChange={e => setFirForm(f => ({ ...f, sections_after_challan: e.target.value }))} placeholder="e.g. 302, 109 PPC (if changed)" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={2} value={firForm.notes} onChange={e => setFirForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                    </div>
+                    {firErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{firErr}</div>}
+                </Modal>
 
                 {/* ── Charges tab ── */}
                 {detailTab === "charges" && (<>
@@ -4742,97 +4615,88 @@ const MattersPanel = () => {
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
                             {matterCharges.length} section{matterCharges.length !== 1 ? "s" : ""} · {matterCharges.filter(c => c.charge_framed).length} framed
                         </span>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openChargeModal()}>+ Add Section</button>
+                        <Button size="sm" onClick={() => openChargeModal()}>+ Add Section</Button>
                     </div>
-                    {chargesLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : matterCharges.length === 0 ? (
-                        <div className={styles.emptyHint}>No charges or sections added yet. Use this tab for criminal matters to track PPC, CNS, PECA, NAB, and other statutory sections.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Section</th>
-                                <th>Description</th>
-                                <th>Plea</th>
-                                <th>Framed</th>
-                                <th>Court</th>
-                                <th style={{ width: 80 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {matterCharges.map(ch => {
-                                    const pleaColour = ch.plea === "Guilty" ? "#dc2626" : ch.plea === "Not Guilty" ? "#16a34a" : ch.plea === "Absconder" ? "#7c3aed" : "var(--text-2)";
-                                    return (
-                                        <tr key={ch.charge_id}>
-                                            <td><strong style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{ch.section_no}</strong></td>
-                                            <td style={{ fontSize: "0.82rem", color: "var(--text-2)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.description || "—"}</td>
-                                            <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: pleaColour }}>{ch.plea}</span></td>
-                                            <td style={{ textAlign: "center" }}>
-                                                {ch.charge_framed
-                                                    ? <span style={{ color: "#16a34a", fontSize: "0.8rem" }}>✓ {ch.charge_framed_date || ""}</span>
-                                                    : <span style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>—</span>}
-                                            </td>
-                                            <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{ch.court || "—"}</td>
-                                            <td style={{ display: "flex", gap: 4 }}>
-                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openChargeModal(ch)}>Edit</button>
-                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteChargeUI(ch.charge_id)}>Del</button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={chargesLoading} empty={matterCharges.length === 0}
+                        emptyMessage="No charges or sections added yet. Use this tab for criminal matters to track PPC, CNS, PECA, NAB, and other statutory sections.">
+                        <thead><tr>
+                            <th>Section</th>
+                            <th>Description</th>
+                            <th>Plea</th>
+                            <th>Framed</th>
+                            <th>Court</th>
+                            <th style={{ width: 80 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {matterCharges.map(ch => {
+                                const pleaColour = ch.plea === "Guilty" ? "#dc2626" : ch.plea === "Not Guilty" ? "#16a34a" : ch.plea === "Absconder" ? "#7c3aed" : "var(--text-2)";
+                                return (
+                                    <tr key={ch.charge_id}>
+                                        <td><strong style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{ch.section_no}</strong></td>
+                                        <td style={{ fontSize: "0.82rem", color: "var(--text-2)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.description || "—"}</td>
+                                        <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: pleaColour }}>{ch.plea}</span></td>
+                                        <td style={{ textAlign: "center" }}>
+                                            {ch.charge_framed
+                                                ? <span style={{ color: "#16a34a", fontSize: "0.8rem" }}>✓ {ch.charge_framed_date || ""}</span>
+                                                : <span style={{ color: "var(--text-3)", fontSize: "0.8rem" }}>—</span>}
+                                        </td>
+                                        <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{ch.court || "—"}</td>
+                                        <td style={{ display: "flex", gap: 4 }}>
+                                            <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openChargeModal(ch)}>Edit</Button>
+                                            <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteChargeUI(ch.charge_id)}>Del</Button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </Table>
                 </>)}
 
                 {/* ── Charge add/edit modal ── */}
-                {showChargeModal && (
-                    <div className={styles.overlay} onClick={() => setShowChargeModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
-                            <div className={styles.modalTitle}>{editCharge ? "Edit Charge" : "Add Charge / Section"}</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Section / Offence *</label>
-                                    <input className={styles.formInput} value={chargeForm.section_no} onChange={e => setChargeForm(f => ({ ...f, section_no: e.target.value }))} placeholder="e.g. 302 PPC, 9(c) CNS" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Plea</label>
-                                    <select className={styles.formInput} value={chargeForm.plea} onChange={e => setChargeForm(f => ({ ...f, plea: e.target.value }))}>
-                                        {PLEA_OPTIONS_UI.map(p => <option key={p}>{p}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Description</label>
-                                <input className={styles.formInput} value={chargeForm.description} onChange={e => setChargeForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Murder, Hurt, Possession of narcotics…" />
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.75rem", alignItems: "end" }}>
-                                <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: 0 }}>
-                                    <input type="checkbox" id="charge-framed" checked={chargeForm.charge_framed} onChange={e => setChargeForm(f => ({ ...f, charge_framed: e.target.checked }))} />
-                                    <label htmlFor="charge-framed" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>Charge Framed</label>
-                                </div>
-                                {chargeForm.charge_framed && (
-                                    <div className={styles.formGroup}>
-                                        <label className={styles.formLabel}>Date Framed</label>
-                                        <input type="date" className={styles.formInput} value={chargeForm.charge_framed_date} onChange={e => setChargeForm(f => ({ ...f, charge_framed_date: e.target.value }))} />
-                                    </div>
-                                )}
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Court</label>
-                                <input className={styles.formInput} value={chargeForm.court} onChange={e => setChargeForm(f => ({ ...f, court: e.target.value }))} placeholder="Optional" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={2} value={chargeForm.notes} onChange={e => setChargeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
-                            </div>
-                            {chargeErr && <div className={styles.formError}>{chargeErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowChargeModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveCharge} disabled={chargeSaving}>{chargeSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showChargeModal} onClose={() => setShowChargeModal(false)} maxWidth={480}
+                    title={editCharge ? "Edit Charge" : "Add Charge / Section"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowChargeModal(false)}>Cancel</Button>
+                        <Button onClick={saveCharge} disabled={chargeSaving}>{chargeSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Section / Offence *</label>
+                            <input className={styles.formInput} value={chargeForm.section_no} onChange={e => setChargeForm(f => ({ ...f, section_no: e.target.value }))} placeholder="e.g. 302 PPC, 9(c) CNS" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Plea</label>
+                            <select className={styles.formInput} value={chargeForm.plea} onChange={e => setChargeForm(f => ({ ...f, plea: e.target.value }))}>
+                                {PLEA_OPTIONS_UI.map(p => <option key={p}>{p}</option>)}
+                            </select>
                         </div>
                     </div>
-                )}
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Description</label>
+                        <input className={styles.formInput} value={chargeForm.description} onChange={e => setChargeForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Murder, Hurt, Possession of narcotics…" />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.75rem", alignItems: "end" }}>
+                        <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: 0 }}>
+                            <input type="checkbox" id="charge-framed" checked={chargeForm.charge_framed} onChange={e => setChargeForm(f => ({ ...f, charge_framed: e.target.checked }))} />
+                            <label htmlFor="charge-framed" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>Charge Framed</label>
+                        </div>
+                        {chargeForm.charge_framed && (
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Date Framed</label>
+                                <input type="date" className={styles.formInput} value={chargeForm.charge_framed_date} onChange={e => setChargeForm(f => ({ ...f, charge_framed_date: e.target.value }))} />
+                            </div>
+                        )}
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Court</label>
+                        <input className={styles.formInput} value={chargeForm.court} onChange={e => setChargeForm(f => ({ ...f, court: e.target.value }))} placeholder="Optional" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={2} value={chargeForm.notes} onChange={e => setChargeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                    </div>
+                    {chargeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{chargeErr}</div>}
+                </Modal>
 
                 {/* ── Outcome tab ── */}
                 {detailTab === "outcome" && (
@@ -4882,10 +4746,10 @@ const MattersPanel = () => {
                                 <label className={styles.formLabel}>Notes</label>
                                 <textarea className={styles.formInput} rows={3} value={outcomeForm.notes} onChange={e => setOutcomeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Summary of judgment, settlement terms, or other relevant details…" />
                             </div>
-                            {outcomeErr && <div className={styles.formError}>{outcomeErr}</div>}
+                            {outcomeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{outcomeErr}</div>}
                             {outcomeSaved && <div style={{ color: "#16a34a", fontSize: "0.85rem", marginBottom: "0.5rem" }}>Saved successfully.</div>}
                             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                <button className={styles.btnPrimary} onClick={saveOutcome} disabled={outcomeSaving}>{outcomeSaving ? "Saving…" : "Save Outcome"}</button>
+                                <Button onClick={saveOutcome} disabled={outcomeSaving}>{outcomeSaving ? "Saving…" : "Save Outcome"}</Button>
                             </div>
                         </>)}
                     </div>
@@ -4902,7 +4766,7 @@ const MattersPanel = () => {
                                 </span>
                             )}
                         </div>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openBondModal()}>+ Add Bail Bond</button>
+                        <Button size="sm" onClick={() => openBondModal()}>+ Add Bail Bond</Button>
                     </div>
                     {bailBondLoading ? (
                         <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
@@ -4922,8 +4786,8 @@ const MattersPanel = () => {
                                                 <span style={{ marginLeft: "0.75rem", padding: "2px 8px", borderRadius: "9999px", fontSize: "0.72rem", fontWeight: 700, background: b.status === "Active" ? "#dcfce7" : "#fee2e2", color: statusColour }}>{b.status}</span>
                                             </div>
                                             <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openBondModal(b)}>Edit</button>
-                                                <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteBondUI(b.bond_id)}>Del</button>
+                                                <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openBondModal(b)}>Edit</Button>
+                                                <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteBondUI(b.bond_id)}>Del</Button>
                                             </div>
                                         </div>
                                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "0.4rem 1rem", marginTop: "0.6rem", fontSize: "0.8rem", color: "var(--text-2)" }}>
@@ -4947,13 +4811,12 @@ const MattersPanel = () => {
                 </>)}
 
                 {/* Bail Bond modal */}
-                {showBondModal && (
-                    <div className={styles.modalOverlay}>
-                        <div className={styles.modal} style={{ maxWidth: 560 }}>
-                            <div className={styles.modalHeader}>
-                                <h3 className={styles.modalTitle}>{editBond ? "Edit Bail Bond" : "Add Bail Bond"}</h3>
-                                <button className={styles.modalClose} onClick={() => setShowBondModal(false)}>✕</button>
-                            </div>
+                <Modal open={showBondModal} onClose={() => setShowBondModal(false)} maxWidth={560}
+                    title={editBond ? "Edit Bail Bond" : "Add Bail Bond"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowBondModal(false)}>Cancel</Button>
+                        <Button onClick={saveBond} disabled={bondSaving}>{bondSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                                 <div className={styles.formGroup}>
                                     <label className={styles.formLabel}>Accused Name *</label>
@@ -5026,447 +4889,397 @@ const MattersPanel = () => {
                                 <label className={styles.formLabel}>Notes</label>
                                 <textarea className={styles.formInput} rows={2} value={bondForm.notes} onChange={e => setBondForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                             </div>
-                            {bondErr && <div className={styles.formError}>{bondErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowBondModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveBond} disabled={bondSaving}>{bondSaving ? "Saving…" : "Save"}</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                            {bondErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{bondErr}</div>}
+                </Modal>
 
                 {/* ── Court Transfers tab — Task #170 ── */}
                 {detailTab === "transfers" && (<>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                         <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Court transfer orders for this matter</span>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => openTransferModal()}>+ Add Transfer</button>
+                        <Button size="sm" onClick={() => openTransferModal()}>+ Add Transfer</Button>
                     </div>
-                    {transferLoading ? (
-                        <div className={styles.muted} style={{ textAlign: "center", padding: "1rem" }}>Loading…</div>
-                    ) : transferList.length === 0 ? (
-                        <div className={styles.emptyHint}>No court transfer records yet. Track when a case is transferred from one court/bench to another, including the transferring judge and order reference.</div>
-                    ) : (
-                        <table className={styles.feeTable}>
-                            <thead><tr>
-                                <th>Date</th>
-                                <th>From Court</th>
-                                <th>To Court</th>
-                                <th>From Judge</th>
-                                <th>To Judge</th>
-                                <th>Order Ref</th>
-                                <th style={{ width: 80 }}></th>
-                            </tr></thead>
-                            <tbody>
-                                {transferList.map(t => (
-                                    <tr key={t.transfer_id}>
-                                        <td style={{ fontSize: "0.82rem" }}>{t.transfer_date || "—"}</td>
-                                        <td style={{ fontSize: "0.82rem" }}>{t.from_court}</td>
-                                        <td style={{ fontSize: "0.82rem", fontWeight: 600 }}>{t.to_court}</td>
-                                        <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{t.from_judge || "—"}</td>
-                                        <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{t.to_judge || "—"}</td>
-                                        <td style={{ fontSize: "0.78rem", fontFamily: "monospace" }}>{t.order_ref || "—"}</td>
-                                        <td style={{ display: "flex", gap: 4 }}>
-                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openTransferModal(t)}>Edit</button>
-                                            <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteTransferUI(t.transfer_id)}>Del</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
+                    <Table loading={transferLoading} empty={transferList.length === 0}
+                        emptyMessage="No court transfer records yet. Track when a case is transferred from one court/bench to another, including the transferring judge and order reference.">
+                        <thead><tr>
+                            <th>Date</th>
+                            <th>From Court</th>
+                            <th>To Court</th>
+                            <th>From Judge</th>
+                            <th>To Judge</th>
+                            <th>Order Ref</th>
+                            <th style={{ width: 80 }}></th>
+                        </tr></thead>
+                        <tbody>
+                            {transferList.map(t => (
+                                <tr key={t.transfer_id}>
+                                    <td style={{ fontSize: "0.82rem" }}>{t.transfer_date || "—"}</td>
+                                    <td style={{ fontSize: "0.82rem" }}>{t.from_court}</td>
+                                    <td style={{ fontSize: "0.82rem", fontWeight: 600 }}>{t.to_court}</td>
+                                    <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{t.from_judge || "—"}</td>
+                                    <td style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{t.to_judge || "—"}</td>
+                                    <td style={{ fontSize: "0.78rem", fontFamily: "monospace" }}>{t.order_ref || "—"}</td>
+                                    <td style={{ display: "flex", gap: 4 }}>
+                                        <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openTransferModal(t)}>Edit</Button>
+                                        <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteTransferUI(t.transfer_id)}>Del</Button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </Table>
                 </>)}
 
                 {/* Court Transfer modal */}
-                {showTransferModal && (
-                    <div className={styles.modalOverlay}>
-                        <div className={styles.modal} style={{ maxWidth: 520 }}>
-                            <div className={styles.modalHeader}>
-                                <h3 className={styles.modalTitle}>{editTransfer ? "Edit Transfer" : "Add Court Transfer"}</h3>
-                                <button className={styles.modalClose} onClick={() => setShowTransferModal(false)}>✕</button>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Transfer Date</label>
-                                <input type="date" className={styles.formInput} value={transferForm.transfer_date} onChange={e => setTransferForm(f => ({ ...f, transfer_date: e.target.value }))} />
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>From Court *</label>
-                                    <input className={styles.formInput} value={transferForm.from_court} onChange={e => setTransferForm(f => ({ ...f, from_court: e.target.value }))} placeholder="e.g. LHC Division Bench" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>To Court *</label>
-                                    <input className={styles.formInput} value={transferForm.to_court} onChange={e => setTransferForm(f => ({ ...f, to_court: e.target.value }))} placeholder="e.g. LHC Single Bench" />
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>From Judge</label>
-                                    <input className={styles.formInput} value={transferForm.from_judge} onChange={e => setTransferForm(f => ({ ...f, from_judge: e.target.value }))} placeholder="Optional" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>To Judge</label>
-                                    <input className={styles.formInput} value={transferForm.to_judge} onChange={e => setTransferForm(f => ({ ...f, to_judge: e.target.value }))} placeholder="Optional" />
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Reason</label>
-                                <input className={styles.formInput} value={transferForm.reason} onChange={e => setTransferForm(f => ({ ...f, reason: e.target.value }))} placeholder="e.g. Administrative transfer by Chief Justice" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Order Reference</label>
-                                <input className={styles.formInput} value={transferForm.order_ref} onChange={e => setTransferForm(f => ({ ...f, order_ref: e.target.value }))} placeholder="Transfer order number" />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={2} value={transferForm.notes} onChange={e => setTransferForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
-                            </div>
-                            {transferErr && <div className={styles.formError}>{transferErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowTransferModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveTransfer} disabled={transferSaving}>{transferSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showTransferModal} onClose={() => setShowTransferModal(false)} maxWidth={520}
+                    title={editTransfer ? "Edit Transfer" : "Add Court Transfer"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowTransferModal(false)}>Cancel</Button>
+                        <Button onClick={saveTransfer} disabled={transferSaving}>{transferSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Transfer Date</label>
+                        <input type="date" className={styles.formInput} value={transferForm.transfer_date} onChange={e => setTransferForm(f => ({ ...f, transfer_date: e.target.value }))} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>From Court *</label>
+                            <input className={styles.formInput} value={transferForm.from_court} onChange={e => setTransferForm(f => ({ ...f, from_court: e.target.value }))} placeholder="e.g. LHC Division Bench" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>To Court *</label>
+                            <input className={styles.formInput} value={transferForm.to_court} onChange={e => setTransferForm(f => ({ ...f, to_court: e.target.value }))} placeholder="e.g. LHC Single Bench" />
                         </div>
                     </div>
-                )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>From Judge</label>
+                            <input className={styles.formInput} value={transferForm.from_judge} onChange={e => setTransferForm(f => ({ ...f, from_judge: e.target.value }))} placeholder="Optional" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>To Judge</label>
+                            <input className={styles.formInput} value={transferForm.to_judge} onChange={e => setTransferForm(f => ({ ...f, to_judge: e.target.value }))} placeholder="Optional" />
+                        </div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Reason</label>
+                        <input className={styles.formInput} value={transferForm.reason} onChange={e => setTransferForm(f => ({ ...f, reason: e.target.value }))} placeholder="e.g. Administrative transfer by Chief Justice" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Order Reference</label>
+                        <input className={styles.formInput} value={transferForm.order_ref} onChange={e => setTransferForm(f => ({ ...f, order_ref: e.target.value }))} placeholder="Transfer order number" />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={2} value={transferForm.notes} onChange={e => setTransferForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                    </div>
+                    {transferErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{transferErr}</div>}
+                </Modal>
 
                 {/* ── Relief add/edit modal ── */}
-                {showReliefModal && (
-                    <div className={styles.overlay} onClick={() => setShowReliefModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
-                            <div className={styles.modalTitle}>{editRelief ? "Edit Relief Application" : "Add Relief Application"}</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Date *</label>
-                                    <input type="date" className={styles.formInput} value={reliefForm.application_date} onChange={e => setReliefForm(f => ({ ...f, application_date: e.target.value }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Type</label>
-                                    <select className={styles.formInput} value={reliefForm.relief_type} onChange={e => setReliefForm(f => ({ ...f, relief_type: e.target.value }))}>
-                                        {RELIEF_TYPES_UI.map(t => <option key={t}>{t}</option>)}
-                                    </select>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Status</label>
-                                    <select className={styles.formInput} value={reliefForm.status} onChange={e => setReliefForm(f => ({ ...f, status: e.target.value }))}>
-                                        {RELIEF_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Court</label>
-                                    <input className={styles.formInput} value={reliefForm.court} onChange={e => setReliefForm(f => ({ ...f, court: e.target.value }))} placeholder="e.g. Lahore High Court" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Judge</label>
-                                    <input className={styles.formInput} value={reliefForm.judge} onChange={e => setReliefForm(f => ({ ...f, judge: e.target.value }))} placeholder="Optional" />
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Conditions</label>
-                                <textarea className={styles.formInput} rows={2} value={reliefForm.conditions} onChange={e => setReliefForm(f => ({ ...f, conditions: e.target.value }))} placeholder="Bail/order conditions, if any…" />
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Surety Amount (PKR)</label>
-                                    <input type="number" min="0" className={styles.formInput} value={reliefForm.surety_amount_pkr} onChange={e => setReliefForm(f => ({ ...f, surety_amount_pkr: e.target.value }))} placeholder="0" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Surety Name</label>
-                                    <input className={styles.formInput} value={reliefForm.surety_name} onChange={e => setReliefForm(f => ({ ...f, surety_name: e.target.value }))} placeholder="Optional" />
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={2} value={reliefForm.notes} onChange={e => setReliefForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional context…" />
-                            </div>
-                            {reliefErr && <div className={styles.formError}>{reliefErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowReliefModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveRelief} disabled={reliefSaving}>{reliefSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showReliefModal} onClose={() => setShowReliefModal(false)} maxWidth={520}
+                    title={editRelief ? "Edit Relief Application" : "Add Relief Application"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowReliefModal(false)}>Cancel</Button>
+                        <Button onClick={saveRelief} disabled={reliefSaving}>{reliefSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Date *</label>
+                            <input type="date" className={styles.formInput} value={reliefForm.application_date} onChange={e => setReliefForm(f => ({ ...f, application_date: e.target.value }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Type</label>
+                            <select className={styles.formInput} value={reliefForm.relief_type} onChange={e => setReliefForm(f => ({ ...f, relief_type: e.target.value }))}>
+                                {RELIEF_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Status</label>
+                            <select className={styles.formInput} value={reliefForm.status} onChange={e => setReliefForm(f => ({ ...f, status: e.target.value }))}>
+                                {RELIEF_STATUSES_UI.map(s => <option key={s}>{s}</option>)}
+                            </select>
                         </div>
                     </div>
-                )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Court</label>
+                            <input className={styles.formInput} value={reliefForm.court} onChange={e => setReliefForm(f => ({ ...f, court: e.target.value }))} placeholder="e.g. Lahore High Court" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Judge</label>
+                            <input className={styles.formInput} value={reliefForm.judge} onChange={e => setReliefForm(f => ({ ...f, judge: e.target.value }))} placeholder="Optional" />
+                        </div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Conditions</label>
+                        <textarea className={styles.formInput} rows={2} value={reliefForm.conditions} onChange={e => setReliefForm(f => ({ ...f, conditions: e.target.value }))} placeholder="Bail/order conditions, if any…" />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Surety Amount (PKR)</label>
+                            <input type="number" min="0" className={styles.formInput} value={reliefForm.surety_amount_pkr} onChange={e => setReliefForm(f => ({ ...f, surety_amount_pkr: e.target.value }))} placeholder="0" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Surety Name</label>
+                            <input className={styles.formInput} value={reliefForm.surety_name} onChange={e => setReliefForm(f => ({ ...f, surety_name: e.target.value }))} placeholder="Optional" />
+                        </div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={2} value={reliefForm.notes} onChange={e => setReliefForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional context…" />
+                    </div>
+                    {reliefErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{reliefErr}</div>}
+                </Modal>
 
                 {/* ── Correspondence add/edit modal ── */}
-                {showCorrModal && (
-                    <div className={styles.overlay} onClick={() => setShowCorrModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
-                            <div className={styles.modalTitle}>{editCorr ? "Edit Correspondence" : "Add Correspondence"}</div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Subject *</label>
-                                <input className={styles.formInput} value={corrForm.subject} onChange={e => setCorrForm(f => ({ ...f, subject: e.target.value }))} placeholder="e.g. Notice of Hearing — 15 Aug 2026" />
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Date *</label>
-                                    <input type="date" className={styles.formInput} value={corrForm.corr_date} onChange={e => setCorrForm(f => ({ ...f, corr_date: e.target.value }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Direction</label>
-                                    <select className={styles.formInput} value={corrForm.direction} onChange={e => setCorrForm(f => ({ ...f, direction: e.target.value }))}>
-                                        {CORR_DIRECTIONS_UI.map(d => <option key={d}>{d}</option>)}
-                                    </select>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Type</label>
-                                    <select className={styles.formInput} value={corrForm.corr_type} onChange={e => setCorrForm(f => ({ ...f, corr_type: e.target.value }))}>
-                                        {CORR_TYPES_UI.map(t => <option key={t}>{t}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Party</label>
-                                    <input className={styles.formInput} value={corrForm.party} onChange={e => setCorrForm(f => ({ ...f, party: e.target.value }))} placeholder="From / To party name" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Reference #</label>
-                                    <input className={styles.formInput} value={corrForm.reference_no} onChange={e => setCorrForm(f => ({ ...f, reference_no: e.target.value }))} placeholder="Optional ref number" />
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={3} value={corrForm.notes} onChange={e => setCorrForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional summary or follow-up actions…" />
-                            </div>
-                            {corrErr && <div className={styles.formError}>{corrErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowCorrModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveCorr} disabled={corrSaving}>{corrSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showCorrModal} onClose={() => setShowCorrModal(false)} maxWidth={500}
+                    title={editCorr ? "Edit Correspondence" : "Add Correspondence"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowCorrModal(false)}>Cancel</Button>
+                        <Button onClick={saveCorr} disabled={corrSaving}>{corrSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Subject *</label>
+                        <input className={styles.formInput} value={corrForm.subject} onChange={e => setCorrForm(f => ({ ...f, subject: e.target.value }))} placeholder="e.g. Notice of Hearing — 15 Aug 2026" />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Date *</label>
+                            <input type="date" className={styles.formInput} value={corrForm.corr_date} onChange={e => setCorrForm(f => ({ ...f, corr_date: e.target.value }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Direction</label>
+                            <select className={styles.formInput} value={corrForm.direction} onChange={e => setCorrForm(f => ({ ...f, direction: e.target.value }))}>
+                                {CORR_DIRECTIONS_UI.map(d => <option key={d}>{d}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Type</label>
+                            <select className={styles.formInput} value={corrForm.corr_type} onChange={e => setCorrForm(f => ({ ...f, corr_type: e.target.value }))}>
+                                {CORR_TYPES_UI.map(t => <option key={t}>{t}</option>)}
+                            </select>
                         </div>
                     </div>
-                )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Party</label>
+                            <input className={styles.formInput} value={corrForm.party} onChange={e => setCorrForm(f => ({ ...f, party: e.target.value }))} placeholder="From / To party name" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Reference #</label>
+                            <input className={styles.formInput} value={corrForm.reference_no} onChange={e => setCorrForm(f => ({ ...f, reference_no: e.target.value }))} placeholder="Optional ref number" />
+                        </div>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={3} value={corrForm.notes} onChange={e => setCorrForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional summary or follow-up actions…" />
+                    </div>
+                    {corrErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{corrErr}</div>}
+                </Modal>
 
                 {/* ── Expense add/edit modal ── */}
-                {showExpenseModal && (
-                    <div className={styles.overlay} onClick={() => setShowExpenseModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
-                            <div className={styles.modalTitle}>{editExpense ? "Edit Expense" : "Add Expense"}</div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Description *</label>
-                                <input className={styles.formInput} value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. High Court filing fee" />
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Amount (PKR) *</label>
-                                    <input type="number" min="0" className={styles.formInput} value={expenseForm.amount_pkr} onChange={e => setExpenseForm(f => ({ ...f, amount_pkr: e.target.value }))} placeholder="0" />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Date *</label>
-                                    <input type="date" className={styles.formInput} value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} />
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Category</label>
-                                    <select className={styles.formInput} value={expenseForm.category} onChange={e => setExpenseForm(f => ({ ...f, category: e.target.value }))}>
-                                        {EXPENSE_CATEGORIES_UI.map(c => <option key={c}>{c}</option>)}
-                                    </select>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Receipt Ref</label>
-                                    <input className={styles.formInput} value={expenseForm.receipt_ref} onChange={e => setExpenseForm(f => ({ ...f, receipt_ref: e.target.value }))} placeholder="Optional" />
-                                </div>
-                            </div>
-                            <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                                <input type="checkbox" id="exp-billable" checked={expenseForm.billable} onChange={e => setExpenseForm(f => ({ ...f, billable: e.target.checked }))} />
-                                <label htmlFor="exp-billable" style={{ fontSize: "0.85rem" }}>Billable to client</label>
-                            </div>
-                            {expenseErr && <div className={styles.formError}>{expenseErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowExpenseModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveExpense} disabled={expenseSaving}>{expenseSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showExpenseModal} onClose={() => setShowExpenseModal(false)} maxWidth={480}
+                    title={editExpense ? "Edit Expense" : "Add Expense"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowExpenseModal(false)}>Cancel</Button>
+                        <Button onClick={saveExpense} disabled={expenseSaving}>{expenseSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Description *</label>
+                        <input className={styles.formInput} value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. High Court filing fee" />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Amount (PKR) *</label>
+                            <input type="number" min="0" className={styles.formInput} value={expenseForm.amount_pkr} onChange={e => setExpenseForm(f => ({ ...f, amount_pkr: e.target.value }))} placeholder="0" />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Date *</label>
+                            <input type="date" className={styles.formInput} value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} />
                         </div>
                     </div>
-                )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Category</label>
+                            <select className={styles.formInput} value={expenseForm.category} onChange={e => setExpenseForm(f => ({ ...f, category: e.target.value }))}>
+                                {EXPENSE_CATEGORIES_UI.map(c => <option key={c}>{c}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Receipt Ref</label>
+                            <input className={styles.formInput} value={expenseForm.receipt_ref} onChange={e => setExpenseForm(f => ({ ...f, receipt_ref: e.target.value }))} placeholder="Optional" />
+                        </div>
+                    </div>
+                    <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input type="checkbox" id="exp-billable" checked={expenseForm.billable} onChange={e => setExpenseForm(f => ({ ...f, billable: e.target.checked }))} />
+                        <label htmlFor="exp-billable" style={{ fontSize: "0.85rem" }}>Billable to client</label>
+                    </div>
+                    {expenseErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{expenseErr}</div>}
+                </Modal>
 
                 {/* ── Deadline add/edit modal ── */}
-                {showDeadlineModal && (
-                    <div className={styles.overlay} onClick={() => setShowDeadlineModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
-                            <div className={styles.modalTitle}>{editDeadline ? "Edit Deadline" : "Add Deadline"}</div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Title *</label>
-                                <input className={styles.formInput} value={deadlineForm.title} onChange={e => setDeadlineForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. File written arguments" />
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Due Date *</label>
-                                    <input type="date" className={styles.formInput} value={deadlineForm.due_date} onChange={e => setDeadlineForm(f => ({ ...f, due_date: e.target.value }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Priority</label>
-                                    <select className={styles.formInput} value={deadlineForm.priority} onChange={e => setDeadlineForm(f => ({ ...f, priority: e.target.value }))}>
-                                        {DEADLINE_PRIORITIES_UI.map(p => <option key={p}>{p}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <textarea className={styles.formInput} rows={3} value={deadlineForm.notes} onChange={e => setDeadlineForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional context…" />
-                            </div>
-                            {deadlineErr && <div className={styles.formError}>{deadlineErr}</div>}
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                                <button className={styles.btnGhost} onClick={() => setShowDeadlineModal(false)}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveDeadline} disabled={deadlineSaving}>{deadlineSaving ? "Saving…" : "Save"}</button>
-                            </div>
+                <Modal open={showDeadlineModal} onClose={() => setShowDeadlineModal(false)} maxWidth={460}
+                    title={editDeadline ? "Edit Deadline" : "Add Deadline"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowDeadlineModal(false)}>Cancel</Button>
+                        <Button onClick={saveDeadline} disabled={deadlineSaving}>{deadlineSaving ? "Saving…" : "Save"}</Button>
+                    </>}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Title *</label>
+                        <input className={styles.formInput} value={deadlineForm.title} onChange={e => setDeadlineForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. File written arguments" />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Due Date *</label>
+                            <input type="date" className={styles.formInput} value={deadlineForm.due_date} onChange={e => setDeadlineForm(f => ({ ...f, due_date: e.target.value }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Priority</label>
+                            <select className={styles.formInput} value={deadlineForm.priority} onChange={e => setDeadlineForm(f => ({ ...f, priority: e.target.value }))}>
+                                {DEADLINE_PRIORITIES_UI.map(p => <option key={p}>{p}</option>)}
+                            </select>
                         </div>
                     </div>
-                )}
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <textarea className={styles.formInput} rows={3} value={deadlineForm.notes} onChange={e => setDeadlineForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional context…" />
+                    </div>
+                    {deadlineErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{deadlineErr}</div>}
+                </Modal>
 
                 {/* ── Court Order add/edit modal ── */}
-                {showOrderModal && (
-                    <div className={styles.overlay} onClick={() => setShowOrderModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
-                            <div className={styles.modalTitle}>{editOrder ? "Edit Court Order" : "Add Court Order"}</div>
-
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.85rem", padding: "0.6rem", borderRadius: "var(--radius)", background: "var(--bg-1)", border: "1px solid var(--border)" }}>
-                                {!voiceRecording ? (
-                                    <button type="button" className={styles.btnSecondary} onClick={startVoiceRecording} disabled={voiceProcessing}>
-                                        🎤 Record voice note
-                                    </button>
-                                ) : (
-                                    <button type="button" className={styles.btnPrimary} onClick={stopVoiceRecording} style={{ background: "#c94040", borderColor: "#c94040" }}>
-                                        ⏹ Stop recording…
-                                    </button>
-                                )}
-                                <span className={styles.muted} style={{ fontSize: "0.78rem" }}>
-                                    {voiceProcessing ? "Transcribing…" : "Speak the outcome in Urdu or English — review before it fills the form."}
-                                </span>
+                <Modal open={showOrderModal} onClose={() => setShowOrderModal(false)} maxWidth={480}
+                    title={editOrder ? "Edit Court Order" : "Add Court Order"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowOrderModal(false)} disabled={orderSaving}>Cancel</Button>
+                        <Button onClick={saveOrder} disabled={orderSaving}>{orderSaving ? "Saving…" : editOrder ? "Save Changes" : "Add Order"}</Button>
+                    </>}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.85rem", padding: "0.6rem", borderRadius: "var(--radius)", background: "var(--bg-1)", border: "1px solid var(--border)" }}>
+                        {!voiceRecording ? (
+                            <Button type="button" variant="ghost" onClick={startVoiceRecording} disabled={voiceProcessing}>
+                                🎤 Record voice note
+                            </Button>
+                        ) : (
+                            <Button type="button" onClick={stopVoiceRecording} style={{ background: "#c94040", borderColor: "#c94040" }}>
+                                ⏹ Stop recording…
+                            </Button>
+                        )}
+                        <span className={styles.muted} style={{ fontSize: "0.78rem" }}>
+                            {voiceProcessing ? "Transcribing…" : "Speak the outcome in Urdu or English — review before it fills the form."}
+                        </span>
+                    </div>
+                    {voiceErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.82rem", marginBottom: "0.75rem" }}>{voiceErr}</div>}
+                    {voiceResult && (
+                        <div style={{ marginBottom: "0.85rem", padding: "0.65rem", borderRadius: "var(--radius)", background: "var(--bg-1)", border: "1px solid var(--gold)" }}>
+                            <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.3rem" }}>Heard: "{voiceResult.transcript}"</div>
+                            <div style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                                <strong>Suggested:</strong> {voiceResult.order_brief}
+                                {voiceResult.outcome && <> · <strong>{voiceResult.outcome}</strong></>}
+                                {voiceResult.next_date && <> · Next: <strong>{voiceResult.next_date}</strong></>}
                             </div>
-                            {voiceErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.82rem", marginBottom: "0.75rem" }}>{voiceErr}</div>}
-                            {voiceResult && (
-                                <div style={{ marginBottom: "0.85rem", padding: "0.65rem", borderRadius: "var(--radius)", background: "var(--bg-1)", border: "1px solid var(--gold)" }}>
-                                    <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.3rem" }}>Heard: "{voiceResult.transcript}"</div>
-                                    <div style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
-                                        <strong>Suggested:</strong> {voiceResult.order_brief}
-                                        {voiceResult.outcome && <> · <strong>{voiceResult.outcome}</strong></>}
-                                        {voiceResult.next_date && <> · Next: <strong>{voiceResult.next_date}</strong></>}
-                                    </div>
-                                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                                        <button type="button" className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={applyVoiceResult}>✓ Use this — fill form</button>
-                                        <button type="button" className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => setVoiceResult(null)}>Discard</button>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Hearing Date *</label>
-                                    <input type="date" className={styles.formInput} value={orderForm.hearing_date} onChange={e => setOrderForm(f => ({ ...f, hearing_date: e.target.value }))} />
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Outcome</label>
-                                    <select className={styles.formSelect} value={orderForm.outcome} onChange={e => setOrderForm(f => ({ ...f, outcome: e.target.value }))}>
-                                        {["Adjourned", "Heard", "Partially Heard", "Decided"].map(o => <option key={o}>{o}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Court (optional)</label>
-                                <select className={styles.formSelect} value={orderForm.court_name} onChange={e => setOrderForm(f => ({ ...f, court_name: e.target.value }))}>
-                                    <option value="">Same as matter</option>
-                                    {allCourts.map(c => <option key={c}>{c}</option>)}
-                                </select>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Order Summary *</label>
-                                <textarea className={styles.formInput} rows={4} style={{ resize: "vertical" }} value={orderForm.order_brief} onChange={e => setOrderForm(f => ({ ...f, order_brief: e.target.value }))} placeholder="e.g. Case adjourned on application of plaintiff's counsel. Next date fixed for arguments on maintainability." />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Next Date Fixed</label>
-                                <input type="date" className={styles.formInput} value={orderForm.next_date} onChange={e => setOrderForm(f => ({ ...f, next_date: e.target.value }))} />
-                            </div>
-                            <div className={styles.formGroup} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
-                                <input type="checkbox" id="notifyClientWa" checked={orderForm.notify_client} onChange={e => setOrderForm(f => ({ ...f, notify_client: e.target.checked }))} style={{ marginTop: "0.2rem" }} />
-                                <label htmlFor="notifyClientWa" style={{ fontSize: "0.85rem", cursor: "pointer" }}>
-                                    📲 Notify client via WhatsApp{detail?.client_phone ? ` (${detail.client_phone})` : " — no phone number on file for this client"}
-                                </label>
-                            </div>
-                            {orderErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{orderErr}</div>}
-                            <div className={styles.modalActions}>
-                                <button className={styles.btnGhost} onClick={() => setShowOrderModal(false)} disabled={orderSaving}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveOrder} disabled={orderSaving}>{orderSaving ? "Saving…" : editOrder ? "Save Changes" : "Add Order"}</button>
+                            <div style={{ display: "flex", gap: "0.5rem" }}>
+                                <Button type="button" size="sm" onClick={applyVoiceResult}>✓ Use this — fill form</Button>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setVoiceResult(null)}>Discard</Button>
                             </div>
                         </div>
+                    )}
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Hearing Date *</label>
+                            <input type="date" className={styles.formInput} value={orderForm.hearing_date} onChange={e => setOrderForm(f => ({ ...f, hearing_date: e.target.value }))} />
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Outcome</label>
+                            <select className={styles.formSelect} value={orderForm.outcome} onChange={e => setOrderForm(f => ({ ...f, outcome: e.target.value }))}>
+                                {["Adjourned", "Heard", "Partially Heard", "Decided"].map(o => <option key={o}>{o}</option>)}
+                            </select>
+                        </div>
                     </div>
-                )}
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Court (optional)</label>
+                        <select className={styles.formSelect} value={orderForm.court_name} onChange={e => setOrderForm(f => ({ ...f, court_name: e.target.value }))}>
+                            <option value="">Same as matter</option>
+                            {allCourts.map(c => <option key={c}>{c}</option>)}
+                        </select>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Order Summary *</label>
+                        <textarea className={styles.formInput} rows={4} style={{ resize: "vertical" }} value={orderForm.order_brief} onChange={e => setOrderForm(f => ({ ...f, order_brief: e.target.value }))} placeholder="e.g. Case adjourned on application of plaintiff's counsel. Next date fixed for arguments on maintainability." />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Next Date Fixed</label>
+                        <input type="date" className={styles.formInput} value={orderForm.next_date} onChange={e => setOrderForm(f => ({ ...f, next_date: e.target.value }))} />
+                    </div>
+                    <div className={styles.formGroup} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+                        <input type="checkbox" id="notifyClientWa" checked={orderForm.notify_client} onChange={e => setOrderForm(f => ({ ...f, notify_client: e.target.checked }))} style={{ marginTop: "0.2rem" }} />
+                        <label htmlFor="notifyClientWa" style={{ fontSize: "0.85rem", cursor: "pointer" }}>
+                            📲 Notify client via WhatsApp{detail?.client_phone ? ` (${detail.client_phone})` : " — no phone number on file for this client"}
+                        </label>
+                    </div>
+                    {orderErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{orderErr}</div>}
+                </Modal>
 
                 {/* ── Fee add/edit modal ── */}
-                {showFeeModal && (
-                    <div className={styles.overlay} onClick={() => setShowFeeModal(false)}>
-                        <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
-                            <div className={styles.modalTitle}>{editFee ? "Edit Fee" : "Add Fee"}</div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Description *</label>
-                                <input className={styles.formInput} value={feeForm.description} onChange={e => setFeeForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Court appearance — Session 1" />
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Type</label>
-                                    <select className={styles.formSelect} value={feeForm.fee_type} onChange={e => setFeeForm(f => ({ ...f, fee_type: e.target.value }))}>
-                                        {FEE_TYPES.map(t => <option key={t}>{t}</option>)}
-                                    </select>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Amount (PKR) *</label>
-                                    <input type="number" min="0" className={styles.formInput} value={feeForm.amount} onChange={e => setFeeForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 25000" />
-                                </div>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Date *</label>
-                                <input type="date" className={styles.formInput} value={feeForm.fee_date} onChange={e => setFeeForm(f => ({ ...f, fee_date: e.target.value }))} />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notes</label>
-                                <input className={styles.formInput} value={feeForm.notes} onChange={e => setFeeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
-                            </div>
-                            {feeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{feeErr}</div>}
-                            <div className={styles.modalActions}>
-                                <button className={styles.btnGhost} onClick={() => setShowFeeModal(false)} disabled={feeSaving}>Cancel</button>
-                                <button className={styles.btnPrimary} onClick={saveFee} disabled={feeSaving}>{feeSaving ? "Saving…" : editFee ? "Save Changes" : "Add Fee"}</button>
-                            </div>
+                <Modal open={showFeeModal} onClose={() => setShowFeeModal(false)} maxWidth={440}
+                    title={editFee ? "Edit Fee" : "Add Fee"}
+                    footer={<>
+                        <Button variant="ghost" onClick={() => setShowFeeModal(false)} disabled={feeSaving}>Cancel</Button>
+                        <Button onClick={saveFee} disabled={feeSaving}>{feeSaving ? "Saving…" : editFee ? "Save Changes" : "Add Fee"}</Button>
+                    </>}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Description *</label>
+                        <input className={styles.formInput} value={feeForm.description} onChange={e => setFeeForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Court appearance — Session 1" />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Type</label>
+                            <select className={styles.formSelect} value={feeForm.fee_type} onChange={e => setFeeForm(f => ({ ...f, fee_type: e.target.value }))}>
+                                {FEE_TYPES.map(t => <option key={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>Amount (PKR) *</label>
+                            <input type="number" min="0" className={styles.formInput} value={feeForm.amount} onChange={e => setFeeForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 25000" />
                         </div>
                     </div>
-                )}
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Date *</label>
+                        <input type="date" className={styles.formInput} value={feeForm.fee_date} onChange={e => setFeeForm(f => ({ ...f, fee_date: e.target.value }))} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notes</label>
+                        <input className={styles.formInput} value={feeForm.notes} onChange={e => setFeeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                    </div>
+                    {feeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{feeErr}</div>}
+                </Modal>
 
                 {/* Link document modal */}
-                {showLinkModal && (
-                    <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowLinkModal(false); }}>
-                        <div className={styles.modal} style={{ maxWidth: 520 }}>
-                            <h3 className={styles.modalTitle}>Link Documents</h3>
-                            <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "1rem" }}>
-                                Select documents from your library to link to this matter.
-                            </p>
-                            {allDocs.length === 0 ? (
-                                <div className={styles.emptyHint}>All available documents are already linked to matters, or your library is empty.</div>
-                            ) : (
-                                <div style={{ maxHeight: 320, overflowY: "auto" }}>
-                                    {allDocs.map(doc => (
-                                        <div key={doc.doc_id} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.55rem 0", borderBottom: "1px solid var(--border)" }}>
-                                            <span className={styles.fileIcon} style={{ fontSize: "0.55rem", flexShrink: 0 }}>F</span>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontSize: "0.85rem", color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
-                                                <div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{doc.category_name ?? "No category"} · {doc.size}</div>
-                                            </div>
-                                            <button className={styles.btnPrimary} style={{ fontSize: "0.75rem", padding: "0.3rem 0.8rem" }}
-                                                disabled={linkingDoc === doc.doc_id}
-                                                onClick={() => linkDoc(doc.doc_id)}>
-                                                {linkingDoc === doc.doc_id ? "…" : "Link"}
-                                            </button>
-                                        </div>
-                                    ))}
+                <Modal open={showLinkModal} onClose={() => setShowLinkModal(false)} maxWidth={520} title="Link Documents"
+                    footer={<Button variant="ghost" onClick={() => setShowLinkModal(false)}>Close</Button>}>
+                    <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "1rem" }}>
+                        Select documents from your library to link to this matter.
+                    </p>
+                    {allDocs.length === 0 ? (
+                        <div className={styles.emptyHint}>All available documents are already linked to matters, or your library is empty.</div>
+                    ) : (
+                        <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                            {allDocs.map(doc => (
+                                <div key={doc.doc_id} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.55rem 0", borderBottom: "1px solid var(--border)" }}>
+                                    <span className={styles.fileIcon} style={{ fontSize: "0.55rem", flexShrink: 0 }}>F</span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: "0.85rem", color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
+                                        <div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{doc.category_name ?? "No category"} · {doc.size}</div>
+                                    </div>
+                                    <Button size="sm" style={{ fontSize: "0.75rem", padding: "0.3rem 0.8rem" }}
+                                        disabled={linkingDoc === doc.doc_id}
+                                        onClick={() => linkDoc(doc.doc_id)}>
+                                        {linkingDoc === doc.doc_id ? "…" : "Link"}
+                                    </Button>
                                 </div>
-                            )}
-                            <div className={styles.modalActions}>
-                                <button className={styles.btnGhost} onClick={() => setShowLinkModal(false)}>Close</button>
-                            </div>
+                            ))}
                         </div>
-                    </div>
-                )}
+                    )}
+                </Modal>
             </div>
         );
     }
@@ -5496,9 +5309,9 @@ const MattersPanel = () => {
                 {clients.length === 0 ? (
                     <span className={styles.muted} style={{ fontSize: "0.8rem" }}>Add a client first</span>
                 ) : (
-                    <button className={styles.btnPrimary} onClick={() => { setForm({ ...BLANK_MATTER }); setFormErr(null); setShowModal(true); }}>
+                    <Button onClick={() => { setForm({ ...BLANK_MATTER }); setFormErr(null); setShowModal(true); }}>
                         + New Matter
-                    </button>
+                    </Button>
                 )}
             </div>
 
@@ -5544,115 +5357,87 @@ const MattersPanel = () => {
                 </div>
             )}
 
-            {loading ? (
-                <div className={styles.emptyHint}>Loading…</div>
-            ) : filtered.length === 0 ? (
-                <div className={styles.emptyHint}>
-                    {matters.length === 0 ? "No matters yet. Create a client first, then open a matter." : "No matters match the selected filters."}
-                </div>
-            ) : (
-                <div className={styles.tableWrap}>
-                    <table className={styles.table}>
-                        <thead><tr>
-                            <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Priority</th><th>Vakalatnama</th><th>Adj.</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
-                        </tr></thead>
-                        <tbody>
-                            {filtered.map(m => {
-                                const limDays = m.limitation_date ? limitationDaysRemaining(m.limitation_date) : null;
-                                return (
-                                <tr key={m.matter_id}>
-                                    <td>
-                                        <button className={styles.linkBtn} onClick={() => openDetail(m)}>{m.title}</button>
-                                        {limDays !== null && limDays <= 60 && (
-                                            <span className={limDays <= 30 ? styles.limBadgeCritical : styles.limBadgeWarn} style={{ marginLeft: "0.4rem" }}>
-                                                {limDays < 0 ? "LIM EXPIRED" : limDays === 0 ? "LIM TODAY" : `LIM ${limDays}d`}
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className={styles.muted}>{m.client_name}</td>
-                                    <td className={styles.muted}>{m.matter_type}</td>
-                                    <td><span className={(styles as any)[STATUS_BADGE[m.status] ?? "badgeGray"]}>{m.status}</span></td>
-                                    <td>
-                                        <span className={styles.priorityBadge} data-priority={m.priority ?? "Normal"}>
-                                            {m.priority ?? "Normal"}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span className={
-                                            m.vakalatnama_status === "Filed"        ? styles.badgeGreen :
-                                            m.vakalatnama_status === "Not Required" ? styles.badgeGray  : styles.badgeAmber
-                                        } style={{ fontSize: "0.7rem" }}>
-                                            {m.vakalatnama_status ?? "Pending"}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {(m.adjournment_count ?? 0) > 0 ? (
-                                            <span className={
-                                                (m.adjournment_count ?? 0) >= 10 ? styles.limBadgeCritical :
-                                                (m.adjournment_count ?? 0) >= 5  ? styles.badgeAmber : styles.badgeGray
-                                            } style={{ fontSize: "0.7rem" }}>
-                                                {m.adjournment_count}
-                                            </span>
-                                        ) : <span className={styles.muted}>0</span>}
-                                    </td>
-                                    <td className={styles.muted}>{m.court_name ?? "—"}</td>
-                                    <td className={styles.muted}>{m.case_number ?? "—"}</td>
-                                    <td className={styles.muted}>{m.team_name ?? "—"}</td>
-                                    <td className={styles.muted}>{m.doc_count ?? 0}</td>
-                                    <td style={{ display: "flex", gap: "0.4rem" }}>
-                                        <button className={styles.actionBtn} onClick={() => openDetail(m)}>View</button>
-                                        <button className={styles.actionBtnDanger} disabled={removing === m.matter_id} onClick={() => removeMatter(m)}>
-                                            {removing === m.matter_id ? "…" : "Delete"}
-                                        </button>
-                                    </td>
-                                </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+            <Table loading={loading} empty={filtered.length === 0}
+                emptyMessage={matters.length === 0 ? "No matters yet. Create a client first, then open a matter." : "No matters match the selected filters."}>
+                <thead><tr>
+                    <th>Title</th><th>Client</th><th>Type</th><th>Status</th><th>Priority</th><th>Vakalatnama</th><th>Adj.</th><th>Court</th><th>Case #</th><th>Team</th><th>Docs</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                    {filtered.map(m => {
+                        const limDays = m.limitation_date ? limitationDaysRemaining(m.limitation_date) : null;
+                        return (
+                        <tr key={m.matter_id}>
+                            <td>
+                                <button className={styles.linkBtn} onClick={() => openDetail(m)}>{m.title}</button>
+                                {limDays !== null && limDays <= 60 && (
+                                    <span className={limDays <= 30 ? styles.limBadgeCritical : styles.limBadgeWarn} style={{ marginLeft: "0.4rem" }}>
+                                        {limDays < 0 ? "LIM EXPIRED" : limDays === 0 ? "LIM TODAY" : `LIM ${limDays}d`}
+                                    </span>
+                                )}
+                            </td>
+                            <td className={styles.muted}>{m.client_name}</td>
+                            <td className={styles.muted}>{m.matter_type}</td>
+                            <td><Badge tone={badgeClassToTone(STATUS_BADGE[m.status])}>{m.status}</Badge></td>
+                            <td>
+                                <span className={styles.priorityBadge} data-priority={m.priority ?? "Normal"}>
+                                    {m.priority ?? "Normal"}
+                                </span>
+                            </td>
+                            <td>
+                                <Badge tone={m.vakalatnama_status === "Filed" ? "green" : m.vakalatnama_status === "Not Required" ? "gray" : "amber"}>
+                                    {m.vakalatnama_status ?? "Pending"}
+                                </Badge>
+                            </td>
+                            <td>
+                                {(m.adjournment_count ?? 0) > 0 ? (
+                                    <Badge tone={(m.adjournment_count ?? 0) >= 10 ? "red" : (m.adjournment_count ?? 0) >= 5 ? "amber" : "gray"}>
+                                        {m.adjournment_count}
+                                    </Badge>
+                                ) : <span className={styles.muted}>0</span>}
+                            </td>
+                            <td className={styles.muted}>{m.court_name ?? "—"}</td>
+                            <td className={styles.muted}>{m.case_number ?? "—"}</td>
+                            <td className={styles.muted}>{m.team_name ?? "—"}</td>
+                            <td className={styles.muted}>{m.doc_count ?? 0}</td>
+                            <td style={{ display: "flex", gap: "0.4rem" }}>
+                                <button className={styles.actionBtn} onClick={() => openDetail(m)}>View</button>
+                                <button className={styles.actionBtnDanger} disabled={removing === m.matter_id} onClick={() => removeMatter(m)}>
+                                    {removing === m.matter_id ? "…" : "Delete"}
+                                </button>
+                            </td>
+                        </tr>
+                        );
+                    })}
+                </tbody>
+            </Table>
 
-            {showModal && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
-                    <div className={styles.modal} style={{ maxWidth: 560 }}>
-                        <h3 className={styles.modalTitle}>New Matter</h3>
-                        <MatterForm onSave={saveMatter} onCancel={() => setShowModal(false)} />
-                    </div>
-                </div>
-            )}
+            <Modal open={showModal} onClose={() => setShowModal(false)} title="New Matter" maxWidth={560}>
+                <MatterForm onSave={saveMatter} onCancel={() => setShowModal(false)} />
+            </Modal>
 
             {/* ── Conflict of Interest Results Modal — Task #150 ── */}
-            {showConflictModal && (
-                <div className={styles.overlay} onClick={() => setShowConflictModal(false)}>
-                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
-                        <div className={styles.modalTitle} style={{ color: conflictResults.length > 0 ? "#dc2626" : "#16a34a" }}>
-                            {conflictResults.length > 0 ? `⚠ ${conflictResults.length} Potential Conflict${conflictResults.length > 1 ? "s" : ""} Found` : "✓ No Conflicts Found"}
-                        </div>
-                        {conflictResults.length === 0 ? (
-                            <p style={{ color: "var(--text-2)", fontSize: "0.9rem" }}>No existing matters involve this client or opposing party. You may proceed.</p>
-                        ) : (
-                            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: 360, overflowY: "auto" }}>
-                                {conflictResults.map((c, i) => (
-                                    <div key={i} style={{ background: "var(--bg-1)", border: "1px solid #dc2626", borderRadius: "var(--radius)", padding: "0.75rem" }}>
-                                        <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>{c.matter_title}</div>
-                                        <div style={{ fontSize: "0.8rem", color: "var(--text-2)", marginTop: "0.2rem" }}>
-                                            Client: {c.client_name} · Opponent: {c.opposing_party || "—"} · Status: {c.status}
-                                        </div>
-                                        <ul style={{ margin: "0.4rem 0 0 1rem", padding: 0, fontSize: "0.8rem", color: "#dc2626" }}>
-                                            {c.reasons.map((r, j) => <li key={j}>{r}</li>)}
-                                        </ul>
-                                    </div>
-                                ))}
-                                <p style={{ fontSize: "0.82rem", color: "var(--text-3)", margin: 0 }}>Review these conflicts carefully before proceeding. You may still create the matter if you determine there is no actual conflict.</p>
+            <Modal open={showConflictModal} onClose={() => setShowConflictModal(false)} maxWidth={540}
+                title={conflictResults.length > 0 ? `⚠ ${conflictResults.length} Potential Conflict${conflictResults.length > 1 ? "s" : ""} Found` : "✓ No Conflicts Found"}
+                footer={<Button onClick={() => setShowConflictModal(false)}>Close</Button>}>
+                {conflictResults.length === 0 ? (
+                    <p style={{ color: "var(--text-2)", fontSize: "0.9rem" }}>No existing matters involve this client or opposing party. You may proceed.</p>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: 360, overflowY: "auto" }}>
+                        {conflictResults.map((c, i) => (
+                            <div key={i} style={{ background: "var(--bg-1)", border: "1px solid #dc2626", borderRadius: "var(--radius)", padding: "0.75rem" }}>
+                                <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>{c.matter_title}</div>
+                                <div style={{ fontSize: "0.8rem", color: "var(--text-2)", marginTop: "0.2rem" }}>
+                                    Client: {c.client_name} · Opponent: {c.opposing_party || "—"} · Status: {c.status}
+                                </div>
+                                <ul style={{ margin: "0.4rem 0 0 1rem", padding: 0, fontSize: "0.8rem", color: "#dc2626" }}>
+                                    {c.reasons.map((r, j) => <li key={j}>{r}</li>)}
+                                </ul>
                             </div>
-                        )}
-                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
-                            <button className={styles.btnPrimary} onClick={() => setShowConflictModal(false)}>Close</button>
-                        </div>
+                        ))}
+                        <p style={{ fontSize: "0.82rem", color: "var(--text-3)", margin: 0 }}>Review these conflicts carefully before proceeding. You may still create the matter if you determine there is no actual conflict.</p>
                     </div>
-                </div>
-            )}
+                )}
+            </Modal>
         </div>
     );
 };
@@ -5833,21 +5618,21 @@ const IntelligencePanel = () => {
     return (
         <div className={styles.panelContent}>
             <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", alignItems: "center" }}>
-                <button className={tab === "counsel" ? styles.btnPrimary : styles.btnGhost} style={{ fontSize: "0.82rem" }} onClick={() => setTab("counsel")}>
+                <Button size="sm" variant={tab === "counsel" ? "primary" : "ghost"} onClick={() => setTab("counsel")}>
                     ⚖ Opposing Counsel ({counselList.length})
-                </button>
-                <button className={tab === "judges" ? styles.btnPrimary : styles.btnGhost} style={{ fontSize: "0.82rem" }} onClick={() => setTab("judges")}>
+                </Button>
+                <Button size="sm" variant={tab === "judges" ? "primary" : "ghost"} onClick={() => setTab("judges")}>
                     🏛 Judges ({judgeList.length})
-                </button>
-                <button className={styles.btnPrimary} style={{ marginLeft: "auto", fontSize: "0.82rem" }} onClick={() => openModal()}>
+                </Button>
+                <Button size="sm" style={{ marginLeft: "auto" }} onClick={() => openModal()}>
                     + Add {tab === "counsel" ? "Counsel" : "Judge"}
-                </button>
+                </Button>
             </div>
             {loading ? (
                 <div className={styles.muted} style={{ textAlign: "center", padding: "2rem" }}>Loading…</div>
             ) : tab === "counsel" ? (
                 counselList.length === 0 ? (
-                    <div className={styles.emptyHint}>No opposing counsel records yet. Build your private intelligence file on lawyers you frequently face — their tactics, preferred courts, and contact info.</div>
+                    <EmptyState message="No opposing counsel records yet. Build your private intelligence file on lawyers you frequently face — their tactics, preferred courts, and contact info." />
                 ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                         {counselList.map(c => (
@@ -5859,11 +5644,11 @@ const IntelligencePanel = () => {
                                         {c.firm_name && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>{c.firm_name}</span>}
                                     </div>
                                     <div style={{ display: "flex", gap: "0.4rem" }}>
-                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => setExpanded(expanded === c.counsel_id ? null : c.counsel_id)}>
+                                        <Button variant="ghost" size="sm" onClick={() => setExpanded(expanded === c.counsel_id ? null : c.counsel_id)}>
                                             {expanded === c.counsel_id ? "Less" : "Notes"}
-                                        </button>
-                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openModal(c)}>Edit</button>
-                                        <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteItem(c.counsel_id)}>Del</button>
+                                        </Button>
+                                        <Button variant="ghost" size="sm" onClick={() => openModal(c)}>Edit</Button>
+                                        <Button variant="danger" size="sm" onClick={() => deleteItem(c.counsel_id)}>Del</Button>
                                     </div>
                                 </div>
                                 {(c.phone || c.email || c.court_preference) && (
@@ -5885,7 +5670,7 @@ const IntelligencePanel = () => {
                 )
             ) : (
                 judgeList.length === 0 ? (
-                    <div className={styles.emptyHint}>No judge records yet. Keep private notes on judges you appear before — their known inclinations, preferences, and important observations.</div>
+                    <EmptyState message="No judge records yet. Keep private notes on judges you appear before — their known inclinations, preferences, and important observations." />
                 ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                         {judgeList.map(j => (
@@ -5897,11 +5682,11 @@ const IntelligencePanel = () => {
                                         {j.court_name && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>@ {j.court_name}</span>}
                                     </div>
                                     <div style={{ display: "flex", gap: "0.4rem" }}>
-                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => setExpanded(expanded === j.judge_id ? null : j.judge_id)}>
+                                        <Button variant="ghost" size="sm" onClick={() => setExpanded(expanded === j.judge_id ? null : j.judge_id)}>
                                             {expanded === j.judge_id ? "Less" : "Notes"}
-                                        </button>
-                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openModal(j)}>Edit</button>
-                                        <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteItem(j.judge_id)}>Del</button>
+                                        </Button>
+                                        <Button variant="ghost" size="sm" onClick={() => openModal(j)}>Edit</Button>
+                                        <Button variant="danger" size="sm" onClick={() => deleteItem(j.judge_id)}>Del</Button>
                                     </div>
                                 </div>
                                 {expanded === j.judge_id && (
@@ -5918,13 +5703,15 @@ const IntelligencePanel = () => {
                 )
             )}
 
-            {showModal && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
-                    <div className={styles.modal} style={{ maxWidth: 480 }}>
-                        <div className={styles.modalHeader}>
-                            <h3 className={styles.modalTitle}>{editItem ? "Edit" : "Add"} {tab === "counsel" ? "Opposing Counsel" : "Judge"}</h3>
-                            <button className={styles.modalClose} onClick={() => setShowModal(false)}>✕</button>
-                        </div>
+            <Modal
+                open={showModal}
+                onClose={() => setShowModal(false)}
+                title={`${editItem ? "Edit" : "Add"} ${tab === "counsel" ? "Opposing Counsel" : "Judge"}`}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+                    <Button onClick={save} loading={saving}>Save</Button>
+                </>}
+            >
                         <div className={styles.formGroup}>
                             <label className={styles.formLabel}>Full Name *</label>
                             <input className={styles.formInput} value={form.name || ""} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Ch. Hamid Iqbal" />
@@ -5976,19 +5763,15 @@ const IntelligencePanel = () => {
                             <label className={styles.formLabel}>Private Notes (not shared with client)</label>
                             <textarea className={styles.formInput} rows={3} value={form.private_notes || ""} onChange={e => setForm(f => ({ ...f, private_notes: e.target.value }))} placeholder="Confidential observations…" />
                         </div>
-                        {err && <div className={styles.formError}>{err}</div>}
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                            <button className={styles.btnGhost} onClick={() => setShowModal(false)}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                        {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
+            </Modal>
         </div>
     );
 };
 
 // ── Vakalatnama Register Panel — Task #156 ────────────────────────────────────
+const VAKALATNAMA_TONE: Record<string, BadgeTone> = { Filed: "green", Rejected: "red", Pending: "amber" };
+
 const VakalatnamaPanel = () => {
     type VEntry = { matter_id: string; title: string; matter_no: string | null; client_name: string; court_name: string | null; vakalatnama_status: string; status: string; created_at: string };
     const [register,  setRegister]  = useState<VEntry[]>([]);
@@ -6031,66 +5814,60 @@ const VakalatnamaPanel = () => {
     const counts = { All: register.length, Pending: 0, Filed: 0, Rejected: 0 };
     register.forEach(e => { if (e.vakalatnama_status in counts) (counts as Record<string,number>)[e.vakalatnama_status]++; });
 
-    const statusColor = (s: string) => s === "Filed" ? "#16a34a" : s === "Rejected" ? "#dc2626" : "#d97706";
-
     return (
         <div className={styles.panelContent}>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem", alignItems: "center" }}>
                 {(["All", "Pending", "Filed", "Rejected"] as const).map(f => (
-                    <button key={f} onClick={() => setFilter(f)}
-                        className={filter === f ? styles.btnPrimary : styles.btnGhost}
-                        style={{ fontSize: "0.82rem" }}>
+                    <Button key={f} size="sm" variant={filter === f ? "primary" : "ghost"} onClick={() => setFilter(f)}>
                         {f} ({counts[f]})
-                    </button>
+                    </Button>
                 ))}
-                <input className={styles.searchInput} placeholder="Search matter / client…" value={search}
+                <input className={styles.formInput} placeholder="Search matter / client…" value={search}
                     onChange={e => setSearch(e.target.value)} style={{ marginLeft: "auto", width: 220 }} />
             </div>
-            {loading ? (
-                <div className={styles.muted} style={{ textAlign: "center", padding: "2rem" }}>Loading…</div>
-            ) : visible.length === 0 ? (
-                <div className={styles.emptyHint}>No matters match the current filter. All matters with a vakalatnama status appear here.</div>
-            ) : (
-                <table className={styles.feeTable}>
-                    <thead><tr>
-                        <th>Matter No.</th>
-                        <th>Title</th>
-                        <th>Client</th>
-                        <th>Court</th>
-                        <th>Matter Status</th>
-                        <th>Vakalatnama</th>
-                        <th style={{ width: 160 }}>Update</th>
-                    </tr></thead>
-                    <tbody>
-                        {visible.map(e => (
-                            <tr key={e.matter_id}>
-                                <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{e.matter_no || "—"}</td>
-                                <td><strong style={{ fontSize: "0.88rem" }}>{e.title}</strong></td>
-                                <td className={styles.muted}>{e.client_name}</td>
-                                <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{e.court_name || "—"}</td>
-                                <td><span style={{ fontSize: "0.78rem" }}>{e.status}</span></td>
-                                <td>
-                                    <span style={{ fontWeight: 700, fontSize: "0.82rem", color: statusColor(e.vakalatnama_status) }}>
-                                        {e.vakalatnama_status}
-                                    </span>
-                                </td>
-                                <td>
-                                    <select
-                                        className={styles.formInput}
-                                        style={{ fontSize: "0.78rem", padding: "2px 6px" }}
-                                        value={e.vakalatnama_status}
-                                        disabled={updating === e.matter_id}
-                                        onChange={ev => updateStatus(e.matter_id, ev.target.value)}>
-                                        <option>Pending</option>
-                                        <option>Filed</option>
-                                        <option>Rejected</option>
-                                    </select>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            )}
+            <Table
+                loading={loading}
+                empty={!loading && visible.length === 0}
+                emptyMessage="No matters match the current filter. All matters with a vakalatnama status appear here."
+            >
+                <thead><tr>
+                    <th>Matter No.</th>
+                    <th>Title</th>
+                    <th>Client</th>
+                    <th>Court</th>
+                    <th>Matter Status</th>
+                    <th>Vakalatnama</th>
+                    <th style={{ width: 160 }}>Update</th>
+                </tr></thead>
+                <tbody>
+                    {visible.map(e => (
+                        <tr key={e.matter_id}>
+                            <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{e.matter_no || "—"}</td>
+                            <td><strong style={{ fontSize: "0.88rem" }}>{e.title}</strong></td>
+                            <td className={styles.muted}>{e.client_name}</td>
+                            <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{e.court_name || "—"}</td>
+                            <td><span style={{ fontSize: "0.78rem" }}>{e.status}</span></td>
+                            <td>
+                                <Badge tone={VAKALATNAMA_TONE[e.vakalatnama_status] ?? "gray"}>
+                                    {e.vakalatnama_status}
+                                </Badge>
+                            </td>
+                            <td>
+                                <select
+                                    className={styles.formInput}
+                                    style={{ fontSize: "0.78rem", padding: "2px 6px" }}
+                                    value={e.vakalatnama_status}
+                                    disabled={updating === e.matter_id}
+                                    onChange={ev => updateStatus(e.matter_id, ev.target.value)}>
+                                    <option>Pending</option>
+                                    <option>Filed</option>
+                                    <option>Rejected</option>
+                                </select>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
         </div>
     );
 };
@@ -6186,9 +5963,9 @@ const CauseListPanel = () => {
                         <span className={styles.badgeGreen} style={{ fontSize: "0.72rem" }}>{matched.length} matched</span>
                     )}
                 </div>
-                <button className={styles.btnPrimary} onClick={() => { setShowInput(!showInput); setParseErr(""); setParseResult(null); }}>
+                <Button onClick={() => { setShowInput(!showInput); setParseErr(""); setParseResult(null); }}>
                     {showInput ? "Cancel" : "+ Import Cause List"}
-                </button>
+                </Button>
             </div>
 
             {/* Parse result banner */}
@@ -6232,23 +6009,23 @@ const CauseListPanel = () => {
                             onChange={e => { const f = e.target.files?.[0] ?? null; setFile(f); if (f) setText(""); }} />
                         {file && (
                             <p className={styles.muted} style={{ fontSize: "0.78rem", marginTop: "0.35rem" }}>
-                                📎 {file.name} — will be read automatically (OCR). <button type="button" className={styles.btnGhost} style={{ padding: "0.1rem 0.5rem", fontSize: "0.75rem" }} onClick={() => setFile(null)}>Remove</button>
+                                📎 {file.name} — will be read automatically (OCR). <Button variant="ghost" size="sm" onClick={() => setFile(null)}>Remove</Button>
                             </p>
                         )}
                     </div>
                     {parseErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{parseErr}</div>}
                     <div className={styles.modalActions}>
-                        <button className={styles.btnGhost} onClick={() => { setShowInput(false); setText(""); }}>Cancel</button>
-                        <button className={styles.btnPrimary} onClick={parseCauseList} disabled={parsing}>{parsing ? "Parsing…" : "Parse & Match"}</button>
+                        <Button variant="ghost" onClick={() => { setShowInput(false); setText(""); }}>Cancel</Button>
+                        <Button onClick={parseCauseList} loading={parsing}>Parse & Match</Button>
                     </div>
                 </div>
             )}
 
             {/* Entries */}
             {loading ? (
-                <div className={styles.emptyHint}>Loading…</div>
+                <EmptyState message="Loading…" />
             ) : entries.length === 0 ? (
-                <div className={styles.emptyHint}>No cause list entries for this date. Click "+ Import Cause List" to paste a court cause list.</div>
+                <EmptyState message='No cause list entries for this date. Click "+ Import Cause List" to paste a court cause list.' />
             ) : (
                 <>
                     {/* Matched matters */}
@@ -6257,8 +6034,8 @@ const CauseListPanel = () => {
                             <div className={styles.sectionTitle} style={{ color: "#2d8a4e", marginBottom: "0.5rem" }}>
                                 Matched to Your Matters ({matched.length})
                             </div>
-                            <div className={styles.tableWrap} style={{ marginBottom: "1.5rem" }}>
-                                <table className={styles.table}>
+                            <div style={{ marginBottom: "1.5rem" }}>
+                            <Table>
                                     <thead><tr>
                                         <th>Item</th><th>Case Number</th><th>Parties</th><th>Matter</th><th>Court</th><th>Actions</th>
                                     </tr></thead>
@@ -6281,7 +6058,7 @@ const CauseListPanel = () => {
                                                                 {matters.map(m => <option key={m.matter_id} value={m.matter_id}>{m.title}{m.case_number ? ` (${m.case_number})` : ""}</option>)}
                                                             </select>
                                                             <button className={styles.actionBtn} onClick={() => saveLink(e)}>Save</button>
-                                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem" }} onClick={() => setLinkingId(null)}>✕</button>
+                                                            <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem" }} onClick={() => setLinkingId(null)}>✕</Button>
                                                         </>
                                                     ) : (
                                                         <>
@@ -6293,7 +6070,7 @@ const CauseListPanel = () => {
                                             </tr>
                                         ))}
                                     </tbody>
-                                </table>
+                            </Table>
                             </div>
                         </>
                     )}
@@ -6307,8 +6084,7 @@ const CauseListPanel = () => {
                                     — link manually or ensure case numbers are set on your matters
                                 </span>
                             </div>
-                            <div className={styles.tableWrap}>
-                                <table className={styles.table}>
+                            <Table>
                                     <thead><tr>
                                         <th>Item</th><th>Case Number</th><th>Parties</th><th>Court</th><th>Link to Matter</th><th></th>
                                     </tr></thead>
@@ -6328,13 +6104,13 @@ const CauseListPanel = () => {
                                                                 {matters.map(m => <option key={m.matter_id} value={m.matter_id}>{m.title}{m.case_number ? ` (${m.case_number})` : ""}</option>)}
                                                             </select>
                                                             <button className={styles.actionBtn} onClick={() => saveLink(e)}>Save</button>
-                                                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem" }} onClick={() => setLinkingId(null)}>✕</button>
+                                                            <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem" }} onClick={() => setLinkingId(null)}>✕</Button>
                                                         </div>
                                                     ) : (
-                                                        <button className={styles.btnGhost} style={{ fontSize: "0.78rem" }}
+                                                        <Button variant="ghost" size="sm"
                                                             onClick={() => { setLinkingId(e.entry_id); setLinkTarget(""); }}>
                                                             Link…
-                                                        </button>
+                                                        </Button>
                                                     )}
                                                 </td>
                                                 <td>
@@ -6343,8 +6119,7 @@ const CauseListPanel = () => {
                                             </tr>
                                         ))}
                                     </tbody>
-                                </table>
-                            </div>
+                            </Table>
                         </>
                     )}
                 </>
@@ -6420,72 +6195,66 @@ const AuditPanel = () => {
                         value={dateTo} onChange={e => setDateTo(e.target.value)} title="To date" />
                     <span className={styles.resultCount}>{total} event{total !== 1 ? "s" : ""}</span>
                 </div>
-                <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={exportCsv} disabled={logs.length === 0}>
+                <Button variant="ghost" size="sm" onClick={exportCsv} disabled={logs.length === 0}>
                     ↓ Export CSV
-                </button>
+                </Button>
             </div>
 
-            {loading ? (
-                <div className={styles.emptyHint}>Loading…</div>
-            ) : logs.length === 0 ? (
-                <div className={styles.emptyHint}>No audit events match the selected filters.</div>
-            ) : (
-                <>
-                    <div className={styles.tableWrap}>
-                        <table className={styles.table}>
-                            <thead><tr>
-                                <th>Timestamp</th><th>Event</th><th>Actor</th><th>Role</th><th>Resource</th><th>IP</th><th>Details</th>
-                            </tr></thead>
-                            <tbody>
-                                {logs.map(l => {
-                                    let detailStr = "";
-                                    if (l.details) {
-                                        try {
-                                            const parsed = JSON.parse(l.details);
-                                            if (parsed.query) detailStr = `"${parsed.query}"`;
-                                            else if (parsed.email) detailStr = parsed.email;
-                                            else detailStr = Object.entries(parsed).filter(([,v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(", ");
-                                        } catch { detailStr = l.details; }
-                                    }
-                                    return (
-                                        <tr key={l.log_id}>
-                                            <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
-                                            <td>
-                                                <span className={(styles as any)[EVENT_BADGE[l.event_type] ?? "badgeGray"]}>
-                                                    {EVENT_LABELS[l.event_type] ?? l.event_type}
-                                                </span>
-                                            </td>
-                                            <td style={{ fontSize: "0.82rem" }}>{l.actor_name ?? "—"}</td>
-                                            <td className={styles.muted}>{l.actor_role ?? "—"}</td>
-                                            <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                {[l.resource_type, l.resource_name].filter(Boolean).join(": ") || "—"}
-                                            </td>
-                                            <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
-                                            <td className={styles.muted} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
-                                                {detailStr || "—"}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                    {totalPages > 1 && (
-                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem", justifyContent: "center" }}>
-                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }}
-                                disabled={page === 0} onClick={() => { setPage(page - 1); load(page - 1); }}>
-                                ← Prev
-                            </button>
-                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
-                                Page {page + 1} of {totalPages}
-                            </span>
-                            <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }}
-                                disabled={page >= totalPages - 1} onClick={() => { setPage(page + 1); load(page + 1); }}>
-                                Next →
-                            </button>
-                        </div>
-                    )}
-                </>
+            <Table
+                loading={loading}
+                empty={!loading && logs.length === 0}
+                emptyMessage="No audit events match the selected filters."
+            >
+                <thead><tr>
+                    <th>Timestamp</th><th>Event</th><th>Actor</th><th>Role</th><th>Resource</th><th>IP</th><th>Details</th>
+                </tr></thead>
+                <tbody>
+                    {logs.map(l => {
+                        let detailStr = "";
+                        if (l.details) {
+                            try {
+                                const parsed = JSON.parse(l.details);
+                                if (parsed.query) detailStr = `"${parsed.query}"`;
+                                else if (parsed.email) detailStr = parsed.email;
+                                else detailStr = Object.entries(parsed).filter(([,v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(", ");
+                            } catch { detailStr = l.details; }
+                        }
+                        return (
+                            <tr key={l.log_id}>
+                                <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
+                                <td>
+                                    <Badge tone={badgeClassToTone(EVENT_BADGE[l.event_type])}>
+                                        {EVENT_LABELS[l.event_type] ?? l.event_type}
+                                    </Badge>
+                                </td>
+                                <td style={{ fontSize: "0.82rem" }}>{l.actor_name ?? "—"}</td>
+                                <td className={styles.muted}>{l.actor_role ?? "—"}</td>
+                                <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {[l.resource_type, l.resource_name].filter(Boolean).join(": ") || "—"}
+                                </td>
+                                <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
+                                <td className={styles.muted} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
+                                    {detailStr || "—"}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </Table>
+            {!loading && logs.length > 0 && totalPages > 1 && (
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem", justifyContent: "center" }}>
+                    <Button variant="ghost" size="sm"
+                        disabled={page === 0} onClick={() => { setPage(page - 1); load(page - 1); }}>
+                        ← Prev
+                    </Button>
+                    <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                        Page {page + 1} of {totalPages}
+                    </span>
+                    <Button variant="ghost" size="sm"
+                        disabled={page >= totalPages - 1} onClick={() => { setPage(page + 1); load(page + 1); }}>
+                        Next →
+                    </Button>
+                </div>
             )}
         </div>
     );
@@ -6770,12 +6539,12 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
                     <option value="all">All categories</option>
                     {categories.map(c => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
                 </select>
-                <button className={styles.btnGhost} style={{ fontSize: "0.8rem" }} onClick={() => setShowCatModal(true)}>
+                <Button variant="ghost" style={{ fontSize: "0.8rem" }} onClick={() => setShowCatModal(true)}>
                     + Category
-                </button>
-                <button className={styles.btnPrimary} onClick={() => fileRef.current?.click()}>
+                </Button>
+                <Button onClick={() => fileRef.current?.click()}>
                     + Upload Files
-                </button>
+                </Button>
                 <input
                     ref={fileRef}
                     type="file"
@@ -6846,19 +6615,18 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
                                 {categories.map(c => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
                             </select>
                             {!isUploading && (
-                                <button className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem" }} onClick={clearQueue}>
+                                <Button variant="ghost" style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem" }} onClick={clearQueue}>
                                     Clear
-                                </button>
+                                </Button>
                             )}
                             {queuedCount > 0 && (
-                                <button
-                                    className={styles.btnPrimary}
+                                <Button
                                     style={{ fontSize: "0.8rem", padding: "0.35rem 0.9rem" }}
                                     onClick={startUpload}
                                     disabled={isUploading || batchWillExceed}
                                 >
                                     {isUploading ? "Uploading…" : `Upload ${queuedCount} file${queuedCount !== 1 ? "s" : ""}`}
-                                </button>
+                                </Button>
                             )}
                         </div>
                     </div>
@@ -6914,100 +6682,94 @@ const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
             )}
 
             {/* Documents table */}
-            {visibleDocs.length > 0 && (
-                <div className={styles.tableWrap}>
-                    <table className={styles.table}>
-                        <thead>
-                            <tr>
-                                <th>File Name</th>
-                                <th>Category</th>
-                                <th>Size</th>
-                                <th>Uploaded</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {visibleDocs.map(doc => (
-                                <tr key={doc.doc_id}>
-                                    <td>
-                                        <div className={styles.fileName}>
-                                            <span className={styles.fileIcon}>F</span>
-                                            {doc.name}
-                                        </div>
-                                    </td>
-                                    <td className={styles.muted}>
-                                        {doc.category_name
-                                            ? <span className={styles.catChip}>{doc.category_name}</span>
-                                            : <span className={styles.muted}>—</span>
-                                        }
-                                    </td>
-                                    <td className={styles.muted}>{doc.size}</td>
-                                    <td className={styles.muted}>{doc.uploaded}</td>
-                                    <td>
-                                        {doc.status === "ready"
-                                            ? <span className={styles.badgeGreen}>Ready</span>
-                                            : doc.status === "error"
-                                            ? <span className={styles.badgeRed}>Error</span>
-                                            : <span className={styles.badgeAmber}>Processing…</span>
-                                        }
-                                    </td>
-                                    <td>
-                                        <button
-                                            className={styles.actionBtnDanger}
-                                            disabled={deleting === doc.doc_id}
-                                            onClick={() => setConfirmDelete(doc)}
-                                        >
-                                            {deleting === doc.doc_id ? "…" : "Remove"}
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+            <Table empty={visibleDocs.length === 0} emptyMessage="No documents yet. Upload your first file to get started.">
+                <thead>
+                    <tr>
+                        <th>File Name</th>
+                        <th>Category</th>
+                        <th>Size</th>
+                        <th>Uploaded</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {visibleDocs.map(doc => (
+                        <tr key={doc.doc_id}>
+                            <td>
+                                <div className={styles.fileName}>
+                                    <span className={styles.fileIcon}>F</span>
+                                    {doc.name}
+                                </div>
+                            </td>
+                            <td className={styles.muted}>
+                                {doc.category_name
+                                    ? <span className={styles.catChip}>{doc.category_name}</span>
+                                    : <span className={styles.muted}>—</span>
+                                }
+                            </td>
+                            <td className={styles.muted}>{doc.size}</td>
+                            <td className={styles.muted}>{doc.uploaded}</td>
+                            <td>
+                                {doc.status === "ready"
+                                    ? <span className={styles.badgeGreen}>Ready</span>
+                                    : doc.status === "error"
+                                    ? <span className={styles.badgeRed}>Error</span>
+                                    : <span className={styles.badgeAmber}>Processing…</span>
+                                }
+                            </td>
+                            <td>
+                                <button
+                                    className={styles.actionBtnDanger}
+                                    disabled={deleting === doc.doc_id}
+                                    onClick={() => setConfirmDelete(doc)}
+                                >
+                                    {deleting === doc.doc_id ? "…" : "Remove"}
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
 
             {/* Delete confirm modal */}
-            {confirmDelete && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setConfirmDelete(null); }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Remove Document</h3>
-                        <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.85rem" }}>
-                            This will permanently delete <strong style={{ color: "var(--text-1)" }}>{confirmDelete.name}</strong> from the index and storage. This cannot be undone.
-                        </p>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setConfirmDelete(null)}>Cancel</button>
-                            <button className={styles.btnDanger} onClick={() => handleDelete(confirmDelete)}>Delete</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <Modal
+                open={!!confirmDelete}
+                onClose={() => setConfirmDelete(null)}
+                title="Remove Document"
+                footer={<>
+                    <Button variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+                    <Button variant="danger" onClick={() => confirmDelete && handleDelete(confirmDelete)}>Delete</Button>
+                </>}
+            >
+                <p className={styles.muted} style={{ fontSize: "0.85rem" }}>
+                    This will permanently delete <strong style={{ color: "var(--text-1)" }}>{confirmDelete?.name}</strong> from the index and storage. This cannot be undone.
+                </p>
+            </Modal>
 
             {/* New category modal */}
-            {showCatModal && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) { setShowCatModal(false); setCatError(null); } }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>New Category</h3>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Category Name</label>
-                            <input
-                                className={styles.formInput}
-                                placeholder="e.g. Contracts, HR, Finance…"
-                                value={newCatName}
-                                onChange={e => setNewCatName(e.target.value)}
-                                onKeyDown={e => e.key === "Enter" && addCategory()}
-                                autoFocus
-                            />
-                        </div>
-                        {catError && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {catError}</div>}
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => { setShowCatModal(false); setCatError(null); }}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={addCategory}>Create</button>
-                        </div>
-                    </div>
+            <Modal
+                open={showCatModal}
+                onClose={() => { setShowCatModal(false); setCatError(null); }}
+                title="New Category"
+                footer={<>
+                    <Button variant="ghost" onClick={() => { setShowCatModal(false); setCatError(null); }}>Cancel</Button>
+                    <Button onClick={addCategory}>Create</Button>
+                </>}
+            >
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Category Name</label>
+                    <input
+                        className={styles.formInput}
+                        placeholder="e.g. Contracts, HR, Finance…"
+                        value={newCatName}
+                        onChange={e => setNewCatName(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && addCategory()}
+                        autoFocus
+                    />
                 </div>
-            )}
+                {catError && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {catError}</div>}
+            </Modal>
         </div>
     );
 };
@@ -7080,9 +6842,12 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
     };
 
     return (
-        <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-            <div className={styles.modal}>
-                <h3 className={styles.modalTitle}>Settings — {member.name}</h3>
+        <Modal
+            open
+            onClose={onClose}
+            title={`Settings — ${member.name}`}
+            footer={<Button variant="ghost" onClick={onClose}>Close</Button>}
+        >
                 <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "1rem" }}>
                     Manage document access and WhatsApp configuration for this team member.
                 </p>
@@ -7119,9 +6884,9 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
                     )}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem" }}>
                         <span className={styles.permSummary}>{granted.size} of {categories.length} categories accessible</span>
-                        <button className={styles.btnPrimary} onClick={save} disabled={saving || categories.length === 0} style={{ padding: "0.4rem 1rem" }}>
+                        <Button size="sm" onClick={save} disabled={saving || categories.length === 0}>
                             {saving ? "Saving…" : saved ? "Saved ✓" : "Save Access"}
-                        </button>
+                        </Button>
                     </div>
                 </div>
 
@@ -7147,22 +6912,17 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
                             onChange={e => { setWaNumber(e.target.value); setWaMsg(null); }}
                             style={{ flex: 1 }}
                         />
-                        <button className={styles.btnPrimary} onClick={saveWhatsApp} disabled={waSaving} style={{ padding: "0.4rem 1rem", whiteSpace: "nowrap" }}>
-                            {waSaving ? "Saving…" : "Save"}
-                        </button>
+                        <Button size="sm" onClick={saveWhatsApp} loading={waSaving} style={{ whiteSpace: "nowrap" }}>
+                            Save
+                        </Button>
                         {waNumber && (
-                            <button className={styles.btnGhost} onClick={() => { setWaNumber(""); setWaMsg(null); }} style={{ padding: "0.4rem 0.75rem" }}>
+                            <Button variant="ghost" size="sm" onClick={() => { setWaNumber(""); setWaMsg(null); }}>
                                 Clear
-                            </button>
+                            </Button>
                         )}
                     </div>
                 </div>
-
-                <div className={styles.modalActions}>
-                    <button className={styles.btnGhost} onClick={onClose}>Close</button>
-                </div>
-            </div>
-        </div>
+        </Modal>
     );
 };
 
@@ -7238,17 +6998,15 @@ const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
                 <span className={styles.resultCount}>
                     {team.length} / {maxUsers > 0 ? maxUsers : "∞"} seats used
                 </span>
-                <button
-                    className={styles.btnPrimary}
+                <Button
                     onClick={() => { if (atLimit) { setLimitReached(true); return; } setShowModal(true); setInviteError(null); }}
                     title={atLimit ? "Seat limit reached — upgrade to add more members" : undefined}
                 >
                     + Invite Member
-                </button>
+                </Button>
             </div>
 
-            <div className={styles.tableWrap}>
-                <table className={styles.table}>
+            <Table>
                     <thead>
                         <tr>
                             <th>Name</th>
@@ -7291,39 +7049,37 @@ const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
                             </tr>
                         ))}
                     </tbody>
-                </table>
-            </div>
+            </Table>
 
             {/* Invite modal */}
-            {showModal && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Invite Team Member</h3>
-                        {inviteError && (
-                            <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {inviteError}</div>
-                        )}
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Full Name</label>
-                            <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ali Raza" />
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Email Address</label>
-                            <input className={styles.formInput} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="staff@yourfirm.com" type="email" />
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Role</label>
-                            <select className={styles.formSelect} value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-                                <option value="employee">Employee</option>
-                                <option value="org_owner">Firm Owner</option>
-                            </select>
-                        </div>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setShowModal(false)}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={invite}>Send Invite</button>
-                        </div>
-                    </div>
+            <Modal
+                open={showModal}
+                onClose={() => setShowModal(false)}
+                title="Invite Team Member"
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+                    <Button onClick={invite}>Send Invite</Button>
+                </>}
+            >
+                {inviteError && (
+                    <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {inviteError}</div>
+                )}
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Full Name</label>
+                    <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ali Raza" />
                 </div>
-            )}
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Email Address</label>
+                    <input className={styles.formInput} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="staff@yourfirm.com" type="email" />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Role</label>
+                    <select className={styles.formSelect} value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                        <option value="employee">Employee</option>
+                        <option value="org_owner">Firm Owner</option>
+                    </select>
+                </div>
+            </Modal>
 
             {/* Permissions modal */}
             {permMember && (
@@ -7331,27 +7087,24 @@ const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
             )}
 
             {/* Temp credentials modal */}
-            {tempCreds && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setTempCreds(null); }}>
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Member Invited ✓</h3>
-                        <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.85rem" }}>
-                            Share these temporary credentials with the new member. They will be prompted to set a new password on first login.
-                        </p>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Email</label>
-                            <input className={styles.formInput} readOnly value={tempCreds.email} />
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Temporary Password</label>
-                            <input className={styles.formInput} readOnly value={tempCreds.password} />
-                        </div>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnPrimary} onClick={() => setTempCreds(null)}>Done</button>
-                        </div>
-                    </div>
+            <Modal
+                open={!!tempCreds}
+                onClose={() => setTempCreds(null)}
+                title="Member Invited ✓"
+                footer={<Button onClick={() => setTempCreds(null)}>Done</Button>}
+            >
+                <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.85rem" }}>
+                    Share these temporary credentials with the new member. They will be prompted to set a new password on first login.
+                </p>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Email</label>
+                    <input className={styles.formInput} readOnly value={tempCreds?.email ?? ""} />
                 </div>
-            )}
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Temporary Password</label>
+                    <input className={styles.formInput} readOnly value={tempCreds?.password ?? ""} />
+                </div>
+            </Modal>
         </div>
     );
 };
@@ -7534,137 +7287,125 @@ ${inv.notes ? `<div class="section" style="margin-top:20px"><div class="section-
                 </div>
             </div>
 
-            {loading ? (
-                <div className={styles.emptyHint}>Loading…</div>
-            ) : filtered.length === 0 ? (
-                <div className={styles.emptyHint}>
-                    No invoices yet. Open a matter, add fees, then click "Generate Invoice".
-                </div>
-            ) : (
-                <div className={styles.tableWrap}>
-                    <table className={styles.table}>
-                        <thead><tr>
-                            <th>Invoice #</th><th>Title</th><th>Matter</th><th>Client</th>
-                            <th style={{ textAlign: "right" }}>Amount (PKR)</th>
-                            <th>Issued</th><th>Status</th><th>Actions</th>
-                        </tr></thead>
+            <Table
+                loading={loading}
+                empty={!loading && filtered.length === 0}
+                emptyMessage='No invoices yet. Open a matter, add fees, then click "Generate Invoice".'
+            >
+                <thead><tr>
+                    <th>Invoice #</th><th>Title</th><th>Matter</th><th>Client</th>
+                    <th style={{ textAlign: "right" }}>Amount (PKR)</th>
+                    <th>Issued</th><th>Status</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                    {filtered.map(inv => (
+                        <tr key={inv.invoice_id}>
+                            <td><button className={styles.linkBtn} onClick={() => openInvoice(inv)}>{inv.invoice_number}</button></td>
+                            <td>{inv.title}</td>
+                            <td className={styles.muted}>{inv.matter_title ?? "—"}</td>
+                            <td className={styles.muted}>{inv.client_name ?? "—"}</td>
+                            <td style={{ textAlign: "right", fontWeight: 600 }}>{inv.total_amount.toLocaleString("en-PK")}</td>
+                            <td className={styles.muted}>{inv.issued_date}</td>
+                            <td><Badge tone={badgeClassToTone(INVOICE_STATUS_BADGE[inv.status])}>{inv.status}</Badge></td>
+                            <td style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                                <button className={styles.actionBtn} onClick={() => openInvoice(inv)}>View</button>
+                                <button className={styles.actionBtn} onClick={() => printInvoice(inv)}>Print</button>
+                                {inv.status === "paid" && <button className={styles.actionBtn} onClick={() => printReceipt(inv)} title="Print cash receipt / raseed">🧾 Raseed</button>}
+                                {inv.status === "draft" && (
+                                    <button className={styles.actionBtn} disabled={updating === inv.invoice_id}
+                                        onClick={() => updateStatus(inv, "sent")}>Mark Sent</button>
+                                )}
+                                {inv.status === "sent" && (
+                                    <button className={styles.actionBtn} disabled={updating === inv.invoice_id}
+                                        onClick={() => updateStatus(inv, "paid")}>Mark Paid</button>
+                                )}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
+
+            {/* Invoice detail modal */}
+            <Modal
+                open={!!viewInvoice}
+                onClose={() => setViewInvoice(null)}
+                title={viewInvoice?.invoice_number}
+                maxWidth={640}
+                footer={viewInvoice && <>
+                    <Button variant="ghost" onClick={() => printInvoice(viewInvoice)}>🖨 Print</Button>
+                    {viewInvoice.status === "draft" && <Button variant="ghost" onClick={() => updateStatus(viewInvoice, "sent")}>Mark Sent</Button>}
+                    {viewInvoice.status === "sent"  && <Button onClick={() => updateStatus(viewInvoice, "paid")}>Mark Paid</Button>}
+                </>}
+            >
+                {viewInvoice && <>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                        <div className={styles.muted} style={{ fontSize: "0.82rem" }}>{viewInvoice.title}</div>
+                        <Badge tone={badgeClassToTone(INVOICE_STATUS_BADGE[viewInvoice.status])}>{viewInvoice.status}</Badge>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem", fontSize: "0.83rem" }}>
+                        <div><span className={styles.muted}>Client: </span>{viewInvoice.client_name ?? "—"}</div>
+                        <div><span className={styles.muted}>Matter: </span>{viewInvoice.matter_title ?? "—"}</div>
+                        <div><span className={styles.muted}>Issued: </span>{viewInvoice.issued_date}</div>
+                        {viewInvoice.due_date && <div><span className={styles.muted}>Due: </span>{viewInvoice.due_date}</div>}
+                    </div>
+
+                    <Table>
+                        <thead><tr><th>Description</th><th>Type</th><th>Date</th><th style={{ textAlign: "right" }}>PKR</th></tr></thead>
                         <tbody>
-                            {filtered.map(inv => (
-                                <tr key={inv.invoice_id}>
-                                    <td><button className={styles.linkBtn} onClick={() => openInvoice(inv)}>{inv.invoice_number}</button></td>
-                                    <td>{inv.title}</td>
-                                    <td className={styles.muted}>{inv.matter_title ?? "—"}</td>
-                                    <td className={styles.muted}>{inv.client_name ?? "—"}</td>
-                                    <td style={{ textAlign: "right", fontWeight: 600 }}>{inv.total_amount.toLocaleString("en-PK")}</td>
-                                    <td className={styles.muted}>{inv.issued_date}</td>
-                                    <td><span className={(styles as any)[INVOICE_STATUS_BADGE[inv.status] ?? "badgeGray"]} style={{ fontSize: "0.72rem" }}>{inv.status}</span></td>
-                                    <td style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                                        <button className={styles.actionBtn} onClick={() => openInvoice(inv)}>View</button>
-                                        <button className={styles.actionBtn} onClick={() => printInvoice(inv)}>Print</button>
-                                        {inv.status === "paid" && <button className={styles.actionBtn} onClick={() => printReceipt(inv)} title="Print cash receipt / raseed">🧾 Raseed</button>}
-                                        {inv.status === "draft" && (
-                                            <button className={styles.actionBtn} disabled={updating === inv.invoice_id}
-                                                onClick={() => updateStatus(inv, "sent")}>Mark Sent</button>
-                                        )}
-                                        {inv.status === "sent" && (
-                                            <button className={styles.actionBtn} disabled={updating === inv.invoice_id}
-                                                onClick={() => updateStatus(inv, "paid")}>Mark Paid</button>
-                                        )}
-                                    </td>
+                            {(viewInvoice.fees ?? []).map(f => (
+                                <tr key={f.fee_id}>
+                                    <td>{f.description}</td>
+                                    <td className={styles.muted}>{f.fee_type}</td>
+                                    <td className={styles.muted}>{f.fee_date}</td>
+                                    <td style={{ textAlign: "right", fontWeight: 600 }}>{f.amount.toLocaleString("en-PK")}</td>
                                 </tr>
                             ))}
                         </tbody>
-                    </table>
-                </div>
-            )}
-
-            {/* Invoice detail modal */}
-            {viewInvoice && (
-                <div className={styles.overlay} onClick={() => setViewInvoice(null)}>
-                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem" }}>
-                            <div>
-                                <div style={{ fontWeight: 700, fontSize: "1rem" }}>{viewInvoice.invoice_number}</div>
-                                <div className={styles.muted} style={{ fontSize: "0.82rem" }}>{viewInvoice.title}</div>
-                            </div>
-                            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                                <span className={(styles as any)[INVOICE_STATUS_BADGE[viewInvoice.status] ?? "badgeGray"]}>{viewInvoice.status}</span>
-                                <button className={styles.btnGhost} style={{ fontSize: "0.78rem" }} onClick={() => printInvoice(viewInvoice)}>🖨 Print</button>
-                                <button className={styles.btnGhost} onClick={() => setViewInvoice(null)}>Close</button>
-                            </div>
-                        </div>
-
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem", fontSize: "0.83rem" }}>
-                            <div><span className={styles.muted}>Client: </span>{viewInvoice.client_name ?? "—"}</div>
-                            <div><span className={styles.muted}>Matter: </span>{viewInvoice.matter_title ?? "—"}</div>
-                            <div><span className={styles.muted}>Issued: </span>{viewInvoice.issued_date}</div>
-                            {viewInvoice.due_date && <div><span className={styles.muted}>Due: </span>{viewInvoice.due_date}</div>}
-                        </div>
-
-                        <div className={styles.tableWrap}>
-                            <table className={styles.table}>
-                                <thead><tr><th>Description</th><th>Type</th><th>Date</th><th style={{ textAlign: "right" }}>PKR</th></tr></thead>
-                                <tbody>
-                                    {(viewInvoice.fees ?? []).map(f => (
-                                        <tr key={f.fee_id}>
-                                            <td>{f.description}</td>
-                                            <td className={styles.muted}>{f.fee_type}</td>
-                                            <td className={styles.muted}>{f.fee_date}</td>
-                                            <td style={{ textAlign: "right", fontWeight: 600 }}>{f.amount.toLocaleString("en-PK")}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Gross Amount</td>
-                                        <td style={{ textAlign: "right", fontWeight: 700 }}>
-                                            PKR {viewInvoice.total_amount.toLocaleString("en-PK")}
-                                        </td>
-                                    </tr>
-                                    {(viewInvoice.wht_rate ?? 0) > 0 && (<>
-                                        <tr>
-                                            <td colSpan={3} style={{ textAlign: "right", color: "#dc2626", fontSize: "0.85rem" }}>
-                                                WHT @ {((viewInvoice.wht_rate ?? 0) * 100).toFixed(0)}% (§153 ITO 2001 — Corporate deduction)
-                                            </td>
-                                            <td style={{ textAlign: "right", color: "#dc2626", fontSize: "0.85rem" }}>
-                                                − PKR {(viewInvoice.wht_amount ?? 0).toLocaleString("en-PK")}
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Net Payable</td>
-                                            <td style={{ textAlign: "right", fontWeight: 700, color: "var(--gold)" }}>
-                                                PKR {(viewInvoice.net_payable ?? viewInvoice.total_amount).toLocaleString("en-PK")}
-                                            </td>
-                                        </tr>
-                                    </>)}
-                                    {!(viewInvoice.wht_rate ?? 0) && (
-                                        <tr>
-                                            <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Net Payable</td>
-                                            <td style={{ textAlign: "right", fontWeight: 700, color: "var(--gold)" }}>
-                                                PKR {viewInvoice.total_amount.toLocaleString("en-PK")}
-                                            </td>
-                                        </tr>
-                                    )}
-                                    {(viewInvoice.client_ntn || viewInvoice.org_ntn) && (
-                                        <tr>
-                                            <td colSpan={4} style={{ fontSize: "0.78rem", color: "var(--text-3)", paddingTop: "0.4rem" }}>
-                                                {viewInvoice.org_ntn && `Firm NTN/Bar: ${viewInvoice.org_ntn}`}
-                                                {viewInvoice.org_ntn && viewInvoice.client_ntn && " · "}
-                                                {viewInvoice.client_ntn && `Client NTN/CNIC: ${viewInvoice.client_ntn}`}
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tfoot>
-                            </table>
-                        </div>
-
-                        <div className={styles.modalActions} style={{ marginTop: "1rem", justifyContent: "flex-end" }}>
-                            {viewInvoice.status === "draft" && <button className={styles.btnGhost} onClick={() => updateStatus(viewInvoice, "sent")}>Mark Sent</button>}
-                            {viewInvoice.status === "sent"  && <button className={styles.btnPrimary} onClick={() => updateStatus(viewInvoice, "paid")}>Mark Paid</button>}
-                        </div>
-                    </div>
-                </div>
-            )}
+                        <tfoot>
+                            <tr>
+                                <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Gross Amount</td>
+                                <td style={{ textAlign: "right", fontWeight: 700 }}>
+                                    PKR {viewInvoice.total_amount.toLocaleString("en-PK")}
+                                </td>
+                            </tr>
+                            {(viewInvoice.wht_rate ?? 0) > 0 && (<>
+                                <tr>
+                                    <td colSpan={3} style={{ textAlign: "right", color: "#dc2626", fontSize: "0.85rem" }}>
+                                        WHT @ {((viewInvoice.wht_rate ?? 0) * 100).toFixed(0)}% (§153 ITO 2001 — Corporate deduction)
+                                    </td>
+                                    <td style={{ textAlign: "right", color: "#dc2626", fontSize: "0.85rem" }}>
+                                        − PKR {(viewInvoice.wht_amount ?? 0).toLocaleString("en-PK")}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Net Payable</td>
+                                    <td style={{ textAlign: "right", fontWeight: 700, color: "var(--gold)" }}>
+                                        PKR {(viewInvoice.net_payable ?? viewInvoice.total_amount).toLocaleString("en-PK")}
+                                    </td>
+                                </tr>
+                            </>)}
+                            {!(viewInvoice.wht_rate ?? 0) && (
+                                <tr>
+                                    <td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Net Payable</td>
+                                    <td style={{ textAlign: "right", fontWeight: 700, color: "var(--gold)" }}>
+                                        PKR {viewInvoice.total_amount.toLocaleString("en-PK")}
+                                    </td>
+                                </tr>
+                            )}
+                            {(viewInvoice.client_ntn || viewInvoice.org_ntn) && (
+                                <tr>
+                                    <td colSpan={4} style={{ fontSize: "0.78rem", color: "var(--text-3)", paddingTop: "0.4rem" }}>
+                                        {viewInvoice.org_ntn && `Firm NTN/Bar: ${viewInvoice.org_ntn}`}
+                                        {viewInvoice.org_ntn && viewInvoice.client_ntn && " · "}
+                                        {viewInvoice.client_ntn && `Client NTN/CNIC: ${viewInvoice.client_ntn}`}
+                                    </td>
+                                </tr>
+                            )}
+                        </tfoot>
+                    </Table>
+                </>}
+            </Modal>
         </div>
     );
 };
@@ -7983,14 +7724,14 @@ const CalendarPanel = () => {
                         <button className={styles.calNavBtn} onClick={prevMonth}>‹</button>
                         <span className={styles.calMonthLabel}>{MONTHS[viewMonth]} {viewYear}</span>
                         <button className={styles.calNavBtn} onClick={nextMonth}>›</button>
-                        <button className={styles.btnGhost} style={{ marginLeft: "auto", fontSize: "0.8rem", padding: "0.3rem 0.75rem" }}
+                        <Button variant="ghost" style={{ marginLeft: "auto", fontSize: "0.8rem", padding: "0.3rem 0.75rem" }}
                             onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelected(todayStr); }}>
                             Today
-                        </button>
-                        <button className={styles.btnSecondary} style={{ fontSize: "0.8rem", padding: "0.3rem 0.75rem", background: "#25d366", color: "#fff", borderColor: "#25d366" }}
+                        </Button>
+                        <Button style={{ fontSize: "0.8rem", padding: "0.3rem 0.75rem", background: "#25d366", color: "#fff", borderColor: "#25d366" }}
                             onClick={openHolidayModal} title="Notify all clients with hearings/deadlines in a date range that court is closed">
                             📢 Notify Clients — Court Holiday
-                        </button>
+                        </Button>
                     </div>
 
                     {/* Day-of-week header */}
@@ -8051,14 +7792,14 @@ const CalendarPanel = () => {
                                 : "Upcoming This Month"}
                         </span>
                         <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
-                            <button className={styles.btnPrimary} style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
+                            <Button style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
                                 onClick={() => openAdd("hearing", selected ?? undefined)}>
                                 + Hearing
-                            </button>
-                            <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
+                            </Button>
+                            <Button variant="ghost" style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
                                 onClick={() => openAdd("deadline", selected ?? undefined)}>
                                 + Deadline
-                            </button>
+                            </Button>
                         </div>
                     </div>
 
@@ -8112,16 +7853,22 @@ const CalendarPanel = () => {
             </div>
 
             {/* ── Add/Edit Modal ── */}
-            {modal && (
-                <div className={styles.overlay} onClick={closeModal}>
-                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
-                        <div className={styles.modalTitle}>
-                            {modal === "add-hearing"   && "Add Hearing"}
-                            {modal === "edit-hearing"  && "Edit Hearing"}
-                            {modal === "add-deadline"  && "Add Deadline"}
-                            {modal === "edit-deadline" && "Edit Deadline"}
-                        </div>
-
+            <Modal
+                open={!!modal}
+                onClose={closeModal}
+                title={
+                    modal === "add-hearing"   ? "Add Hearing" :
+                    modal === "edit-hearing"  ? "Edit Hearing" :
+                    modal === "add-deadline"  ? "Add Deadline" :
+                    "Edit Deadline"
+                }
+                footer={<>
+                    <Button variant="ghost" onClick={closeModal} disabled={fSaving}>Cancel</Button>
+                    <Button disabled={fSaving} onClick={modal?.includes("hearing") ? saveHearing : saveDeadline}>
+                        {fSaving ? "Saving…" : (modal?.startsWith("edit") ? "Save Changes" : "Add")}
+                    </Button>
+                </>}
+            >
                         {/* Title */}
                         <div className={styles.formGroup}>
                             <label className={styles.formLabel}>Title *</label>
@@ -8214,7 +7961,7 @@ const CalendarPanel = () => {
                         {/* Notes */}
                         <div className={styles.formGroup}>
                             <label className={styles.formLabel}>Notes</label>
-                            <textarea className={styles.formTextarea} value={fNotes} onChange={e => setFNotes(e.target.value)}
+                            <textarea className={styles.formInput} value={fNotes} onChange={e => setFNotes(e.target.value)}
                                 placeholder="Optional notes for this event" rows={2} />
                         </div>
 
@@ -8225,23 +7972,23 @@ const CalendarPanel = () => {
                         </label>
 
                         {fErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{fErr}</div>}
-
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={closeModal} disabled={fSaving}>Cancel</button>
-                            <button className={styles.btnPrimary} disabled={fSaving}
-                                onClick={modal?.includes("hearing") ? saveHearing : saveDeadline}>
-                                {fSaving ? "Saving…" : (modal?.startsWith("edit") ? "Save Changes" : "Add")}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             {/* ── Bulk WhatsApp: Court Holiday notice ── */}
-            {showHolidayModal && (
-                <div className={styles.overlay} onClick={() => setShowHolidayModal(false)}>
-                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
-                        <div className={styles.modalTitle}>📢 Notify Clients — Court Holiday</div>
+            <Modal
+                open={showHolidayModal}
+                onClose={() => setShowHolidayModal(false)}
+                title="📢 Notify Clients — Court Holiday"
+                maxWidth={520}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowHolidayModal(false)}>{holidayResult ? "Close" : "Cancel"}</Button>
+                    {holidayPreview !== null && holidayPreview.length > 0 && !holidayResult && (
+                        <Button disabled={holidaySending} onClick={sendHolidayNotify}>
+                            {holidaySending ? "Sending…" : `Send to ${holidayPreview.length} client${holidayPreview.length === 1 ? "" : "s"}`}
+                        </Button>
+                    )}
+                </>}
+            >
                         <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.85rem" }}>
                             Every client with a hearing or deadline in this date range gets a WhatsApp notice that court is closed — one click instead of messaging each client by hand.
                         </p>
@@ -8262,9 +8009,9 @@ const CalendarPanel = () => {
                         </div>
 
                         {holidayPreview === null ? (
-                            <button className={styles.btnSecondary} onClick={loadHolidayPreview} disabled={holidayLoading || !holidayFrom}>
+                            <Button variant="ghost" onClick={loadHolidayPreview} disabled={holidayLoading || !holidayFrom}>
                                 {holidayLoading ? "Loading…" : "Preview affected clients"}
-                            </button>
+                            </Button>
                         ) : holidayResult ? (
                             <div className={styles.limAlertBanner} style={{ background: "var(--bg-1)", borderColor: "#2d8a4e" }}>
                                 ✅ Sent to {holidayResult.notified} client{holidayResult.notified === 1 ? "" : "s"}.
@@ -8293,18 +8040,7 @@ const CalendarPanel = () => {
                         )}
 
                         {holidayErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.6rem" }}>{holidayErr}</div>}
-
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setShowHolidayModal(false)}>{holidayResult ? "Close" : "Cancel"}</button>
-                            {holidayPreview !== null && holidayPreview.length > 0 && !holidayResult && (
-                                <button className={styles.btnPrimary} disabled={holidaySending} onClick={sendHolidayNotify}>
-                                    {holidaySending ? "Sending…" : `Send to ${holidayPreview.length} client${holidayPreview.length === 1 ? "" : "s"}`}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
+            </Modal>
         </div>
     );
 };
@@ -8621,120 +8357,119 @@ const SubscriptionPanel = ({
             </div>
 
             {/* ── Upgrade modal ── */}
-            {upgradeTarget && (
-                <div className={styles.overlay} onClick={closeModal}>
-                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
-
-                        {submitDone ? (
-                            <>
-                                <div className={styles.upgradeSuccessBanner}>
-                                    <div className={styles.upgradeSuccessTitle}>✓ Upgrade Request Submitted</div>
-                                    Your request to upgrade to <strong>{TIER_LABELS[upgradeTarget]}</strong> has been received.
-                                    We will verify your payment and activate your plan within 1–2 business hours (Mon–Sat, 9 AM–6 PM PKT).
-                                    {config?.support_whatsapp && (
-                                        <> Questions? WhatsApp us at <strong>{config.support_whatsapp}</strong>.</>
-                                    )}
-                                </div>
-                                <div className={styles.modalActions} style={{ marginTop: "1.25rem", justifyContent: "flex-end" }}>
-                                    <button className={styles.btnPrimary} onClick={closeModal}>Done</button>
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <div className={styles.upgradeModalTitle}>
-                                    Upgrade to {TIER_LABELS[upgradeTarget]} Plan
-                                </div>
-                                <div className={styles.upgradeModalSub}>
-                                    Transfer the subscription amount to our bank account, then enter your transaction
-                                    reference below. We'll verify and activate your plan within 1–2 business hours.
-                                </div>
-
-                                {/* Bank details */}
-                                {config?.bank && (
-                                    <div className={styles.bankCard}>
-                                        <div className={styles.bankCardTitle}>Bank Transfer Details</div>
-                                        {[
-                                            ["Bank",    config.bank.name],
-                                            ["Account", config.bank.account],
-                                            ["IBAN",    config.bank.iban],
-                                            ["Title",   config.bank.title],
-                                        ].map(([label, val]) => val && val !== "" && (
-                                            <div key={label} className={styles.bankRow}>
-                                                <span className={styles.bankLabel}>{label}</span>
-                                                <span className={styles.bankValue}>{val}</span>
-                                            </div>
-                                        ))}
-                                        {config?.plans[upgradeTarget] && (
-                                            <div className={styles.bankRow} style={{ marginTop: "0.4rem", borderTop: "1px solid var(--border)", paddingTop: "0.4rem" }}>
-                                                <span className={styles.bankLabel}>Amount</span>
-                                                <span className={styles.bankValue} style={{ color: "var(--gold)" }}>
-                                                    {fmtPKR(config.plans[upgradeTarget].price_monthly)}/month
-                                                    {config.plans[upgradeTarget].price_annual > 0 && (
-                                                        <span style={{ fontWeight: 400, color: "var(--text-3)", fontSize: "0.75rem" }}>
-                                                            {" "}· or PKR {config.plans[upgradeTarget].price_annual.toLocaleString("en-PK")}/yr
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Task #174 — Local payment methods */}
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", margin: "0.75rem 0" }}>
-                                    <div style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 0.75rem" }}>
-                                        <div style={{ fontWeight: 700, fontSize: "0.8rem", color: "#1a9c3e", marginBottom: "2px" }}>📱 JazzCash</div>
-                                        <div style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>Account: <strong>PLACEHOLDER_JAZZCASH_NO</strong></div>
-                                        <div style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>Send to mobile wallet</div>
-                                    </div>
-                                    <div style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 0.75rem" }}>
-                                        <div style={{ fontWeight: 700, fontSize: "0.8rem", color: "#6d28d9", marginBottom: "2px" }}>📱 Easypaisa</div>
-                                        <div style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>Account: <strong>PLACEHOLDER_EASYPAISA_NO</strong></div>
-                                        <div style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>Send to mobile wallet</div>
-                                    </div>
-                                </div>
-
-                                {/* Payment reference */}
-                                <div className={styles.upgradeFormSection}>
-                                    <label className={styles.upgradeFormLabel}>
-                                        Transaction / Payment Reference <span style={{ color: "var(--danger, #c94040)" }}>*</span>
-                                    </label>
-                                    <input
-                                        className={styles.upgradeFormInput}
-                                        placeholder="e.g. TRX-20240723-1234 or JazzCash/Easypaisa transaction ID"
-                                        value={payRef}
-                                        onChange={e => setPayRef(e.target.value)}
-                                    />
-                                </div>
-
-                                {/* Notes */}
-                                <div className={styles.upgradeFormSection}>
-                                    <label className={styles.upgradeFormLabel}>Notes (optional)</label>
-                                    <textarea
-                                        className={`${styles.upgradeFormInput} ${styles.upgradeFormTextarea}`}
-                                        placeholder="Any additional info for our team"
-                                        value={notes}
-                                        onChange={e => setNotes(e.target.value)}
-                                    />
-                                </div>
-
-                                {submitErr && (
-                                    <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>
-                                        {submitErr}
-                                    </div>
-                                )}
-
-                                <div className={styles.modalActions}>
-                                    <button className={styles.btnGhost} onClick={closeModal} disabled={submitting}>Cancel</button>
-                                    <button className={styles.btnPrimary} onClick={submitUpgrade} disabled={submitting}>
-                                        {submitting ? "Submitting…" : "Submit Upgrade Request"}
-                                    </button>
-                                </div>
-                            </>
+            <Modal
+                open={!!upgradeTarget}
+                onClose={closeModal}
+                maxWidth={520}
+                footer={upgradeTarget && (
+                    submitDone ? (
+                        <Button onClick={closeModal}>Done</Button>
+                    ) : (
+                        <>
+                            <Button variant="ghost" onClick={closeModal} disabled={submitting}>Cancel</Button>
+                            <Button onClick={submitUpgrade} disabled={submitting}>
+                                {submitting ? "Submitting…" : "Submit Upgrade Request"}
+                            </Button>
+                        </>
+                    )
+                )}
+            >
+                {upgradeTarget && (submitDone ? (
+                    <div className={styles.upgradeSuccessBanner}>
+                        <div className={styles.upgradeSuccessTitle}>✓ Upgrade Request Submitted</div>
+                        Your request to upgrade to <strong>{TIER_LABELS[upgradeTarget]}</strong> has been received.
+                        We will verify your payment and activate your plan within 1–2 business hours (Mon–Sat, 9 AM–6 PM PKT).
+                        {config?.support_whatsapp && (
+                            <> Questions? WhatsApp us at <strong>{config.support_whatsapp}</strong>.</>
                         )}
                     </div>
-                </div>
-            )}
+                ) : (
+                    <>
+                        <div className={styles.upgradeModalTitle}>
+                            Upgrade to {TIER_LABELS[upgradeTarget]} Plan
+                        </div>
+                        <div className={styles.upgradeModalSub}>
+                            Transfer the subscription amount to our bank account, then enter your transaction
+                            reference below. We'll verify and activate your plan within 1–2 business hours.
+                        </div>
+
+                        {/* Bank details */}
+                        {config?.bank && (
+                            <div className={styles.bankCard}>
+                                <div className={styles.bankCardTitle}>Bank Transfer Details</div>
+                                {[
+                                    ["Bank",    config.bank.name],
+                                    ["Account", config.bank.account],
+                                    ["IBAN",    config.bank.iban],
+                                    ["Title",   config.bank.title],
+                                ].map(([label, val]) => val && val !== "" && (
+                                    <div key={label} className={styles.bankRow}>
+                                        <span className={styles.bankLabel}>{label}</span>
+                                        <span className={styles.bankValue}>{val}</span>
+                                    </div>
+                                ))}
+                                {config?.plans[upgradeTarget] && (
+                                    <div className={styles.bankRow} style={{ marginTop: "0.4rem", borderTop: "1px solid var(--border)", paddingTop: "0.4rem" }}>
+                                        <span className={styles.bankLabel}>Amount</span>
+                                        <span className={styles.bankValue} style={{ color: "var(--gold)" }}>
+                                            {fmtPKR(config.plans[upgradeTarget].price_monthly)}/month
+                                            {config.plans[upgradeTarget].price_annual > 0 && (
+                                                <span style={{ fontWeight: 400, color: "var(--text-3)", fontSize: "0.75rem" }}>
+                                                    {" "}· or PKR {config.plans[upgradeTarget].price_annual.toLocaleString("en-PK")}/yr
+                                                </span>
+                                            )}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Task #174 — Local payment methods */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", margin: "0.75rem 0" }}>
+                            <div style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 0.75rem" }}>
+                                <div style={{ fontWeight: 700, fontSize: "0.8rem", color: "#1a9c3e", marginBottom: "2px" }}>📱 JazzCash</div>
+                                <div style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>Account: <strong>PLACEHOLDER_JAZZCASH_NO</strong></div>
+                                <div style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>Send to mobile wallet</div>
+                            </div>
+                            <div style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 0.75rem" }}>
+                                <div style={{ fontWeight: 700, fontSize: "0.8rem", color: "#6d28d9", marginBottom: "2px" }}>📱 Easypaisa</div>
+                                <div style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>Account: <strong>PLACEHOLDER_EASYPAISA_NO</strong></div>
+                                <div style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>Send to mobile wallet</div>
+                            </div>
+                        </div>
+
+                        {/* Payment reference */}
+                        <div className={styles.upgradeFormSection}>
+                            <label className={styles.upgradeFormLabel}>
+                                Transaction / Payment Reference <span style={{ color: "var(--danger, #c94040)" }}>*</span>
+                            </label>
+                            <input
+                                className={styles.upgradeFormInput}
+                                placeholder="e.g. TRX-20240723-1234 or JazzCash/Easypaisa transaction ID"
+                                value={payRef}
+                                onChange={e => setPayRef(e.target.value)}
+                            />
+                        </div>
+
+                        {/* Notes */}
+                        <div className={styles.upgradeFormSection}>
+                            <label className={styles.upgradeFormLabel}>Notes (optional)</label>
+                            <textarea
+                                className={`${styles.upgradeFormInput} ${styles.upgradeFormTextarea}`}
+                                placeholder="Any additional info for our team"
+                                value={notes}
+                                onChange={e => setNotes(e.target.value)}
+                            />
+                        </div>
+
+                        {submitErr && (
+                            <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>
+                                {submitErr}
+                            </div>
+                        )}
+                    </>
+                ))}
+            </Modal>
         </div>
     );
 };
@@ -9026,9 +8761,9 @@ const SettingsPanel = ({
                             {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
                         </select>
                     </div>
-                    <button className={styles.btnPrimary} onClick={saveOrg} disabled={orgSaving}>
+                    <Button onClick={saveOrg} disabled={orgSaving}>
                         {orgSaving ? "Saving…" : "Save Changes"}
-                    </button>
+                    </Button>
                 </div>
 
                 {/* ── Profile Completion ── */}
@@ -9100,9 +8835,9 @@ const SettingsPanel = ({
                         </div>
                     </div>
 
-                    <button className={styles.btnPrimary} onClick={saveProfile} disabled={profSaving}>
+                    <Button onClick={saveProfile} disabled={profSaving}>
                         {profSaving ? "Saving…" : "Save Firm Profile"}
-                    </button>
+                    </Button>
                 </div>
 
                 <div className={styles.settingsCard}>
@@ -9136,9 +8871,9 @@ const SettingsPanel = ({
                         <input className={styles.formInput} type="password" value={confirmPw}
                             onChange={e => setConfirmPw(e.target.value)} placeholder="Repeat new password" />
                     </div>
-                    <button className={styles.btnGhost} onClick={changePassword} disabled={pwSaving}>
+                    <Button variant="ghost" onClick={changePassword} disabled={pwSaving}>
                         {pwSaving ? "Changing…" : "Change Password"}
-                    </button>
+                    </Button>
                 </div>
 
                 <div className={styles.settingsCard}>
@@ -9156,9 +8891,9 @@ const SettingsPanel = ({
                 <div className={styles.settingsCard} style={{ gridColumn: "1 / -1" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
                         <div className={styles.settingsCardTitle} style={{ marginBottom: 0 }}>Practice Teams</div>
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} onClick={() => { setNewTeamName(""); setTeamErr(null); setShowTeamModal(true); }}>
+                        <Button style={{ fontSize: "0.8rem" }} onClick={() => { setNewTeamName(""); setTeamErr(null); setShowTeamModal(true); }}>
                             + Create Team
-                        </button>
+                        </Button>
                     </div>
 
                     {matterTeams.length === 0 ? (
@@ -9205,11 +8940,11 @@ const SettingsPanel = ({
                                                             <option value="">Add member…</option>
                                                             {nonMembers.map(m => <option key={m.user_id} value={m.user_id}>{m.name} ({m.email})</option>)}
                                                         </select>
-                                                        <button className={styles.btnGhost} style={{ fontSize: "0.78rem", padding: "0.3rem 0.75rem" }}
+                                                        <Button variant="ghost" style={{ fontSize: "0.78rem", padding: "0.3rem 0.75rem" }}
                                                             disabled={!addMemberSelects[team.team_id]}
                                                             onClick={() => addMember(team.team_id)}>
                                                             Add
-                                                        </button>
+                                                        </Button>
                                                     </div>
                                                 )}
                                             </div>
@@ -9234,18 +8969,18 @@ const SettingsPanel = ({
                                 <input className={styles.formInput} style={{ flex: 1, fontSize: "0.85rem", padding: "0.3rem 0.6rem", opacity: s.is_active ? 1 : 0.5 }}
                                     defaultValue={s.label}
                                     onBlur={e => { if (e.target.value.trim() && e.target.value !== s.label) renameBailStage(s.stage_key, e.target.value.trim()); }} />
-                                <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }} onClick={() => toggleBailStageActive(s)}>
+                                <Button variant="ghost" style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }} onClick={() => toggleBailStageActive(s)}>
                                     {s.is_active ? "Deactivate" : "Reactivate"}
-                                </button>
+                                </Button>
                             </div>
                         ))}
                     </div>
                     <div style={{ display: "flex", gap: "0.5rem" }}>
                         <input className={styles.formInput} style={{ flex: 1 }} value={newStageLabel} onChange={e => setNewStageLabel(e.target.value)}
                             onKeyDown={e => e.key === "Enter" && addBailStage()} placeholder="Add a custom stage…" />
-                        <button className={styles.btnPrimary} style={{ fontSize: "0.8rem" }} disabled={stageSaving || !newStageLabel.trim()} onClick={addBailStage}>
+                        <Button style={{ fontSize: "0.8rem" }} disabled={stageSaving || !newStageLabel.trim()} onClick={addBailStage}>
                             + Add
-                        </button>
+                        </Button>
                     </div>
                 </div>
 
@@ -9254,69 +8989,65 @@ const SettingsPanel = ({
                     <p className={styles.dangerText}>
                         Deleting your organization will permanently remove all documents and team access. This cannot be undone.
                     </p>
-                    <button className={styles.btnDanger} onClick={() => setShowDeleteModal(true)}>
+                    <Button variant="danger" onClick={() => setShowDeleteModal(true)}>
                         Delete Organization
-                    </button>
+                    </Button>
                 </div>
             </div>
 
             {/* Create team modal */}
-            {showTeamModal && (
-                <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setShowTeamModal(false); }}>
-                    <div className={styles.modal} style={{ maxWidth: 400 }}>
-                        <h3 className={styles.modalTitle}>Create Practice Team</h3>
-                        {teamErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {teamErr}</div>}
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Team Name</label>
-                            <input className={styles.formInput} value={newTeamName} autoFocus
-                                onChange={e => setNewTeamName(e.target.value)}
-                                onKeyDown={e => e.key === "Enter" && createTeam()}
-                                placeholder="e.g. Litigation Team, Corporate Group" />
-                        </div>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setShowTeamModal(false)}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={createTeam} disabled={teamSaving}>
-                                {teamSaving ? "Creating…" : "Create Team"}
-                            </button>
-                        </div>
-                    </div>
+            <Modal
+                open={showTeamModal}
+                onClose={() => setShowTeamModal(false)}
+                title="Create Practice Team"
+                maxWidth={400}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowTeamModal(false)}>Cancel</Button>
+                    <Button onClick={createTeam} disabled={teamSaving}>
+                        {teamSaving ? "Creating…" : "Create Team"}
+                    </Button>
+                </>}
+            >
+                {teamErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {teamErr}</div>}
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Team Name</label>
+                    <input className={styles.formInput} value={newTeamName} autoFocus
+                        onChange={e => setNewTeamName(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && createTeam()}
+                        placeholder="e.g. Litigation Team, Corporate Group" />
                 </div>
-            )}
+            </Modal>
 
             {/* Delete org info modal */}
-            {showDeleteModal && (
-                <div
-                    className={styles.overlay}
-                    onClick={e => { if (e.target === e.currentTarget) setShowDeleteModal(false); }}
-                >
-                    <div className={styles.modal}>
-                        <h3 className={styles.modalTitle}>Organization Deletion</h3>
-                        <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.875rem", lineHeight: 1.6 }}>
-                            For security and compliance, organization deletion must be requested through our support team. We'll verify your identity and ensure all data is properly handled before removing your account.
-                        </p>
-                        <p style={{ fontSize: "0.875rem", marginBottom: "1.5rem", color: "var(--text-2)" }}>
-                            Contact us at{" "}
-                            <a
-                                href="mailto:support@projectease.ai"
-                                style={{ color: "var(--gold)", textDecoration: "none" }}
-                            >
-                                support@projectease.ai
-                            </a>{" "}
-                            with the subject line <strong style={{ color: "var(--text-1)" }}>Delete Organization Request</strong> from your registered email address.
-                        </p>
-                        <div className={styles.modalActions}>
-                            <button className={styles.btnGhost} onClick={() => setShowDeleteModal(false)}>Close</button>
-                            <a
-                                href="mailto:support@projectease.ai?subject=Delete%20Organization%20Request"
-                                className={styles.btnDanger}
-                                style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
-                            >
-                                Email Support
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <Modal
+                open={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
+                title="Organization Deletion"
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>Close</Button>
+                    <a
+                        href="mailto:support@projectease.ai?subject=Delete%20Organization%20Request"
+                        className={styles.btnDanger}
+                        style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+                    >
+                        Email Support
+                    </a>
+                </>}
+            >
+                <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.875rem", lineHeight: 1.6 }}>
+                    For security and compliance, organization deletion must be requested through our support team. We'll verify your identity and ensure all data is properly handled before removing your account.
+                </p>
+                <p style={{ fontSize: "0.875rem", color: "var(--text-2)" }}>
+                    Contact us at{" "}
+                    <a
+                        href="mailto:support@projectease.ai"
+                        style={{ color: "var(--gold)", textDecoration: "none" }}
+                    >
+                        support@projectease.ai
+                    </a>{" "}
+                    with the subject line <strong style={{ color: "var(--text-1)" }}>Delete Organization Request</strong> from your registered email address.
+                </p>
+            </Modal>
         </div>
     );
 };
@@ -9605,14 +9336,14 @@ const DraftingPanel = () => {
                         >{t.label}</button>
                     ))}
                 </div>
-                <button className={styles.addBtn} onClick={openNew}>+ New Template</button>
+                <Button size="sm" onClick={openNew}>+ New Template</Button>
             </div>
 
             {/* Template grid */}
             {filtered.length === 0 ? (
-                <div className={styles.emptyState}>
+                <div className={styles.emptyHint}>
                     <p>No templates yet. Create your first template to get started.</p>
-                    <button className={styles.addBtn} onClick={openNew}>Create Template</button>
+                    <Button onClick={openNew}>Create Template</Button>
                 </div>
             ) : (
                 <div className={styles.templateGrid}>
@@ -9649,29 +9380,33 @@ const DraftingPanel = () => {
             )}
 
             {/* ── Editor Modal ─────────────────────────────────────────── */}
-            {editorOpen && (
-                <div className={styles.modalOverlay} onClick={() => setEditorOpen(false)}>
-                    <div className={styles.draftModal} onClick={e => e.stopPropagation()}>
-                        <div className={styles.modalHead}>
-                            <h2>{editing ? "Edit Template" : "New Template"}</h2>
-                            <button className={styles.modalClose} onClick={() => setEditorOpen(false)}>✕</button>
-                        </div>
-
-                        <div className={styles.modalBody}>
-                            <div className={styles.fieldRow}>
-                                <div className={styles.fieldGroup} style={{ flex: 2 }}>
-                                    <label className={styles.fieldLabel}>Title</label>
+            <Modal
+                open={editorOpen}
+                onClose={() => setEditorOpen(false)}
+                title={editing ? "Edit Template" : "New Template"}
+                maxWidth={820}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setEditorOpen(false)}>Cancel</Button>
+                    <Button onClick={handleSave} disabled={saving}>
+                        {saving ? "Saving…" : editing ? "Save Changes" : "Create Template"}
+                    </Button>
+                </>}
+            >
+                        {editorOpen && <>
+                            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Title</label>
                                     <input
-                                        className={styles.fieldInput}
+                                        className={styles.formInput}
                                         value={eTitle}
                                         onChange={e => setETitle(e.target.value)}
                                         placeholder="e.g. Standard Vakalatnama"
                                     />
                                 </div>
-                                <div className={styles.fieldGroup} style={{ flex: 1 }}>
-                                    <label className={styles.fieldLabel}>Type</label>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.formLabel}>Type</label>
                                     <select
-                                        className={styles.fieldSelect}
+                                        className={styles.formSelect}
                                         value={eType}
                                         onChange={e => handleTypeChange(e.target.value)}
                                     >
@@ -9682,18 +9417,18 @@ const DraftingPanel = () => {
                                 </div>
                             </div>
 
-                            <div className={styles.fieldGroup}>
-                                <label className={styles.fieldLabel}>Description (optional)</label>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>Description (optional)</label>
                                 <input
-                                    className={styles.fieldInput}
+                                    className={styles.formInput}
                                     value={eDesc}
                                     onChange={e => setEDesc(e.target.value)}
                                     placeholder="Brief description of when to use this template"
                                 />
                             </div>
 
-                            <div className={styles.fieldGroup}>
-                                <label className={styles.fieldLabel}>
+                            <div className={styles.formGroup}>
+                                <label className={styles.formLabel}>
                                     Template Content
                                     <span className={styles.varHint}>Use &#123;&#123;variable_name&#125;&#125; for auto-fill placeholders</span>
                                 </label>
@@ -9714,83 +9449,70 @@ const DraftingPanel = () => {
                                 }
                             </div>
 
-                            {saveErr && <div className={styles.formError}>{saveErr}</div>}
-                        </div>
-
-                        <div className={styles.modalFoot}>
-                            <button className={styles.cancelBtn} onClick={() => setEditorOpen(false)}>Cancel</button>
-                            <button className={styles.saveBtn} onClick={handleSave} disabled={saving}>
-                                {saving ? "Saving…" : editing ? "Save Changes" : "Create Template"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                            {saveErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{saveErr}</div>}
+                        </>}
+            </Modal>
 
             {/* ── Draft Modal ──────────────────────────────────────────── */}
-            {draftOpen && draftTmpl && (
-                <div className={styles.modalOverlay} onClick={() => setDraftOpen(false)}>
-                    <div className={styles.draftModal} style={{ maxWidth: "520px" }} onClick={e => e.stopPropagation()}>
-                        <div className={styles.modalHead}>
-                            <h2>Draft: {draftTmpl.title}</h2>
-                            <button className={styles.modalClose} onClick={() => setDraftOpen(false)}>✕</button>
-                        </div>
+            <Modal
+                open={draftOpen && !!draftTmpl}
+                onClose={() => setDraftOpen(false)}
+                title={draftTmpl ? `Draft: ${draftTmpl.title}` : undefined}
+                maxWidth={520}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setDraftOpen(false)}>Cancel</Button>
+                    <button className={styles.draftBtnLg} onClick={handleDraft} disabled={drafting}>
+                        {drafting ? "Generating…" : "↓ Download .docx"}
+                    </button>
+                </>}
+            >
+                {draftTmpl && <>
+                    <p style={{ color: "var(--text-2)", marginBottom: "1rem", fontSize: "0.875rem" }}>
+                        Select a matter to auto-fill client and case details. AI will fill any remaining placeholders.
+                    </p>
 
-                        <div className={styles.modalBody}>
-                            <p style={{ color: "var(--text-2)", marginBottom: "1rem", fontSize: "0.875rem" }}>
-                                Select a matter to auto-fill client and case details. AI will fill any remaining placeholders.
-                            </p>
-
-                            <div className={styles.fieldGroup}>
-                                <label className={styles.fieldLabel}>Link to Matter (optional)</label>
-                                <select
-                                    className={styles.fieldSelect}
-                                    value={draftMatter}
-                                    onChange={e => setDraftMatter(e.target.value)}
-                                >
-                                    <option value="">— No matter (fill manually after download) —</option>
-                                    {matters.filter(m => m.status !== "Closed").map(m => (
-                                        <option key={m.matter_id} value={m.matter_id}>
-                                            {m.title} — {m.client_name} ({m.matter_type})
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className={styles.varPreview} style={{ marginTop: "1rem" }}>
-                                <span className={styles.varPreviewLabel}>Variables in this template:</span>
-                                {extractVars(draftTmpl.content).map(v => (
-                                    <span key={v} className={styles.varChip}>{v}</span>
-                                ))}
-                            </div>
-
-                            {draftErr && <div className={styles.formError}>{draftErr}</div>}
-                        </div>
-
-                        <div className={styles.modalFoot}>
-                            <button className={styles.cancelBtn} onClick={() => setDraftOpen(false)}>Cancel</button>
-                            <button className={styles.draftBtnLg} onClick={handleDraft} disabled={drafting}>
-                                {drafting ? "Generating…" : "↓ Download .docx"}
-                            </button>
-                        </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Link to Matter (optional)</label>
+                        <select
+                            className={styles.formSelect}
+                            value={draftMatter}
+                            onChange={e => setDraftMatter(e.target.value)}
+                        >
+                            <option value="">— No matter (fill manually after download) —</option>
+                            {matters.filter(m => m.status !== "Closed").map(m => (
+                                <option key={m.matter_id} value={m.matter_id}>
+                                    {m.title} — {m.client_name} ({m.matter_type})
+                                </option>
+                            ))}
+                        </select>
                     </div>
-                </div>
-            )}
+
+                    <div className={styles.varPreview} style={{ marginTop: "1rem" }}>
+                        <span className={styles.varPreviewLabel}>Variables in this template:</span>
+                        {extractVars(draftTmpl.content).map(v => (
+                            <span key={v} className={styles.varChip}>{v}</span>
+                        ))}
+                    </div>
+
+                    {draftErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{draftErr}</div>}
+                </>}
+            </Modal>
 
             {/* ── Delete Confirm ───────────────────────────────────────── */}
-            {deleteId && (
-                <div className={styles.modalOverlay} onClick={() => setDeleteId(null)}>
-                    <div className={styles.confirmModal} onClick={e => e.stopPropagation()}>
-                        <p>Delete this template? This cannot be undone.</p>
-                        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-                            <button className={styles.cancelBtn} onClick={() => setDeleteId(null)}>Cancel</button>
-                            <button className={styles.deleteConfirmBtn} onClick={handleDelete} disabled={deleting}>
-                                {deleting ? "Deleting…" : "Delete"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <Modal
+                open={!!deleteId}
+                onClose={() => setDeleteId(null)}
+                title="Delete Template?"
+                maxWidth={420}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setDeleteId(null)}>Cancel</Button>
+                    <button className={styles.deleteConfirmBtn} onClick={handleDelete} disabled={deleting}>
+                        {deleting ? "Deleting…" : "Delete"}
+                    </button>
+                </>}
+            >
+                <p>Delete this template? This cannot be undone.</p>
+            </Modal>
         </div>
     );
 };
@@ -9805,7 +9527,7 @@ const ThemeToggle = () => {
 
 // ── Disabled Feature Placeholder — Task #162 ─────────────────────────────────
 const DisabledFeature = ({ name }: { name: string }) => (
-    <div className={styles.panel} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 320, gap: 14, textAlign: "center" }}>
+    <div className={styles.panelContent} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 320, gap: 14, textAlign: "center" }}>
         <div style={{ fontSize: 40 }}>🔒</div>
         <div style={{ fontWeight: 700, fontSize: 16, color: "var(--text-1)" }}>{name} is disabled</div>
         <div style={{ color: "var(--text-3)", fontSize: 13, maxWidth: 360 }}>
@@ -9930,24 +9652,24 @@ const DiaryPanel = () => {
     };
 
     return (
-        <div className={styles.panel} id="diary-print-area">
+        <div className={styles.panelContent} id="diary-print-area">
             {/* Header row */}
-            <div className={styles.panelHeader} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <h2 className={styles.panelTitle}>📅 Daily Diary</h2>
+            <div id="diary-header-row" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <h2 className={styles.sectionTitle} style={{ margin: 0 }}>📅 Daily Diary</h2>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
-                    <button className={styles.btnSecondary} onClick={prev}>◀</button>
+                    <Button variant="ghost" onClick={prev}>◀</Button>
                     <input
                         type="date"
                         value={date}
                         onChange={e => setDate(e.target.value)}
-                        className={styles.filterInput}
+                        className={styles.formInput}
                         style={{ width: 160 }}
                     />
-                    <button className={styles.btnSecondary} onClick={next}>▶</button>
-                    <button className={styles.btnSecondary} onClick={() => setDate(today)}>Today</button>
-                    <button className={styles.btnSecondary} onClick={handlePrint} title="Print diary">🖨 Print</button>
-                    <button className={styles.btnSecondary} onClick={handleWhatsApp} title="Share via WhatsApp" style={{ background: "#25d366", color: "#fff", borderColor: "#25d366" }}>📲 WhatsApp</button>
-                    <button className={styles.btnSecondary} onClick={() => { setBriefStatus(null); setShowBriefModal(true); }} title="Send WhatsApp morning brief" style={{ background: "#075e54", color: "#fff", borderColor: "#075e54" }}>📨 Send Brief</button>
+                    <Button variant="ghost" onClick={next}>▶</Button>
+                    <Button variant="ghost" onClick={() => setDate(today)}>Today</Button>
+                    <Button variant="ghost" onClick={handlePrint} title="Print diary">🖨 Print</Button>
+                    <Button variant="ghost" onClick={handleWhatsApp} title="Share via WhatsApp" style={{ background: "#25d366", color: "#fff", borderColor: "#25d366" }}>📲 WhatsApp</Button>
+                    <Button variant="ghost" onClick={() => { setBriefStatus(null); setShowBriefModal(true); }} title="Send WhatsApp morning brief" style={{ background: "#075e54", color: "#fff", borderColor: "#075e54" }}>📨 Send Brief</Button>
                 </div>
             </div>
 
@@ -9965,7 +9687,7 @@ const DiaryPanel = () => {
             )}
             {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.85rem", marginBottom: "0.75rem" }}>{err}</div>}
 
-            {loading && <p className={styles.emptyState}>Loading…</p>}
+            {loading && <p className={styles.emptyHint}>Loading…</p>}
             {err    && <p style={{ color: "#e53e3e", padding: 12 }}>{err}</p>}
 
             {!loading && !err && (
@@ -9977,7 +9699,7 @@ const DiaryPanel = () => {
                             ⚖️ Court Hearings ({hearings.length})
                         </h3>
                         {hearings.length === 0 && (
-                            <div className={styles.emptyState} style={{ fontSize: 13, padding: "20px 0" }}>No hearings scheduled</div>
+                            <div className={styles.emptyHint} style={{ fontSize: 13, padding: "20px 0" }}>No hearings scheduled</div>
                         )}
                         {hearings.map(h => (
                             <div key={h.hearing_id} style={{
@@ -10012,7 +9734,7 @@ const DiaryPanel = () => {
                             ⏰ Deadlines ({deadlines.length})
                         </h3>
                         {deadlines.length === 0 && (
-                            <div className={styles.emptyState} style={{ fontSize: 13, padding: "20px 0" }}>No deadlines due</div>
+                            <div className={styles.emptyHint} style={{ fontSize: 13, padding: "20px 0" }}>No deadlines due</div>
                         )}
                         {deadlines.map(d => (
                             <div key={d.deadline_id} style={{
@@ -10038,66 +9760,61 @@ const DiaryPanel = () => {
             )}
 
             {/* Task #172: Morning Brief Modal */}
-            {showBriefModal && (
-                <div className={styles.modalOverlay} onClick={() => setShowBriefModal(false)}>
-                    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
-                        <div className={styles.modalHeader}>
-                            <h3 className={styles.modalTitle}>📨 WhatsApp Morning Brief</h3>
-                            <button className={styles.modalClose} onClick={() => setShowBriefModal(false)}>✕</button>
-                        </div>
-                        <div style={{ padding: "1rem 1.25rem" }}>
-                            <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: "1rem" }}>
-                                Send today's diary ({fmtDate(date)}) as a WhatsApp message to a number.
-                            </p>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>WhatsApp Number *</label>
-                                <input
-                                    className={styles.formInput}
-                                    value={briefNumber}
-                                    onChange={e => setBriefNumber(e.target.value)}
-                                    placeholder="+923001234567"
-                                    type="tel"
-                                />
-                                <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>Include country code, e.g. +92 for Pakistan</div>
-                            </div>
-                            <div className={styles.formGroup} style={{ marginTop: "0.75rem" }}>
-                                <label className={styles.formLabel}>Date</label>
-                                <input
-                                    className={styles.formInput}
-                                    type="date"
-                                    value={date}
-                                    disabled
-                                    style={{ opacity: 0.7 }}
-                                />
-                            </div>
-                            <div style={{ background: "var(--bg-1)", borderRadius: 6, padding: "0.6rem 0.8rem", marginTop: "0.75rem", fontSize: 12, color: "var(--text-2)", borderLeft: "3px solid #25d366" }}>
-                                📋 Brief includes {hearings.length} hearing{hearings.length !== 1 ? "s" : ""} and {deadlines.length} deadline{deadlines.length !== 1 ? "s" : ""}.
-                            </div>
-                            {briefStatus && (
-                                <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.8rem", borderRadius: 6, fontSize: 13,
-                                    background: briefStatus.ok ? "rgba(37,211,102,0.1)" : "rgba(229,62,62,0.08)",
-                                    color: briefStatus.ok ? "#1a9c3e" : "#e53e3e",
-                                    border: `1px solid ${briefStatus.ok ? "#25d366" : "#e53e3e"}` }}>
-                                    {briefStatus.msg}
-                                </div>
-                            )}
-                            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}>
-                                <button className={styles.btnPrimary} onClick={sendBrief} disabled={briefSending}>
-                                    {briefSending ? "Sending…" : "📨 Send via WhatsApp"}
-                                </button>
-                                <button className={styles.btnSecondary} onClick={() => setShowBriefModal(false)}>Cancel</button>
-                            </div>
-                        </div>
-                    </div>
+            <Modal
+                open={showBriefModal}
+                onClose={() => setShowBriefModal(false)}
+                title="📨 WhatsApp Morning Brief"
+                maxWidth={420}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowBriefModal(false)}>Cancel</Button>
+                    <Button onClick={sendBrief} disabled={briefSending}>
+                        {briefSending ? "Sending…" : "📨 Send via WhatsApp"}
+                    </Button>
+                </>}
+            >
+                <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: "1rem" }}>
+                    Send today's diary ({fmtDate(date)}) as a WhatsApp message to a number.
+                </p>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>WhatsApp Number *</label>
+                    <input
+                        className={styles.formInput}
+                        value={briefNumber}
+                        onChange={e => setBriefNumber(e.target.value)}
+                        placeholder="+923001234567"
+                        type="tel"
+                    />
+                    <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>Include country code, e.g. +92 for Pakistan</div>
                 </div>
-            )}
+                <div className={styles.formGroup} style={{ marginTop: "0.75rem" }}>
+                    <label className={styles.formLabel}>Date</label>
+                    <input
+                        className={styles.formInput}
+                        type="date"
+                        value={date}
+                        disabled
+                        style={{ opacity: 0.7 }}
+                    />
+                </div>
+                <div style={{ background: "var(--bg-1)", borderRadius: 6, padding: "0.6rem 0.8rem", marginTop: "0.75rem", fontSize: 12, color: "var(--text-2)", borderLeft: "3px solid #25d366" }}>
+                    📋 Brief includes {hearings.length} hearing{hearings.length !== 1 ? "s" : ""} and {deadlines.length} deadline{deadlines.length !== 1 ? "s" : ""}.
+                </div>
+                {briefStatus && (
+                    <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.8rem", borderRadius: 6, fontSize: 13,
+                        background: briefStatus.ok ? "rgba(37,211,102,0.1)" : "rgba(229,62,62,0.08)",
+                        color: briefStatus.ok ? "#1a9c3e" : "#e53e3e",
+                        border: `1px solid ${briefStatus.ok ? "#25d366" : "#e53e3e"}` }}>
+                        {briefStatus.msg}
+                    </div>
+                )}
+            </Modal>
 
             {/* Print-only styles */}
             <style>{`
                 @media print {
                     body > *:not(#diary-print-area) { display: none !important; }
                     #diary-print-area { display: block !important; color: #000 !important; background: #fff !important; }
-                    .${styles.panelHeader} button { display: none !important; }
+                    #diary-header-row button { display: none !important; }
                 }
             `}</style>
         </div>
@@ -10105,6 +9822,10 @@ const DiaryPanel = () => {
 };
 
 // ── Legal Notices Panel — Task #165 ─────────────────────────────────────────
+
+const LEGAL_NOTICE_TONE: Record<string, BadgeTone> = {
+    Sent: "blue", Acknowledged: "green", "No Response": "red", Replied: "gold",
+};
 
 const LegalNoticesPanel = () => {
     const authHeaders = () => ({ Authorization: `Bearer ${sessionStorage.getItem("pe_token") ?? ""}` });
@@ -10155,23 +9876,21 @@ const LegalNoticesPanel = () => {
     const noticeTypes = ["Legal Notice", "Demand Notice", "Eviction Notice", "Vakalatnama", "Reply Notice", "Termination Notice", "Cease & Desist", "Other"];
     const viaOptions = ["Courier", "Registered Post", "Email", "WhatsApp", "Hand Delivery", "Process Server"];
 
-    const statusColour = (s: string) => s === "Sent" ? "#2563eb" : s === "Acknowledged" ? "#16a34a" : s === "No Response" ? "#dc2626" : s === "Replied" ? "#7c3aed" : "var(--text-2)";
-
     return (
-        <div className={styles.panel}>
-            <div className={styles.panelHeader}>
-                <h2 className={styles.panelTitle}>📨 Legal Notices</h2>
+        <div className={styles.panelContent}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                <h2 className={styles.sectionTitle} style={{ margin: 0 }}>📨 Legal Notices</h2>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-                    <select className={styles.filterInput} value={filter} onChange={e => setFilter(e.target.value)} style={{ width: "auto" }}>
+                    <select className={styles.formSelect} value={filter} onChange={e => setFilter(e.target.value)} style={{ width: "auto" }}>
                         {statuses.map(s => <option key={s}>{s}</option>)}
                     </select>
-                    <button className={styles.btnPrimary} onClick={() => open()}>+ New Notice</button>
+                    <Button onClick={() => open()}>+ New Notice</Button>
                 </div>
             </div>
-            <p className={styles.panelSub}>Track legal notices sent and received — demand notices, eviction notices, reply notices, and more.</p>
+            <p className={styles.muted} style={{ margin: "0.35rem 0 1rem" }}>Track legal notices sent and received — demand notices, eviction notices, reply notices, and more.</p>
 
-            {loading ? <div className={styles.emptyState}>Loading…</div> : visible.length === 0 ? (
-                <div className={styles.emptyState}>No notice records found. Add your first legal notice to start tracking.</div>
+            {loading ? <EmptyState message="Loading…" /> : visible.length === 0 ? (
+                <EmptyState message="No notice records found. Add your first legal notice to start tracking." />
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                     {visible.map(n => (
@@ -10179,11 +9898,11 @@ const LegalNoticesPanel = () => {
                             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.5rem" }}>
                                 <div>
                                     <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>{n.subject || n.notice_type}</span>
-                                    <span style={{ marginLeft: "0.75rem", padding: "2px 8px", borderRadius: "9999px", fontSize: "0.72rem", fontWeight: 700, background: "var(--bg-2)", color: statusColour(n.status) }}>{n.status}</span>
+                                    <span style={{ marginLeft: "0.75rem" }}><Badge tone={LEGAL_NOTICE_TONE[n.status] ?? "gray"}>{n.status}</Badge></span>
                                 </div>
                                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                                    <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => open(n)}>Edit</button>
-                                    <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => del(n.notice_id)}>Del</button>
+                                    <Button variant="ghost" size="sm" onClick={() => open(n)}>Edit</Button>
+                                    <Button variant="danger" size="sm" onClick={() => del(n.notice_id)}>Del</Button>
                                 </div>
                             </div>
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "0.4rem 1rem", marginTop: "0.6rem", fontSize: "0.8rem", color: "var(--text-2)" }}>
@@ -10201,67 +9920,64 @@ const LegalNoticesPanel = () => {
                 </div>
             )}
 
-            {showModal && (
-                <div className={styles.modalOverlay}>
-                    <div className={styles.modal} style={{ maxWidth: 560 }}>
-                        <div className={styles.modalHeader}>
-                            <h3 className={styles.modalTitle}>{editNotice ? "Edit Notice" : "Add Legal Notice"}</h3>
-                            <button className={styles.modalClose} onClick={() => setShowModal(false)}>✕</button>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Notice Type</label>
-                                <select className={styles.formInput} value={form.notice_type} onChange={e => setForm(f => ({ ...f, notice_type: e.target.value }))}>
-                                    {noticeTypes.map(t => <option key={t}>{t}</option>)}
-                                </select>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Status</label>
-                                <select className={styles.formInput} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-                                    {["Draft","Sent","Acknowledged","No Response","Replied","Withdrawn"].map(s => <option key={s}>{s}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Subject</label>
-                            <input className={styles.formInput} value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="e.g. Legal Notice for Recovery of PKR 5,00,000" />
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Sent To (Recipient) *</label>
-                            <input className={styles.formInput} value={form.sent_to} onChange={e => setForm(f => ({ ...f, sent_to: e.target.value }))} placeholder="Name and address of recipient" />
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Sent Via</label>
-                                <select className={styles.formInput} value={form.sent_via} onChange={e => setForm(f => ({ ...f, sent_via: e.target.value }))}>
-                                    {viaOptions.map(v => <option key={v}>{v}</option>)}
-                                </select>
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Sent Date</label>
-                                <input type="date" className={styles.formInput} value={form.sent_date} onChange={e => setForm(f => ({ ...f, sent_date: e.target.value }))} />
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Tracking No.</label>
-                                <input className={styles.formInput} value={form.tracking_no} onChange={e => setForm(f => ({ ...f, tracking_no: e.target.value }))} placeholder="Courier/postal ref" />
-                            </div>
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Notice Content (summary)</label>
-                            <textarea className={styles.formInput} rows={3} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} placeholder="Brief summary of notice content…" />
-                        </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Notes</label>
-                            <textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional follow-up notes…" />
-                        </div>
-                        {err && <div className={styles.formError}>{err}</div>}
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                            <button className={styles.btnGhost} onClick={() => setShowModal(false)}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-                        </div>
+            <Modal
+                open={showModal}
+                onClose={() => setShowModal(false)}
+                title={editNotice ? "Edit Notice" : "Add Legal Notice"}
+                maxWidth={560}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+                    <Button onClick={save} loading={saving}>Save</Button>
+                </>}
+            >
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Notice Type</label>
+                        <select className={styles.formInput} value={form.notice_type} onChange={e => setForm(f => ({ ...f, notice_type: e.target.value }))}>
+                            {noticeTypes.map(t => <option key={t}>{t}</option>)}
+                        </select>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Status</label>
+                        <select className={styles.formInput} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+                            {["Draft","Sent","Acknowledged","No Response","Replied","Withdrawn"].map(s => <option key={s}>{s}</option>)}
+                        </select>
                     </div>
                 </div>
-            )}
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Subject</label>
+                    <input className={styles.formInput} value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="e.g. Legal Notice for Recovery of PKR 5,00,000" />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Sent To (Recipient) *</label>
+                    <input className={styles.formInput} value={form.sent_to} onChange={e => setForm(f => ({ ...f, sent_to: e.target.value }))} placeholder="Name and address of recipient" />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Sent Via</label>
+                        <select className={styles.formInput} value={form.sent_via} onChange={e => setForm(f => ({ ...f, sent_via: e.target.value }))}>
+                            {viaOptions.map(v => <option key={v}>{v}</option>)}
+                        </select>
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Sent Date</label>
+                        <input type="date" className={styles.formInput} value={form.sent_date} onChange={e => setForm(f => ({ ...f, sent_date: e.target.value }))} />
+                    </div>
+                    <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Tracking No.</label>
+                        <input className={styles.formInput} value={form.tracking_no} onChange={e => setForm(f => ({ ...f, tracking_no: e.target.value }))} placeholder="Courier/postal ref" />
+                    </div>
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Notice Content (summary)</label>
+                    <textarea className={styles.formInput} rows={3} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} placeholder="Brief summary of notice content…" />
+                </div>
+                <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Notes</label>
+                    <textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional follow-up notes…" />
+                </div>
+                {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
+            </Modal>
         </div>
     );
 };
@@ -10289,16 +10005,16 @@ const OutstandingDuesPanel = () => {
     const bucketColour = (b: string) => b === "Current" ? "#16a34a" : b === "0-30 days" ? "#f59e0b" : b === "31-60 days" ? "#f97316" : b === "60+ days" ? "#dc2626" : "var(--text-2)";
 
     return (
-        <div className={styles.panel}>
-            <div className={styles.panelHeader}>
-                <h2 className={styles.panelTitle}>💰 Outstanding Dues</h2>
+        <div className={styles.panelContent}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                <h2 className={styles.sectionTitle} style={{ margin: 0 }}>💰 Outstanding Dues</h2>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                    <select className={styles.filterInput} value={bucket} onChange={e => setBucket(e.target.value)} style={{ width: "auto" }}>
+                    <select className={styles.formSelect} value={bucket} onChange={e => setBucket(e.target.value)} style={{ width: "auto" }}>
                         {buckets.map(b => <option key={b}>{b}</option>)}
                     </select>
                 </div>
             </div>
-            <p className={styles.panelSub}>Aging report of all unpaid invoices across matters. Filter by overdue bucket.</p>
+            <p className={styles.muted} style={{ margin: "0.35rem 0 1rem" }}>Aging report of all unpaid invoices across matters. Filter by overdue bucket.</p>
 
             {!loading && (
                 <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", flexWrap: "wrap" }}>
@@ -10316,40 +10032,43 @@ const OutstandingDuesPanel = () => {
                 </div>
             )}
 
-            {loading ? <div className={styles.emptyState}>Loading…</div> : visible.length === 0 ? (
-                <div className={styles.emptyState}>No outstanding invoices{bucket !== "All" ? ` in bucket: ${bucket}` : ""}. All dues are clear!</div>
-            ) : (<>
+            {!loading && visible.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                     <span style={{ fontSize: "0.85rem", color: "var(--text-2)" }}>{visible.length} invoice{visible.length !== 1 ? "s" : ""}</span>
                     <strong style={{ color: "#dc2626" }}>Total Outstanding: PKR {totalBalance.toLocaleString()}</strong>
                 </div>
-                <table className={styles.feeTable}>
-                    <thead><tr>
-                        <th>Matter</th>
-                        <th>Client</th>
-                        <th>Invoice Date</th>
-                        <th>Total</th>
-                        <th>Paid</th>
-                        <th>Balance</th>
-                        <th>Aging</th>
-                        <th>Status</th>
-                    </tr></thead>
-                    <tbody>
-                        {visible.map(inv => (
-                            <tr key={inv.invoice_id}>
-                                <td style={{ fontSize: "0.82rem" }}>{inv.matter_title}</td>
-                                <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{inv.client_name}</td>
-                                <td style={{ fontSize: "0.82rem" }}>{inv.invoice_date}</td>
-                                <td style={{ fontSize: "0.82rem" }}>PKR {inv.total_pkr.toLocaleString()}</td>
-                                <td style={{ fontSize: "0.82rem", color: "#16a34a" }}>PKR {inv.paid_pkr.toLocaleString()}</td>
-                                <td style={{ fontSize: "0.85rem", fontWeight: 700, color: "#dc2626" }}>PKR {inv.balance.toLocaleString()}</td>
-                                <td><span style={{ fontSize: "0.72rem", fontWeight: 700, color: bucketColour(inv.aging_bucket) }}>{inv.aging_bucket}</span></td>
-                                <td><span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{inv.status}</span></td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </>)}
+            )}
+            <Table
+                loading={loading}
+                empty={!loading && visible.length === 0}
+                emptyMessage={`No outstanding invoices${bucket !== "All" ? ` in bucket: ${bucket}` : ""}. All dues are clear!`}
+                dense
+            >
+                <thead><tr>
+                    <th>Matter</th>
+                    <th>Client</th>
+                    <th>Invoice Date</th>
+                    <th>Total</th>
+                    <th>Paid</th>
+                    <th>Balance</th>
+                    <th>Aging</th>
+                    <th>Status</th>
+                </tr></thead>
+                <tbody>
+                    {visible.map(inv => (
+                        <tr key={inv.invoice_id}>
+                            <td style={{ fontSize: "0.82rem" }}>{inv.matter_title}</td>
+                            <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{inv.client_name}</td>
+                            <td style={{ fontSize: "0.82rem" }}>{inv.invoice_date}</td>
+                            <td style={{ fontSize: "0.82rem" }}>PKR {inv.total_pkr.toLocaleString()}</td>
+                            <td style={{ fontSize: "0.82rem", color: "#16a34a" }}>PKR {inv.paid_pkr.toLocaleString()}</td>
+                            <td style={{ fontSize: "0.85rem", fontWeight: 700, color: "#dc2626" }}>PKR {inv.balance.toLocaleString()}</td>
+                            <td><span style={{ fontSize: "0.72rem", fontWeight: 700, color: bucketColour(inv.aging_bucket) }}>{inv.aging_bucket}</span></td>
+                            <td><span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{inv.status}</span></td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
         </div>
     );
 };
@@ -10470,142 +10189,134 @@ const StaffPanel = () => {
     salaryList.forEach(p => { salaryMap[p.staff_id] = (salaryMap[p.staff_id] || 0) + p.net_paid_pkr; });
 
     return (
-        <div className={styles.panel}>
-            <div className={styles.panelHeader}>
-                <h2 className={styles.panelTitle}>👥 Staff & Salary</h2>
+        <div className={styles.panelContent}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                <h2 className={styles.sectionTitle} style={{ margin: 0 }}>👥 Staff & Salary</h2>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                     {(["staff", "attendance", "salary"] as const).map(t => (
-                        <button key={t} className={tab === t ? styles.btnPrimary : styles.btnGhost} style={{ fontSize: "0.8rem", textTransform: "capitalize" }} onClick={() => setTab(t)}>{t === "staff" ? "👤 Staff" : t === "attendance" ? "📋 Attendance" : "💵 Salary"}</button>
+                        <Button key={t} variant={tab === t ? "primary" : "ghost"} style={{ fontSize: "0.8rem", textTransform: "capitalize" }} onClick={() => setTab(t)}>{t === "staff" ? "👤 Staff" : t === "attendance" ? "📋 Attendance" : "💵 Salary"}</Button>
                     ))}
                 </div>
             </div>
-            <p className={styles.panelSub}>Manage office staff — advocates, clerks, and support — with daily attendance and monthly salary records.</p>
+            <p className={styles.muted} style={{ margin: "0.35rem 0 1rem" }}>Manage office staff — advocates, clerks, and support — with daily attendance and monthly salary records.</p>
 
             {/* ── Staff tab ── */}
             {tab === "staff" && (<>
                 <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
-                    <button className={styles.btnPrimary} onClick={() => openStaffModal()}>+ Add Staff</button>
+                    <Button onClick={() => openStaffModal()}>+ Add Staff</Button>
                 </div>
-                {loading ? <div className={styles.emptyState}>Loading…</div> : staffList.length === 0 ? (
-                    <div className={styles.emptyState}>No staff records yet. Add clerks, junior advocates, and office staff to track attendance and salary.</div>
-                ) : (
-                    <table className={styles.feeTable}>
-                        <thead><tr>
-                            <th>Name</th>
-                            <th>Role</th>
-                            <th>Salary (PKR/mo)</th>
-                            <th>Phone</th>
-                            <th>Join Date</th>
-                            <th>Status</th>
-                            <th style={{ width: 120 }}></th>
-                        </tr></thead>
-                        <tbody>
-                            {staffList.map(s => (
-                                <tr key={s.staff_id}>
-                                    <td><strong>{s.name}</strong></td>
-                                    <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.role}</td>
-                                    <td>PKR {s.monthly_salary_pkr.toLocaleString()}</td>
-                                    <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.phone || "—"}</td>
-                                    <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.join_date || "—"}</td>
-                                    <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: s.status === "Active" ? "#16a34a" : "#dc2626" }}>{s.status}</span></td>
-                                    <td style={{ display: "flex", gap: 4 }}>
-                                        <button className={styles.btnGhost} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openStaffModal(s)}>Edit</button>
-                                        <button className={styles.btnPrimary} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openSalaryModal(s)}>💵 Pay</button>
-                                        <button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteStaff(s.staff_id)}>Del</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
+                <Table
+                    loading={loading}
+                    empty={!loading && staffList.length === 0}
+                    emptyMessage="No staff records yet. Add clerks, junior advocates, and office staff to track attendance and salary."
+                >
+                    <thead><tr>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>Salary (PKR/mo)</th>
+                        <th>Phone</th>
+                        <th>Join Date</th>
+                        <th>Status</th>
+                        <th style={{ width: 120 }}></th>
+                    </tr></thead>
+                    <tbody>
+                        {staffList.map(s => (
+                            <tr key={s.staff_id}>
+                                <td><strong>{s.name}</strong></td>
+                                <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.role}</td>
+                                <td>PKR {s.monthly_salary_pkr.toLocaleString()}</td>
+                                <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.phone || "—"}</td>
+                                <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.join_date || "—"}</td>
+                                <td><Badge tone={s.status === "Active" ? "green" : "red"}>{s.status}</Badge></td>
+                                <td style={{ display: "flex", gap: 4 }}>
+                                    <Button variant="ghost" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openStaffModal(s)}>Edit</Button>
+                                    <Button style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openSalaryModal(s)}>💵 Pay</Button>
+                                    <Button variant="danger" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteStaff(s.staff_id)}>Del</Button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </Table>
             </>)}
 
             {/* ── Attendance tab ── */}
             {tab === "attendance" && (<>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
                     <label className={styles.formLabel}>Date:</label>
-                    <input type="date" className={styles.filterInput} value={attDate} onChange={e => setAttDate(e.target.value)} style={{ width: 160 }} />
+                    <input type="date" className={styles.formInput} value={attDate} onChange={e => setAttDate(e.target.value)} style={{ width: 160 }} />
                     {attSaving && <span className={styles.muted} style={{ fontSize: "0.78rem" }}>Saving…</span>}
                 </div>
-                {staffList.length === 0 ? (
-                    <div className={styles.emptyState}>No staff found. Add staff members first.</div>
-                ) : (
-                    <table className={styles.feeTable}>
-                        <thead><tr>
-                            <th>Name</th>
-                            <th>Role</th>
-                            <th>Status</th>
-                            <th>Time In</th>
-                            <th>Time Out</th>
-                        </tr></thead>
-                        <tbody>
-                            {staffList.filter(s => s.status === "Active").map(s => {
-                                const att = attMap[s.staff_id] || { status: "Present", time_in: "", time_out: "" };
-                                return (
-                                    <tr key={s.staff_id}>
-                                        <td><strong>{s.name}</strong></td>
-                                        <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.role}</td>
-                                        <td>
-                                            <select className={styles.filterInput} style={{ width: "auto", fontSize: "0.82rem" }} value={att.status}
-                                                onChange={e => saveAttendance(s.staff_id, e.target.value, att.time_in, att.time_out)}>
-                                                {ATT_STATUSES.map(a => <option key={a}>{a}</option>)}
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <input type="time" className={styles.filterInput} style={{ width: 110, fontSize: "0.82rem" }} value={att.time_in}
-                                                onChange={e => saveAttendance(s.staff_id, att.status, e.target.value, att.time_out)} />
-                                        </td>
-                                        <td>
-                                            <input type="time" className={styles.filterInput} style={{ width: 110, fontSize: "0.82rem" }} value={att.time_out}
-                                                onChange={e => saveAttendance(s.staff_id, att.status, att.time_in, e.target.value)} />
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                )}
+                <Table empty={staffList.length === 0} emptyMessage="No staff found. Add staff members first.">
+                    <thead><tr>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Time In</th>
+                        <th>Time Out</th>
+                    </tr></thead>
+                    <tbody>
+                        {staffList.filter(s => s.status === "Active").map(s => {
+                            const att = attMap[s.staff_id] || { status: "Present", time_in: "", time_out: "" };
+                            return (
+                                <tr key={s.staff_id}>
+                                    <td><strong>{s.name}</strong></td>
+                                    <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.role}</td>
+                                    <td>
+                                        <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.82rem" }} value={att.status}
+                                            onChange={e => saveAttendance(s.staff_id, e.target.value, att.time_in, att.time_out)}>
+                                            {ATT_STATUSES.map(a => <option key={a}>{a}</option>)}
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="time" className={styles.formInput} style={{ width: 110, fontSize: "0.82rem" }} value={att.time_in}
+                                            onChange={e => saveAttendance(s.staff_id, att.status, e.target.value, att.time_out)} />
+                                    </td>
+                                    <td>
+                                        <input type="time" className={styles.formInput} style={{ width: 110, fontSize: "0.82rem" }} value={att.time_out}
+                                            onChange={e => saveAttendance(s.staff_id, att.status, att.time_in, e.target.value)} />
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </Table>
             </>)}
 
             {/* ── Salary tab ── */}
             {tab === "salary" && (<>
                 <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", color: "var(--text-2)" }}>Showing salary payments for {thisMonth}.</div>
-                {staffList.length === 0 ? (
-                    <div className={styles.emptyState}>No staff found. Add staff members first.</div>
-                ) : (
-                    <table className={styles.feeTable}>
-                        <thead><tr>
-                            <th>Staff Member</th>
-                            <th>Role</th>
-                            <th>Gross (PKR)</th>
-                            <th>Paid This Month</th>
-                            <th>Status</th>
-                            <th style={{ width: 80 }}></th>
-                        </tr></thead>
-                        <tbody>
-                            {staffList.filter(s => s.status === "Active").map(s => {
-                                const paid = salaryMap[s.staff_id] || 0;
-                                const isPaid = paid >= s.monthly_salary_pkr;
-                                return (
-                                    <tr key={s.staff_id}>
-                                        <td><strong>{s.name}</strong></td>
-                                        <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.role}</td>
-                                        <td>PKR {s.monthly_salary_pkr.toLocaleString()}</td>
-                                        <td style={{ color: paid > 0 ? "#16a34a" : "var(--text-3)" }}>PKR {paid.toLocaleString()}</td>
-                                        <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: isPaid ? "#16a34a" : "#dc2626" }}>{isPaid ? "✓ Paid" : "Pending"}</span></td>
-                                        <td>
-                                            <button className={styles.btnPrimary} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openSalaryModal(s)}>+ Pay</button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                )}
+                <Table empty={staffList.length === 0} emptyMessage="No staff found. Add staff members first.">
+                    <thead><tr>
+                        <th>Staff Member</th>
+                        <th>Role</th>
+                        <th>Gross (PKR)</th>
+                        <th>Paid This Month</th>
+                        <th>Status</th>
+                        <th style={{ width: 80 }}></th>
+                    </tr></thead>
+                    <tbody>
+                        {staffList.filter(s => s.status === "Active").map(s => {
+                            const paid = salaryMap[s.staff_id] || 0;
+                            const isPaid = paid >= s.monthly_salary_pkr;
+                            return (
+                                <tr key={s.staff_id}>
+                                    <td><strong>{s.name}</strong></td>
+                                    <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.role}</td>
+                                    <td>PKR {s.monthly_salary_pkr.toLocaleString()}</td>
+                                    <td style={{ color: paid > 0 ? "#16a34a" : "var(--text-3)" }}>PKR {paid.toLocaleString()}</td>
+                                    <td><Badge tone={isPaid ? "green" : "red"}>{isPaid ? "✓ Paid" : "Pending"}</Badge></td>
+                                    <td>
+                                        <Button style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openSalaryModal(s)}>+ Pay</Button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </Table>
                 {salaryList.length > 0 && (
                     <div style={{ marginTop: "1.5rem" }}>
                         <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.9rem" }}>Payment History — {thisMonth}</div>
-                        <table className={styles.feeTable}>
+                        <Table>
                             <thead><tr>
                                 <th>Staff</th>
                                 <th>Month</th>
@@ -10628,24 +10339,27 @@ const StaffPanel = () => {
                                             <td style={{ fontWeight: 700, color: "#16a34a" }}>PKR {p.net_paid_pkr.toLocaleString()}</td>
                                             <td style={{ fontSize: "0.82rem" }}>{p.paid_date || "—"}</td>
                                             <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{p.payment_mode}</td>
-                                            <td><button className={styles.btnDanger} style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteSalary(p.payment_id)}>Del</button></td>
+                                            <td><Button variant="danger" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => deleteSalary(p.payment_id)}>Del</Button></td>
                                         </tr>
                                     );
                                 })}
                             </tbody>
-                        </table>
+                        </Table>
                     </div>
                 )}
             </>)}
 
             {/* Staff add/edit modal */}
-            {showStaffModal && (
-                <div className={styles.modalOverlay}>
-                    <div className={styles.modal} style={{ maxWidth: 480 }}>
-                        <div className={styles.modalHeader}>
-                            <h3 className={styles.modalTitle}>{editStaff ? "Edit Staff Member" : "Add Staff Member"}</h3>
-                            <button className={styles.modalClose} onClick={() => setShowStaffModal(false)}>✕</button>
-                        </div>
+            <Modal
+                open={showStaffModal}
+                onClose={() => setShowStaffModal(false)}
+                title={editStaff ? "Edit Staff Member" : "Add Staff Member"}
+                maxWidth={480}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowStaffModal(false)}>Cancel</Button>
+                    <Button onClick={saveStaff} disabled={staffSaving}>{staffSaving ? "Saving…" : "Save"}</Button>
+                </>}
+            >
                         <div className={styles.formGroup}>
                             <label className={styles.formLabel}>Full Name *</label>
                             <input className={styles.formInput} value={staffForm.name} onChange={e => setStaffForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" />
@@ -10688,23 +10402,20 @@ const StaffPanel = () => {
                             <label className={styles.formLabel}>Notes</label>
                             <textarea className={styles.formInput} rows={2} value={staffForm.notes} onChange={e => setStaffForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                         </div>
-                        {staffErr && <div className={styles.formError}>{staffErr}</div>}
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                            <button className={styles.btnGhost} onClick={() => setShowStaffModal(false)}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={saveStaff} disabled={staffSaving}>{staffSaving ? "Saving…" : "Save"}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                        {staffErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{staffErr}</div>}
+            </Modal>
 
             {/* Salary payment modal */}
-            {showSalaryModal && salaryTarget && (
-                <div className={styles.modalOverlay}>
-                    <div className={styles.modal} style={{ maxWidth: 460 }}>
-                        <div className={styles.modalHeader}>
-                            <h3 className={styles.modalTitle}>Pay Salary — {salaryTarget.name}</h3>
-                            <button className={styles.modalClose} onClick={() => setShowSalaryModal(false)}>✕</button>
-                        </div>
+            <Modal
+                open={showSalaryModal && !!salaryTarget}
+                onClose={() => setShowSalaryModal(false)}
+                title={`Pay Salary — ${salaryTarget?.name ?? ""}`}
+                maxWidth={460}
+                footer={<>
+                    <Button variant="ghost" onClick={() => setShowSalaryModal(false)}>Cancel</Button>
+                    <Button onClick={saveSalary} disabled={salarySaving}>{salarySaving ? "Saving…" : "Record Payment"}</Button>
+                </>}
+            >
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                             <div className={styles.formGroup}>
                                 <label className={styles.formLabel}>Month</label>
@@ -10744,14 +10455,8 @@ const StaffPanel = () => {
                             <label className={styles.formLabel}>Notes</label>
                             <textarea className={styles.formInput} rows={2} value={salaryForm.notes} onChange={e => setSalaryForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                         </div>
-                        {salaryErr && <div className={styles.formError}>{salaryErr}</div>}
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                            <button className={styles.btnGhost} onClick={() => setShowSalaryModal(false)}>Cancel</button>
-                            <button className={styles.btnPrimary} onClick={saveSalary} disabled={salarySaving}>{salarySaving ? "Saving…" : "Record Payment"}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                        {salaryErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{salaryErr}</div>}
+            </Modal>
         </div>
     );
 };
