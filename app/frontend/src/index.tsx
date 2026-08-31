@@ -1,6 +1,5 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createHashRouter, RouterProvider } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
 import { HelmetProvider } from "react-helmet-async";
 import { MsalProvider } from "@azure/msal-react";
@@ -12,81 +11,11 @@ import "./index.css";
 import { applyTheme, getTheme } from "./theme";
 applyTheme(getTheme());
 
-import Chat from "./pages/chat/Chat";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import OwnerPortal from "./pages/owner/OwnerPortal";
-import EmployeePortal from "./pages/employee/EmployeePortal";
-import SettingsPage from "./pages/settings/SettingsPage";
-import Landing from "./pages/landing/Landing";
-import Compliance from "./pages/compliance/Compliance";
-import ClientPortal from "./pages/portal/ClientPortal";
-import LayoutWrapper from "./layoutWrapper";
+import AppRoutes from "./routes/AppRoutes";
+import QueryProvider from "./providers/QueryProvider";
+import { ToastProvider } from "./components/ui";
 import i18next from "./i18n/config";
 import { msalConfig, useLogin } from "./authConfig";
-
-// ── Route guards ──────────────────────────────────────────────────────────────
-
-function requireRole(role: string, element: React.ReactElement): React.ReactElement {
-    const raw  = sessionStorage.getItem("pe_user");
-    const user = raw ? JSON.parse(raw) : null;
-    if (!user || user.role !== role) {
-        window.location.hash = user ? "/" : "/";
-        return <></>;
-    }
-    return element;
-}
-
-const AdminGuard    = () => requireRole("platform_admin", <AdminDashboard />);
-const OwnerGuard    = () => requireRole("org_owner",      <OwnerPortal />);
-const EmployeeGuard = () => requireRole("employee",       <EmployeePortal />);
-
-const router = createHashRouter([
-    {
-        // PROJECT EASE: landing page is the entry point — marketing + auth forms
-        path: "/",
-        element: <Landing />
-    },
-    {
-        path: "/compliance",
-        element: <Compliance />
-    },
-    {
-        // Unauthenticated client portal — accessed via /#/portal?token=xxx
-        path: "/portal",
-        element: <ClientPortal />
-    },
-    {
-        path: "/admin",
-        element: <AdminGuard />
-    },
-    {
-        path: "/owner",
-        element: <OwnerGuard />
-    },
-    {
-        path: "/employee",
-        element: <EmployeeGuard />
-    },
-    {
-        path: "/settings",
-        element: <SettingsPage />
-    },
-    {
-        // The main app (chat) lives at /app — auth will gate this route later
-        path: "/app",
-        element: <LayoutWrapper />,
-        children: [
-            {
-                index: true,
-                element: <Chat />
-            },
-            {
-                path: "*",
-                lazy: () => import("./pages/NoPage")
-            }
-        ]
-    }
-]);
 
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 
@@ -125,13 +54,17 @@ const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement)
         <React.StrictMode>
             <I18nextProvider i18n={i18next}>
                 <HelmetProvider>
-                    {useLogin && msalInstance ? (
-                        <MsalProvider instance={msalInstance}>
-                            <RouterProvider router={router} />
-                        </MsalProvider>
-                    ) : (
-                        <RouterProvider router={router} />
-                    )}
+                    <QueryProvider>
+                        <ToastProvider>
+                            {useLogin && msalInstance ? (
+                                <MsalProvider instance={msalInstance}>
+                                    <AppRoutes />
+                                </MsalProvider>
+                            ) : (
+                                <AppRoutes />
+                            )}
+                        </ToastProvider>
+                    </QueryProvider>
                 </HelmetProvider>
             </I18nextProvider>
         </React.StrictMode>

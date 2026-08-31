@@ -2,75 +2,27 @@ import { useState, useEffect } from "react";
 import styles from "./AdminDashboard.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
 import { Table, Modal, Badge, Button, BadgeTone } from "../../components/ui";
+import type { Org, PlatformStats } from "./types";
+import {
+    useAdminStats,
+    useAdminOrgsList,
+    useOrgDetails,
+    useCreateOrg,
+    useUpdateOrg,
+    useDeleteOrg,
+    useBackendHealth,
+} from "../../hooks/useAdminOrgs";
+import { useRegistrations, useApproveRegistration } from "../../hooks/useAdminRegistrations";
+import { useUpgradeRequests, useResolveUpgradeRequest } from "../../hooks/useAdminUpgrades";
+import { useOrgFlags, useUpdateOrgFlags } from "../../hooks/useAdminFeatureFlags";
+import { useCaseLawDocs, useUploadCaseLaw, useDeleteCaseLawDoc } from "../../hooks/useAdminCaseLaw";
+import { useEvalResults } from "../../hooks/useAdminEvals";
+import { useAdminAuditLog } from "../../hooks/useAdminAuditLog";
+import { useLogout } from "../../hooks/useAuth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Panel = "overview" | "orgs" | "registrations" | "upgrades" | "features" | "case_law" | "evals" | "audit" | "settings";
-
-interface Org {
-    org_id:      string;
-    name:        string;
-    plan:        string;
-    status:      "active" | "suspended";
-    industry:    string;
-    user_count:  number;
-    doc_count:   number;
-    total_bytes: number;
-    max_docs:    number;
-    max_users:   number;
-    created_at:  string;
-}
-
-interface OrgDetails extends Org {
-    users:     OrgUser[];
-    documents: OrgDoc[];
-}
-
-interface OrgUser {
-    user_id:    string;
-    name:       string;
-    email:      string;
-    role:       string;
-    created_at: string;
-}
-
-interface OrgDoc {
-    doc_id:      string;
-    filename:    string;
-    size_bytes:  number;
-    status:      string;
-    uploaded_at: string;
-}
-
-interface PlatformStats {
-    total_orgs:  number;
-    active_orgs: number;
-    total_users: number;
-    total_docs:  number;
-    total_bytes: number;
-    plans:       Record<string, number>;
-}
-
-interface Registration {
-    org_id:      string;
-    name:        string;
-    plan:        string;
-    city:        string | null;
-    phone:       string | null;
-    created_at:  string;
-    owner_name:  string | null;
-    owner_email: string | null;
-}
-
-interface EvalResult {
-    id: number;
-    timestamp: string;
-    organization_id: string | null;
-    original_query: string;
-    precision_at_k: number | null;
-    answer_relevance_score: number | null;
-    latency_ms: number | null;
-}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -83,11 +35,6 @@ const PLAN_COLORS: Record<string, string> = {
 const INDUSTRIES = ["Law Practice", "CA / Accounting", "Logistics", "Financial Services", "Healthcare", "Other"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function authHeaders(): Record<string, string> {
-    const token = sessionStorage.getItem("pe_token") ?? "";
-    return { Authorization: `Bearer ${token}` };
-}
 
 function fmtBytes(b: number): string {
     if (b >= 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
@@ -121,15 +68,7 @@ const StatusDot = ({ ok, label }: { ok: boolean; label: string }) => (
 // ── Org Detail Modal ──────────────────────────────────────────────────────────
 
 const OrgDetailModal = ({ orgId, onClose }: { orgId: string; onClose: () => void }) => {
-    const [details, setDetails] = useState<OrgDetails | null>(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        fetch(`/admin/orgs/${orgId}`, { headers: authHeaders() })
-            .then(r => r.json())
-            .then(d => { setDetails(d); setLoading(false); })
-            .catch(() => setLoading(false));
-    }, [orgId]);
+    const { data: details, isLoading: loading } = useOrgDetails(orgId);
 
     return (
         <Modal open onClose={onClose} maxWidth={680} title={details ? details.name : undefined}>
@@ -264,13 +203,18 @@ const OverviewPanel = ({ stats, orgs }: { stats: PlatformStats | null; orgs: Org
 
 // ── Orgs Panel ────────────────────────────────────────────────────────────────
 
-const OrgsPanel = ({ orgs, setOrgs }: { orgs: Org[]; setOrgs: React.Dispatch<React.SetStateAction<Org[]>> }) => {
+const OrgsPanel = () => {
+    const { data: orgsData } = useAdminOrgsList();
+    const orgs = orgsData?.orgs ?? [];
+    const createOrgMut = useCreateOrg();
+    const updateOrgMut = useUpdateOrg();
+    const deleteOrgMut = useDeleteOrg();
+
     const [showCreate,    setShowCreate]    = useState(false);
     const [detailOrgId,   setDetailOrgId]   = useState<string | null>(null);
     const [editOrg,       setEditOrg]       = useState<Org | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<Org | null>(null);
     const [actionError,   setActionError]   = useState<string | null>(null);
-    const [saving,        setSaving]        = useState(false);
 
     const [createForm, setCreateForm] = useState({
         name: "", industry: "Law Practice", plan: "free",
@@ -284,56 +228,35 @@ const OrgsPanel = ({ orgs, setOrgs }: { orgs: Org[]; setOrgs: React.Dispatch<Rea
         if (!createForm.name || !createForm.owner_name || !createForm.owner_email) {
             setActionError("All fields are required."); return;
         }
-        setSaving(true);
         try {
-            const res = await fetch("/admin/orgs", {
-                method: "POST",
-                headers: { ...authHeaders(), "Content-Type": "application/json" },
-                body: JSON.stringify(createForm),
-            });
-            const data = await res.json();
-            if (!res.ok) { setActionError(data.error ?? "Failed to create org."); setSaving(false); return; }
-            setOrgs(prev => [{ ...data.org, user_count: 1, doc_count: 0, total_bytes: 0 }, ...prev]);
+            const data = await createOrgMut.mutateAsync(createForm);
             setCreateCreds({ email: data.owner.email, password: data.temp_password });
             setShowCreate(false);
             setCreateForm({ name: "", industry: "Law Practice", plan: "free", owner_name: "", owner_email: "" });
             setActionError(null);
-        } catch { setActionError("Network error."); }
-        setSaving(false);
+        } catch (e) {
+            setActionError(e instanceof Error ? e.message : "Failed to create org.");
+        }
     };
 
-    const handleSuspendToggle = async (org: Org) => {
+    const handleSuspendToggle = (org: Org) => {
         const newStatus = org.status === "active" ? "suspended" : "active";
-        const res = await fetch(`/admin/orgs/${org.org_id}`, {
-            method: "PUT",
-            headers: { ...authHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify({ status: newStatus }),
-        });
-        if (res.ok) {
-            setOrgs(prev => prev.map(o => o.org_id === org.org_id ? { ...o, status: newStatus } : o));
-        }
+        updateOrgMut.mutate({ orgId: org.org_id, payload: { status: newStatus } });
     };
 
     const handlePlanSave = async () => {
         if (!editOrg) return;
-        setSaving(true);
-        const res = await fetch(`/admin/orgs/${editOrg.org_id}`, {
-            method: "PUT",
-            headers: { ...authHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify(planForm),
-        });
-        const data = await res.json();
-        if (res.ok) {
-            setOrgs(prev => prev.map(o => o.org_id === editOrg.org_id ? { ...o, ...data } : o));
+        try {
+            await updateOrgMut.mutateAsync({ orgId: editOrg.org_id, payload: planForm });
             setEditOrg(null);
+        } catch {
+            /* toast surfaced by the mutation hook */
         }
-        setSaving(false);
     };
 
-    const handleDelete = async (org: Org) => {
+    const handleDelete = (org: Org) => {
         setConfirmDelete(null);
-        const res = await fetch(`/admin/orgs/${org.org_id}`, { method: "DELETE", headers: authHeaders() });
-        if (res.ok) setOrgs(prev => prev.filter(o => o.org_id !== org.org_id));
+        deleteOrgMut.mutate(org.org_id);
     };
 
     return (
@@ -409,7 +332,7 @@ const OrgsPanel = ({ orgs, setOrgs }: { orgs: Org[]; setOrgs: React.Dispatch<Rea
                 title="Add Organization"
                 footer={<>
                     <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
-                    <Button onClick={handleCreate} loading={saving}>Create Organization</Button>
+                    <Button onClick={handleCreate} loading={createOrgMut.isPending}>Create Organization</Button>
                 </>}
             >
                 {actionError && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {actionError}</div>}
@@ -475,7 +398,7 @@ const OrgsPanel = ({ orgs, setOrgs }: { orgs: Org[]; setOrgs: React.Dispatch<Rea
                 title={`Change Plan — ${editOrg?.name ?? ""}`}
                 footer={<>
                     <Button variant="ghost" onClick={() => setEditOrg(null)}>Cancel</Button>
-                    <Button onClick={handlePlanSave} loading={saving}>Save</Button>
+                    <Button onClick={handlePlanSave} loading={updateOrgMut.isPending}>Save</Button>
                 </>}
             >
                 <div className={styles.formGroup}>
@@ -522,21 +445,13 @@ const OrgsPanel = ({ orgs, setOrgs }: { orgs: Org[]; setOrgs: React.Dispatch<Rea
 // ── Evals Panel ───────────────────────────────────────────────────────────────
 
 const EvalsPanel = () => {
-    const [results, setResults] = useState<EvalResult[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error,   setError]   = useState("");
+    const key = (import.meta as any).env?.VITE_ADMIN_EVAL_KEY ?? "";
+    const { data, isLoading: loading, isError } = useEvalResults(key);
+    const results = data?.results ?? [];
 
-    useEffect(() => {
-        const key = (import.meta as any).env?.VITE_ADMIN_EVAL_KEY ?? "";
-        if (!key) { setError("Set VITE_ADMIN_EVAL_KEY in your .env to load eval results."); setLoading(false); return; }
-        fetch("/admin/evals", { headers: { Authorization: `Bearer ${key}` } })
-            .then(r => r.json())
-            .then(d => { setResults(d.results ?? []); setLoading(false); })
-            .catch(() => { setError("Could not load eval results."); setLoading(false); });
-    }, []);
-
+    if (!key) return <div className={styles.panelContent}><div className={styles.infoBox}><strong>Eval results not available</strong><br />Set VITE_ADMIN_EVAL_KEY in your .env to load eval results.</div></div>;
     if (loading) return <div className={styles.emptyState}>Loading…</div>;
-    if (error) return <div className={styles.panelContent}><div className={styles.infoBox}><strong>Eval results not available</strong><br />{error}</div></div>;
+    if (isError) return <div className={styles.panelContent}><div className={styles.infoBox}><strong>Eval results not available</strong><br />Could not load eval results.</div></div>;
     if (!results.length) return <div className={styles.panelContent}><div className={styles.infoBox}>No eval results yet. Scores are recorded automatically each time a user asks a question.</div></div>;
 
     return (
@@ -564,13 +479,7 @@ const EvalsPanel = () => {
 // ── Settings Panel ────────────────────────────────────────────────────────────
 
 const SettingsPanel = () => {
-    const [backendOk, setBackendOk] = useState(false);
-
-    useEffect(() => {
-        fetch("/auth/me", { headers: authHeaders() })
-            .then(r => setBackendOk(r.ok))
-            .catch(() => setBackendOk(false));
-    }, []);
+    const { data: backendOk = false } = useBackendHealth();
 
     const planTiers = [
         { plan: "Free",       docs: "20",  users: "5",   price: "$0 / mo",   color: PLAN_COLORS.free       },
@@ -621,34 +530,19 @@ const SettingsPanel = () => {
 // ── Registrations Panel ───────────────────────────────────────────────────────
 
 const RegistrationsPanel = () => {
-    const [regs,     setRegs]     = useState<Registration[]>([]);
-    const [loading,  setLoading]  = useState(true);
+    const { data, isLoading: loading } = useRegistrations();
+    const regs = data?.registrations ?? [];
+    const approveMut = useApproveRegistration();
     const [approving, setApproving] = useState<string | null>(null);
     const [msg,      setMsg]      = useState<{ ok: boolean; text: string } | null>(null);
-
-    useEffect(() => {
-        fetch("/admin/registrations", { headers: authHeaders() })
-            .then(r => r.json())
-            .then(d => { setRegs(d.registrations ?? []); setLoading(false); })
-            .catch(() => setLoading(false));
-    }, []);
 
     const approve = async (orgId: string, firmName: string) => {
         setApproving(orgId); setMsg(null);
         try {
-            const r = await fetch(`/admin/orgs/${orgId}/approve`, {
-                method: "PATCH",
-                headers: authHeaders(),
-            });
-            if (r.ok) {
-                setRegs(prev => prev.filter(x => x.org_id !== orgId));
-                setMsg({ ok: true, text: `✓ ${firmName} approved and activated. Confirmation email sent.` });
-            } else {
-                const d = await r.json().catch(() => ({}));
-                setMsg({ ok: false, text: (d as any).error ?? "Approval failed." });
-            }
-        } catch {
-            setMsg({ ok: false, text: "Network error." });
+            await approveMut.mutateAsync(orgId);
+            setMsg({ ok: true, text: `✓ ${firmName} approved and activated. Confirmation email sent.` });
+        } catch (e) {
+            setMsg({ ok: false, text: e instanceof Error ? e.message : "Approval failed." });
         }
         setApproving(null);
         setTimeout(() => setMsg(null), 5000);
@@ -725,20 +619,6 @@ const RegistrationsPanel = () => {
 
 // ── Upgrade Requests Panel ────────────────────────────────────────────────────
 
-interface UpgradeRequest {
-    request_id:     string;
-    org_id:         string;
-    org_name:       string;
-    current_plan:   string;
-    requested_plan: string;
-    status:         "pending" | "approved" | "rejected";
-    payment_ref:    string | null;
-    notes:          string | null;
-    created_at:     string;
-    resolved_at:    string | null;
-    resolved_by:    string | null;
-}
-
 const UPGRADE_STATUS_COLORS: Record<string, string> = {
     pending:  "#f59e0b",
     approved: "#22c55e",
@@ -746,38 +626,20 @@ const UPGRADE_STATUS_COLORS: Record<string, string> = {
 };
 
 const AdminUpgradesPanel = () => {
-    const [requests, setRequests] = useState<UpgradeRequest[]>([]);
-    const [loading,  setLoading]  = useState(true);
     const [filter,   setFilter]   = useState<"all" | "pending" | "approved" | "rejected">("pending");
+    const { data, isLoading: loading } = useUpgradeRequests(filter);
+    const requests = data?.requests ?? [];
+    const resolveMut = useResolveUpgradeRequest();
     const [acting,   setActing]   = useState<string | null>(null);
     const [msg,      setMsg]      = useState<{ id: string; ok: boolean; text: string } | null>(null);
-
-    const load = (status?: string) => {
-        setLoading(true);
-        const qs = status && status !== "all" ? `?status=${status}` : "";
-        fetch(`/admin/upgrade-requests${qs}`, { headers: authHeaders() })
-            .then(r => r.json())
-            .then(d => { setRequests(d.requests ?? []); setLoading(false); })
-            .catch(() => setLoading(false));
-    };
-
-    useEffect(() => { load(filter); }, [filter]);
 
     const resolve = async (requestId: string, action: "approve" | "reject") => {
         setActing(requestId); setMsg(null);
         try {
-            const r = await fetch(`/admin/upgrade-requests/${requestId}/${action}`, {
-                method: "PATCH", headers: authHeaders(),
-            });
-            const d = await r.json().catch(() => ({}));
-            if (r.ok) {
-                setMsg({ id: requestId, ok: true, text: action === "approve" ? "Approved — plan upgraded." : "Rejected." });
-                load(filter);
-            } else {
-                setMsg({ id: requestId, ok: false, text: d.error ?? "Action failed." });
-            }
-        } catch {
-            setMsg({ id: requestId, ok: false, text: "Network error." });
+            await resolveMut.mutateAsync({ requestId, action });
+            setMsg({ id: requestId, ok: true, text: action === "approve" ? "Approved — plan upgraded." : "Rejected." });
+        } catch (e) {
+            setMsg({ id: requestId, ok: false, text: e instanceof Error ? e.message : "Action failed." });
         } finally {
             setActing(null);
         }
@@ -934,21 +796,6 @@ const AdminUpgradesPanel = () => {
 
 // ── Admin Audit Panel ─────────────────────────────────────────────────────────
 
-interface AuditLog {
-    log_id:        string;
-    org_id:        string | null;
-    user_id:       string | null;
-    actor_name:    string | null;
-    actor_role:    string | null;
-    event_type:    string;
-    resource_type: string | null;
-    resource_id:   string | null;
-    resource_name: string | null;
-    details:       string | null;
-    ip_address:    string | null;
-    created_at:    string;
-}
-
 const ADMIN_EVENT_LABELS: Record<string, string> = {
     login_success:  "Login",       login_fail:     "Failed Login",
     logout:         "Logout",      password_change: "Password Change",
@@ -962,9 +809,6 @@ const ADMIN_EVENT_LABELS: Record<string, string> = {
 };
 
 const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] }) => {
-    const [logs,       setLogs]       = useState<AuditLog[]>([]);
-    const [total,      setTotal]      = useState(0);
-    const [loading,    setLoading]    = useState(true);
     const [filterType, setFilterType] = useState("all");
     const [filterOrg,  setFilterOrg]  = useState("all");
     const [dateFrom,   setDateFrom]   = useState("");
@@ -972,22 +816,13 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
     const [page,       setPage]       = useState(0);
     const PAGE_SIZE = 200;
 
-    const load = (pg = 0) => {
-        setLoading(true);
-        const params = new URLSearchParams();
-        if (filterType !== "all") params.set("event_type", filterType);
-        if (filterOrg  !== "all") params.set("org_id",     filterOrg);
-        if (dateFrom) params.set("date_from", dateFrom);
-        if (dateTo)   params.set("date_to",   dateTo);
-        params.set("limit",  String(PAGE_SIZE));
-        params.set("offset", String(pg * PAGE_SIZE));
-        fetch(`/audit-logs?${params}`, { headers: authHeaders() })
-            .then(r => r.json())
-            .then(d => { setLogs(d.logs ?? []); setTotal(d.total ?? 0); setLoading(false); })
-            .catch(() => setLoading(false));
-    };
+    useEffect(() => { setPage(0); }, [filterType, filterOrg, dateFrom, dateTo]);
 
-    useEffect(() => { setPage(0); load(0); }, [filterType, filterOrg, dateFrom, dateTo]);
+    const { data, isLoading: loading } = useAdminAuditLog({
+        filterType, dateFrom, dateTo, page, pageSize: PAGE_SIZE, orgId: filterOrg,
+    });
+    const logs  = data?.logs ?? [];
+    const total = data?.total ?? 0;
 
     const exportCsv = () => {
         const header = "Timestamp,Org,Event,Actor,Role,Resource,IP,Details\n";
@@ -1080,10 +915,10 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
                     {totalPages > 1 && (
                         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem", justifyContent: "center" }}>
                             <Button variant="ghost" size="sm" disabled={page === 0}
-                                onClick={() => { setPage(page - 1); load(page - 1); }}>← Prev</Button>
+                                onClick={() => setPage(page - 1)}>← Prev</Button>
                             <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Page {page + 1} of {totalPages}</span>
                             <Button variant="ghost" size="sm" disabled={page >= totalPages - 1}
-                                onClick={() => { setPage(page + 1); load(page + 1); }}>Next →</Button>
+                                onClick={() => setPage(page + 1)}>Next →</Button>
                         </div>
                     )}
                 </>
@@ -1093,21 +928,6 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
 };
 
 // ── Case Law Panel ────────────────────────────────────────────────────────────
-
-interface CaseLawDoc {
-    doc_id:     string;
-    publisher:  string;
-    title:      string;
-    year:       number | null;
-    volume:     string | null;
-    court:      string | null;
-    filename:   string;
-    size_bytes: number;
-    status:     "processing" | "ready" | "error";
-    error_msg:  string | null;
-    indexed_by: string;
-    created_at: string;
-}
 
 const PUBLISHERS = ["PLD", "SCMR", "MLD", "CLC", "OTHER"];
 
@@ -1122,79 +942,33 @@ function fmtBytesAdmin(b: number): string {
 }
 
 // ── Feature Access Panel — Task #162 ─────────────────────────────────────────
-interface OrgFlagRow { org_id: string; name: string; flags: Record<string, boolean>; }
 
 const FeatureAccessPanel = () => {
-    const [rows,    setRows]    = useState<OrgFlagRow[]>([]);
-    const [keys,    setKeys]    = useState<string[]>([]);
-    const [labels,  setLabels]  = useState<Record<string, string>>({});
-    const [loading, setLoading] = useState(true);
-    const [saving,  setSaving]  = useState<string | null>(null);   // org_id being saved
+    const { data, isLoading: loading, error: queryError } = useOrgFlags();
+    const rows   = data?.orgs ?? [];
+    const keys   = data?.feature_keys ?? [];
+    const labels = data?.feature_labels ?? {};
+    const updateFlags = useUpdateOrgFlags();
     const [search,  setSearch]  = useState("");
-    const [err,     setErr]     = useState<string | null>(null);
 
-    const api = (path: string, opts?: RequestInit) =>
-        fetch(path, { ...opts, headers: { Authorization: `Bearer ${sessionStorage.getItem("pe_token") ?? ""}`, "Content-Type": "application/json", ...(opts?.headers || {}) } });
+    const savingOrgId = updateFlags.isPending ? updateFlags.variables?.orgId ?? null : null;
 
-    const load = async () => {
-        setLoading(true); setErr(null);
-        try {
-            const r = await api("/admin/org-flags");
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            const d = await r.json();
-            setRows(d.orgs || []);
-            setKeys(d.feature_keys || []);
-            setLabels(d.feature_labels || {});
-        } catch (e: any) { setErr(e.message); }
-        finally { setLoading(false); }
+    const toggle = (org_id: string, feature: string, current: boolean) => {
+        const row = rows.find(r => r.org_id === org_id);
+        const newFlags = { ...(row?.flags || {}), [feature]: !current };
+        updateFlags.mutate({ orgId: org_id, flags: newFlags });
     };
 
-    useEffect(() => { load(); }, []);
-
-    const toggle = async (org_id: string, feature: string, current: boolean) => {
-        // Optimistic update
-        setRows(prev => prev.map(r =>
-            r.org_id === org_id ? { ...r, flags: { ...r.flags, [feature]: !current } } : r
-        ));
-        setSaving(org_id);
-        try {
-            const row = rows.find(r => r.org_id === org_id);
-            const newFlags = { ...(row?.flags || {}), [feature]: !current };
-            const res = await api(`/admin/org-flags/${org_id}`, {
-                method: "PUT", body: JSON.stringify({ flags: newFlags })
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const d = await res.json();
-            setRows(prev => prev.map(r => r.org_id === org_id ? { ...r, flags: d.flags } : r));
-        } catch (e: any) {
-            setErr(e.message);
-            // revert on failure
-            setRows(prev => prev.map(r =>
-                r.org_id === org_id ? { ...r, flags: { ...(r.flags || {}), [feature]: current } } : r
-            ));
-        } finally { setSaving(null); }
-    };
-
-    const enableAll  = async (org_id: string) => {
+    const enableAll  = (org_id: string) => {
         const all: Record<string, boolean> = {};
         keys.forEach(k => all[k] = true);
-        setSaving(org_id);
-        try {
-            const res = await api(`/admin/org-flags/${org_id}`, { method: "PUT", body: JSON.stringify({ flags: all }) });
-            const d = await res.json();
-            setRows(prev => prev.map(r => r.org_id === org_id ? { ...r, flags: d.flags } : r));
-        } finally { setSaving(null); }
+        updateFlags.mutate({ orgId: org_id, flags: all });
     };
 
-    const disableAll = async (org_id: string) => {
+    const disableAll = (org_id: string) => {
         const none: Record<string, boolean> = {};
         keys.forEach(k => none[k] = false);
-        setSaving(org_id);
-        try {
-            const res = await api(`/admin/org-flags/${org_id}`, { method: "PUT", body: JSON.stringify({ flags: none }) });
-            const d = await res.json();
-            setRows(prev => prev.map(r => r.org_id === org_id ? { ...r, flags: d.flags } : r));
-        } finally { setSaving(null); }
+        updateFlags.mutate({ orgId: org_id, flags: none });
     };
 
     const filtered = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
@@ -1221,14 +995,14 @@ const FeatureAccessPanel = () => {
                     style={{ marginLeft: "auto", width: 220 }}
                 />
             </div>
-            {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>Error: {err}</div>}
+            {queryError && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>Error: {queryError.message}</div>}
 
             {loading ? (
                 <div className={styles.muted} style={{ textAlign: "center", padding: "3rem" }}>Loading feature flags…</div>
             ) : filtered.length === 0 ? (
                 <div className={styles.muted} style={{ textAlign: "center", padding: "3rem" }}>No organisations found.</div>
             ) : filtered.map(org => {
-                const isSaving = saving === org.org_id;
+                const isSaving = savingOrgId === org.org_id;
                 const enabledCount = keys.filter(k => org.flags[k] !== false).length;
                 return (
                     <div key={org.org_id} style={{
@@ -1299,13 +1073,14 @@ const FeatureAccessPanel = () => {
 };
 
 const AdminCaseLawPanel = () => {
-    const [docs,       setDocs]       = useState<CaseLawDoc[]>([]);
-    const [loading,    setLoading]    = useState(true);
     const [pubFilter,  setPubFilter]  = useState("ALL");
-    const [uploading,  setUploading]  = useState(false);
+    const { data, isLoading: loading, refetch } = useCaseLawDocs(pubFilter);
+    const docs = data?.docs ?? [];
+    const uploadMut = useUploadCaseLaw();
+    const deleteMut = useDeleteCaseLawDoc();
+
     const [uploadErr,  setUploadErr]  = useState<string | null>(null);
     const [uploadOk,   setUploadOk]   = useState(false);
-    const [deleting,   setDeleting]   = useState<string | null>(null);
 
     // Upload form state
     const [file,      setFile]      = useState<File | null>(null);
@@ -1315,54 +1090,25 @@ const AdminCaseLawPanel = () => {
     const [volume,    setVolume]    = useState("");
     const [court,     setCourt]     = useState("");
 
-    const token = () => sessionStorage.getItem("pe_token") ?? "";
-    const auth  = () => ({ Authorization: `Bearer ${token()}` });
-
-    const load = async () => {
-        setLoading(true);
-        try {
-            const url = pubFilter !== "ALL" ? `/admin/case-law?publisher=${pubFilter}` : "/admin/case-law";
-            const res = await fetch(url, { headers: auth() });
-            if (res.ok) {
-                const d = await res.json();
-                setDocs(d.docs ?? []);
-            }
-        } catch { /* silent */ }
-        setLoading(false);
-    };
-
-    useEffect(() => { load(); }, [pubFilter]);
+    const deletingId = deleteMut.isPending ? deleteMut.variables ?? null : null;
 
     const handleUpload = async () => {
         if (!file) { setUploadErr("Please select a PDF file."); return; }
         if (!title.trim()) { setUploadErr("Please enter a title."); return; }
-        setUploadErr(null); setUploadOk(false); setUploading(true);
+        setUploadErr(null); setUploadOk(false);
         try {
-            const fd = new FormData();
-            fd.append("file",      file);
-            fd.append("publisher", publisher);
-            fd.append("title",     title.trim());
-            fd.append("year",      year);
-            fd.append("volume",    volume.trim());
-            fd.append("court",     court.trim());
-            const res = await fetch("/admin/case-law/upload", { method: "POST", headers: auth(), body: fd });
-            const data = await res.json();
-            if (!res.ok) { setUploadErr(data.error ?? "Upload failed."); return; }
+            await uploadMut.mutateAsync({ file, publisher, title: title.trim(), year, volume: volume.trim(), court: court.trim() });
             setUploadOk(true);
             setFile(null); setTitle(""); setYear(""); setVolume(""); setCourt("");
-            setTimeout(() => { setUploadOk(false); load(); }, 1500);
-        } catch { setUploadErr("Network error. Please try again."); }
-        finally { setUploading(false); }
+            setTimeout(() => setUploadOk(false), 1500);
+        } catch (e) {
+            setUploadErr(e instanceof Error ? e.message : "Upload failed.");
+        }
     };
 
-    const handleDelete = async (docId: string) => {
+    const handleDelete = (docId: string) => {
         if (!window.confirm("Remove this document from the case law library? It will no longer appear in searches.")) return;
-        setDeleting(docId);
-        try {
-            await fetch(`/admin/case-law/${docId}`, { method: "DELETE", headers: auth() });
-            setDocs(prev => prev.filter(d => d.doc_id !== docId));
-        } catch { /* silent */ }
-        setDeleting(null);
+        deleteMut.mutate(docId);
     };
 
     return (
@@ -1423,7 +1169,7 @@ const AdminCaseLawPanel = () => {
                 <Button
                     style={{ marginTop: "1.25rem" }}
                     onClick={handleUpload}
-                    loading={uploading}
+                    loading={uploadMut.isPending}
                 >
                     Upload & Index
                 </Button>
@@ -1440,7 +1186,7 @@ const AdminCaseLawPanel = () => {
                         {p}
                     </button>
                 ))}
-                <button className={styles.chip} onClick={load} style={{ marginLeft: "auto" }}>↻ Refresh</button>
+                <button className={styles.chip} onClick={() => refetch()} style={{ marginLeft: "auto" }}>↻ Refresh</button>
             </div>
 
             {loading ? (
@@ -1485,7 +1231,7 @@ const AdminCaseLawPanel = () => {
                                         variant="danger"
                                         size="sm"
                                         onClick={() => handleDelete(doc.doc_id)}
-                                        loading={deleting === doc.doc_id}
+                                        loading={deletingId === doc.doc_id}
                                     >
                                         Remove
                                     </Button>
@@ -1540,27 +1286,19 @@ const PANEL_SUBS: Record<Panel, string> = {
 const AdminDashboard = () => {
     const [panel,   setPanel]   = useState<Panel>("overview");
     const [theme,   setTheme]   = useState<Theme>(getTheme());
-    const [orgs,    setOrgs]    = useState<Org[]>([]);
-    const [stats,   setStats]   = useState<PlatformStats | null>(null);
-    const [loading, setLoading] = useState(true);
+    const { data: statsData, isLoading: statsLoading } = useAdminStats();
+    const { data: orgsData,  isLoading: orgsLoading  } = useAdminOrgsList();
+    const logoutMut = useLogout();
+
+    const stats   = statsData ?? null;
+    const orgs    = orgsData?.orgs ?? [];
+    const loading = statsLoading || orgsLoading;
 
     const raw  = sessionStorage.getItem("pe_user");
     const user = raw ? JSON.parse(raw) as { name: string; email: string } : { name: "Admin", email: "" };
 
-    useEffect(() => {
-        Promise.all([
-            fetch("/admin/stats", { headers: authHeaders() }).then(r => r.json()),
-            fetch("/admin/orgs",  { headers: authHeaders() }).then(r => r.json()),
-        ]).then(([statsData, orgsData]) => {
-            setStats(statsData);
-            setOrgs(orgsData.orgs ?? []);
-            setLoading(false);
-        }).catch(() => setLoading(false));
-    }, []);
-
     const signOut = () => {
-        const token = sessionStorage.getItem("pe_token") ?? "";
-        fetch("/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+        logoutMut.mutate();
         sessionStorage.clear();
         window.location.hash = "/";
     };
@@ -1612,7 +1350,7 @@ const AdminDashboard = () => {
                     ) : (
                         <>
                             {panel === "overview"       && <OverviewPanel stats={stats} orgs={orgs} />}
-                            {panel === "orgs"           && <OrgsPanel orgs={orgs} setOrgs={setOrgs} />}
+                            {panel === "orgs"           && <OrgsPanel />}
                             {panel === "registrations"  && <RegistrationsPanel />}
                             {panel === "upgrades"       && <AdminUpgradesPanel />}
                             {panel === "features"       && <FeatureAccessPanel />}

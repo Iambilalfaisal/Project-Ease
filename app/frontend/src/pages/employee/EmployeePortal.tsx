@@ -3,53 +3,17 @@ import readNDJSONStream from "ndjson-readablestream";
 import styles from "./EmployeePortal.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
 import { Table } from "../../components/ui";
+import type { PermittedCategory, MyProfile, DocFile, Verification, ChatMessage, AssignedHearing } from "./types";
+import { streamChatAnswer, exportAnswerToWord } from "../../services/chat";
+import { useMyProfile, useMyDocuments, useChangePassword } from "../../hooks/useEmployeeProfile";
+import { useMyHearings, useUpdateHearingOutcome } from "../../hooks/useAssignments";
+import { useLogout } from "../../hooks/useAuth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Panel = "chat" | "documents" | "assignments" | "profile";
 
-interface PermittedCategory {
-    category_id: string;
-    name: string;
-}
-
-interface MyProfile {
-    user_id: string;
-    name: string;
-    email: string;
-    role: string;
-    org_name: string;
-    permitted_categories: PermittedCategory[];
-}
-
-interface DocFile {
-    doc_id: string;
-    filename: string;
-    category_id: string | null;
-    category_name: string | null;
-    size_bytes: number;
-    uploaded_at: string;
-    status: "ready" | "processing" | "error";
-}
-
-interface Verification {
-    verdict: "verified" | "warning" | "unverified";
-    issues: string[];
-}
-
-interface ChatMessage {
-    role: "user" | "assistant";
-    content: string;
-    citations?: string[];
-    verification?: Verification;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function authHeaders(): Record<string, string> {
-    const token = sessionStorage.getItem("pe_token") ?? "";
-    return { Authorization: `Bearer ${token}` };
-}
 
 function fmtBytes(b: number): string {
     if (b >= 1_048_576) return `${(b / 1_048_576).toFixed(1)} MB`;
@@ -146,28 +110,15 @@ async function exportToWord(
 ): Promise<void> {
     setExporting(true);
     try {
-        const res = await fetch("/export/answer", {
-            method: "POST",
-            headers: { ...authHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify({ question, answer, citations, org_name: orgName }),
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            alert(err.error ?? "Export failed. Please try again.");
-            return;
-        }
-        const blob = await res.blob();
-        const cd = res.headers.get("Content-Disposition") ?? "";
-        const fnMatch = cd.match(/filename="([^"]+)"/);
-        const filename = fnMatch ? fnMatch[1] : "ProjectEase_Export.docx";
+        const { blob, filename } = await exportAnswerToWord({ question, answer, citations, org_name: orgName });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-    } catch {
-        alert("Network error. Please try again.");
+    } catch (e) {
+        alert(e instanceof Error ? e.message : "Network error. Please try again.");
     } finally {
         setExporting(false);
     }
@@ -218,32 +169,25 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
         abortRef.current = ctrl;
 
         try {
-            const res = await fetch("/chat/stream", {
-                method:  "POST",
-                headers: { ...authHeaders(), "Content-Type": "application/json" },
-                body:    JSON.stringify({
-                    messages: history.map(m => ({ role: m.role, content: m.content })),
-                    context: {
-                        overrides: {
-                            retrieval_mode:   "hybrid",
-                            semantic_ranker:  true,
-                            top:              5,
-                            suggest_followup_questions: false,
-                            ...(lang === "ur" ? { prompt_template: URDU_PROMPT_OVERRIDE } : {}),
-                        }
-                    },
-                    session_state: null,
-                }),
-                signal: ctrl.signal,
-            });
-
-            if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
+            const res = await streamChatAnswer({
+                messages: history.map(m => ({ role: m.role, content: m.content })),
+                context: {
+                    overrides: {
+                        retrieval_mode:   "hybrid",
+                        semantic_ranker:  true,
+                        top:              5,
+                        suggest_followup_questions: false,
+                        ...(lang === "ur" ? { prompt_template: URDU_PROMPT_OVERRIDE } : {}),
+                    }
+                },
+                session_state: null,
+            }, ctrl.signal);
 
             let fullText     = "";
             let citations: string[] = [];
             let verification: Verification | undefined;
 
-            for await (const event of readNDJSONStream(res.body)) {
+            for await (const event of readNDJSONStream(res.body!)) {
                 if (ctrl.signal.aborted) break;
                 if (event.type === "response.context" && event.context?.data_points) {
                     citations = event.context.data_points.citations ?? [];
@@ -498,32 +442,23 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
     const [currentPw,  setCurrentPw]  = useState("");
     const [newPw,      setNewPw]      = useState("");
     const [confirmPw,  setConfirmPw]  = useState("");
-    const [pwLoading,  setPwLoading]  = useState(false);
     const [pwError,    setPwError]    = useState<string | null>(null);
     const [pwSuccess,  setPwSuccess]  = useState(false);
+    const changePw = useChangePassword();
 
-    const changePassword = async () => {
+    const changePassword = () => {
         setPwError(null);
         setPwSuccess(false);
         if (!currentPw || !newPw || !confirmPw) { setPwError("Please fill in all fields."); return; }
         if (newPw.length < 8) { setPwError("New password must be at least 8 characters."); return; }
         if (newPw !== confirmPw) { setPwError("New passwords do not match."); return; }
-        setPwLoading(true);
-        try {
-            const res = await fetch("/auth/change-password", {
-                method: "POST",
-                headers: { ...authHeaders(), "Content-Type": "application/json" },
-                body: JSON.stringify({ current_password: currentPw, new_password: newPw }),
-            });
-            const data = await res.json();
-            if (!res.ok) { setPwError(data.error ?? "Could not change password."); return; }
-            setPwSuccess(true);
-            setCurrentPw(""); setNewPw(""); setConfirmPw("");
-        } catch {
-            setPwError("Network error. Please try again.");
-        } finally {
-            setPwLoading(false);
-        }
+        changePw.mutate({ current_password: currentPw, new_password: newPw }, {
+            onSuccess: () => {
+                setPwSuccess(true);
+                setCurrentPw(""); setNewPw(""); setConfirmPw("");
+            },
+            onError: (e: Error) => setPwError(e.message || "Could not change password."),
+        });
     };
 
     return (
@@ -615,9 +550,9 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
                     <button
                         className={styles.pwBtn}
                         onClick={changePassword}
-                        disabled={pwLoading}
+                        disabled={changePw.isPending}
                     >
-                        {pwLoading ? "Saving…" : "Update Password"}
+                        {changePw.isPending ? "Saving…" : "Update Password"}
                     </button>
                 </div>
             </div>
@@ -627,42 +562,16 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
 
 // ── My Court Assignments — associate dispatch ───────────────────────────────
 
-interface AssignedHearing {
-    hearing_id: string;
-    title: string;
-    hearing_date: string;
-    hearing_time: string | null;
-    court_name: string | null;
-    judge_name: string | null;
-    matter_id: string | null;
-    matter_title: string | null;
-    hearing_outcome: string | null;
-    adj_reason: string | null;
-    next_date_fixed_by: string | null;
-}
-
 const HEARING_OUTCOMES = ["Heard", "Adjourned", "Partially Heard", "Reserved for Judgment", "Dismissed", "Withdrawn", "ex-parte"];
 
 const AssignmentsPanel = ({ userId }: { userId: string }) => {
-    const [hearings, setHearings] = useState<AssignedHearing[]>([]);
-    const [loading,  setLoading]  = useState(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: hearings = [], isLoading } = useMyHearings(userId, today);
+    const updateOutcome = useUpdateHearingOutcome(userId, today);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [outcome,   setOutcome]   = useState("");
     const [adjReason, setAdjReason] = useState("");
-    const [saving,    setSaving]    = useState(false);
     const [saveErr,   setSaveErr]   = useState("");
-
-    const load = () => {
-        setLoading(true);
-        const today = new Date().toISOString().slice(0, 10);
-        fetch(`/hearings?from_date=${today}`, { headers: authHeaders() })
-            .then(r => r.json())
-            .then(d => setHearings(Array.isArray(d) ? d.filter((h: any) => h.assigned_to === userId) : []))
-            .catch(() => setHearings([]))
-            .finally(() => setLoading(false));
-    };
-
-    useEffect(() => { load(); }, [userId]);
 
     const startMarking = (h: AssignedHearing) => {
         setEditingId(h.hearing_id);
@@ -671,23 +580,16 @@ const AssignmentsPanel = ({ userId }: { userId: string }) => {
         setSaveErr("");
     };
 
-    const saveOutcome = async (hearingId: string) => {
+    const saveOutcome = (hearingId: string) => {
         if (!outcome) { setSaveErr("Select an outcome first."); return; }
-        setSaving(true); setSaveErr("");
-        try {
-            const r = await fetch(`/hearings/${hearingId}`, {
-                method: "PATCH",
-                headers: { ...authHeaders(), "Content-Type": "application/json" },
-                body: JSON.stringify({ hearing_outcome: outcome, adj_reason: adjReason || undefined }),
-            });
-            if (!r.ok) { const d = await r.json().catch(() => ({})); setSaveErr(d.error ?? "Could not save."); return; }
-            setEditingId(null);
-            load();
-        } catch { setSaveErr("Network error."); }
-        finally { setSaving(false); }
+        setSaveErr("");
+        updateOutcome.mutate({ hearingId, payload: { hearing_outcome: outcome, adj_reason: adjReason || undefined } }, {
+            onSuccess: () => setEditingId(null),
+            onError: (e: Error) => setSaveErr(e.message || "Could not save."),
+        });
     };
 
-    if (loading) return <div className={styles.panelContent}><div className={styles.loadingWrap}>Loading…</div></div>;
+    if (isLoading) return <div className={styles.panelContent}><div className={styles.loadingWrap}>Loading…</div></div>;
 
     if (hearings.length === 0) {
         return (
@@ -733,10 +635,10 @@ const AssignmentsPanel = ({ userId }: { userId: string }) => {
                                 )}
                                 {saveErr && <div className={styles.pwError} style={{ marginBottom: "0.5rem" }}>{saveErr}</div>}
                                 <div style={{ display: "flex", gap: "0.5rem" }}>
-                                    <button className={styles.sendBtn} disabled={saving} onClick={() => saveOutcome(h.hearing_id)}>
-                                        {saving ? "Saving…" : "✓ Save — notifies owner & client"}
+                                    <button className={styles.sendBtn} disabled={updateOutcome.isPending} onClick={() => saveOutcome(h.hearing_id)}>
+                                        {updateOutcome.isPending ? "Saving…" : "✓ Save — notifies owner & client"}
                                     </button>
-                                    <button className={styles.pwBtn} style={{ background: "transparent" }} onClick={() => setEditingId(null)} disabled={saving}>Cancel</button>
+                                    <button className={styles.pwBtn} style={{ background: "transparent" }} onClick={() => setEditingId(null)} disabled={updateOutcome.isPending}>Cancel</button>
                                 </div>
                             </div>
                         )}
@@ -771,37 +673,18 @@ const PANEL_SUBS: Record<Panel, string> = {
 };
 
 const EmployeePortal = () => {
-    const [panel,   setPanel]   = useState<Panel>("chat");
-    const [profile, setProfile] = useState<MyProfile | null>(null);
-    const [docs,    setDocs]    = useState<DocFile[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        const load = async () => {
-            try {
-                const [profileRes, docsRes] = await Promise.all([
-                    fetch("/me",        { headers: authHeaders() }),
-                    fetch("/documents", { headers: authHeaders() }),
-                ]);
-                if (profileRes.ok) setProfile(await profileRes.json());
-                if (docsRes.ok) {
-                    const d = await docsRes.json();
-                    setDocs(d.documents ?? []);
-                }
-            } catch { /* silent fallback */ }
-            setLoading(false);
-        };
-        load();
-    }, []);
+    const [panel, setPanel] = useState<Panel>("chat");
+    const { data: profile, isLoading: profileLoading } = useMyProfile();
+    const { data: docs = [], isLoading: docsLoading } = useMyDocuments();
+    const logoutMut = useLogout();
 
     const signOut = () => {
-        const token = sessionStorage.getItem("pe_token") ?? "";
-        fetch("/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+        logoutMut.mutate();
         sessionStorage.clear();
         window.location.hash = "/";
     };
 
-    if (loading) {
+    if (profileLoading || docsLoading) {
         return <div className={styles.loadingWrap}>Loading…</div>;
     }
 
