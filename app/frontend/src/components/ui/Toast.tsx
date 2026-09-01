@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useRef, useState } from "react";
-import styles from "./Toast.module.css";
+import { cn } from "@/lib/utils";
 
 interface ToastOptions {
     title: string;
@@ -34,11 +34,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return (
         <ToastContext.Provider value={{ toast }}>
             {children}
-            <div className={styles.stack} role="status" aria-live="polite">
+            <div className="fixed bottom-4 right-4 z-[1000] flex max-w-88 flex-col gap-2" role="status" aria-live="polite">
                 {toasts.map(t => (
-                    <div key={t.id} className={`${styles.toast} ${t.variant === "destructive" ? styles.destructive : ""}`}>
-                        <div className={styles.title}>{t.title}</div>
-                        {t.description && <div className={styles.description}>{t.description}</div>}
+                    <div
+                        key={t.id}
+                        className={cn(
+                            "rounded-base border border-border bg-bg-1 px-4 py-3 shadow-lg",
+                            t.variant === "destructive" && "border-danger"
+                        )}
+                    >
+                        <div className="text-sm font-weight-semibold text-ink-1">{t.title}</div>
+                        {t.description && <div className="mt-1 text-xs text-ink-2">{t.description}</div>}
                     </div>
                 ))}
             </div>

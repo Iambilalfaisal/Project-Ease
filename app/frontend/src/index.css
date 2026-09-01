@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 * {
     box-sizing: border-box;
 }
@@ -98,6 +100,70 @@
     --transition-slow: 0.35s;
 }
 
+/* ── Tailwind theme mapping ───────────────────────────────────────────────────
+   Every value below is a `var(...)` reference into the token blocks above —
+   nothing is redefined with a new number. Utilities generated from these
+   (bg-bg-0, text-ink-1, rounded-lg, shadow-gold, ease-standard, ...) resolve
+   to the exact same dark/light values as the existing CSS Modules, including
+   live theme switching via [data-theme] (a var() reference re-evaluates at
+   paint time, it isn't copied once). Colors are named ink-1/2/3 rather than
+   reusing "text-1" etc. — Tailwind's own --text-* namespace is for font
+   size, so a --color-text-* key here would collide with it.
+   Spacing intentionally isn't remapped: --space-1..8 (0.25rem step) already
+   equals Tailwind's default 0.25rem spacing scale at the matching multiple.
+─────────────────────────────────────────────────────────────────────────────*/
+@theme {
+    --color-bg-0: var(--bg-0);
+    --color-bg-1: var(--bg-1);
+    --color-bg-2: var(--bg-2);
+    --color-gold: var(--gold);
+    --color-gold-light: var(--gold-light);
+    --color-gold-dim: var(--gold-dim);
+    --color-gold-border: var(--gold-border);
+    --color-ink-1: var(--text-1);
+    --color-ink-2: var(--text-2);
+    --color-ink-3: var(--text-3);
+    --color-border: var(--border);
+    --color-border-md: var(--border-md);
+    --color-danger: var(--danger);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
+
+    --font-serif: var(--serif);
+    --font-sans: var(--sans);
+
+    --text-xs: var(--text-xs);
+    --text-sm: var(--text-sm);
+    --text-base: var(--text-base);
+    --text-md: var(--text-md);
+    --text-lg: var(--text-lg);
+    --text-xl: var(--text-xl);
+    --text-2xl: var(--text-2xl);
+    --text-display: var(--text-display);
+
+    --font-weight-regular: var(--weight-regular);
+    --font-weight-medium: var(--weight-medium);
+    --font-weight-semibold: var(--weight-semibold);
+    --font-weight-bold: var(--weight-bold);
+
+    --tracking-tight: var(--tracking-tight);
+    --tracking-normal: var(--tracking-normal);
+    --tracking-wide: var(--tracking-wide);
+    --tracking-eyebrow: var(--tracking-eyebrow);
+
+    --radius-sm: var(--radius-sm);
+    --radius-base: var(--radius);
+    --radius-lg: var(--radius-lg);
+    --radius-pill: var(--radius-pill);
+
+    --shadow-sm: var(--shadow-sm);
+    --shadow-base: var(--shadow);
+    --shadow-lg: var(--shadow-lg);
+    --shadow-gold: var(--shadow-gold);
+
+    --ease-standard: var(--ease-standard);
+}
+
 html {
     height: 100%;
     background: #f2f2f2;
@@ -176,4 +242,21 @@ input.urduInput {
     html {
         font-size: 16px; /* Standard size for desktops */
     }
+}
+
+/* ── Global keyframes for Tailwind arbitrary `animate-[name_...]` utilities ──
+   Must live outside any *.module.css — CSS Modules scope keyframe names,
+   which would break a Tailwind class referencing the literal name. */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes riseIn {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }

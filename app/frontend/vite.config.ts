@@ -32,7 +32,10 @@ export default defineConfig(() => {
     return {
         plugins: [react(), redirectAlias],
         resolve: {
-            preserveSymlinks: true
+            preserveSymlinks: true,
+            alias: {
+                "@": resolve(__dirname, "src")
+            }
         },
         build: {
             outDir: "../backend/static",
