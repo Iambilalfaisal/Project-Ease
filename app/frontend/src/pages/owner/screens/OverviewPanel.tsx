@@ -2,7 +2,11 @@
 // down from the OwnerPortal shell (which already owns the docs/team/usage
 // fetches). No local fetching of its own, so no service/hook layer needed.
 
-import styles from "../OwnerPortal.module.css";
+import {
+    PANEL_CONTENT, WELCOME_BANNER, WELCOME_TITLE, WELCOME_SUB, STATS_GRID, STAT_CARD,
+    STAT_BADGE, STAT_VALUE, STAT_LABEL, STAT_SUB, QUICK_ACTIONS, SECTION_TITLE,
+    ACTION_CARDS, ACTION_CARD, ACTION_CARD_ICON, ACTION_CARD_TITLE, ACTION_CARD_SUB,
+} from "../ownerStyles";
 import type { DocFile, TeamMember, Usage } from "../types";
 import { fmtBytes } from "../types";
 
@@ -17,47 +21,47 @@ export const OverviewPanel = ({ orgName, docs, team, usage }: {
     ];
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.welcomeBanner}>
-                <div className={styles.welcomeTitle}>Welcome back, {orgName}</div>
-                <div className={styles.welcomeSub}>
+        <div className={PANEL_CONTENT}>
+            <div className={WELCOME_BANNER}>
+                <div className={WELCOME_TITLE}>Welcome back, {orgName}</div>
+                <div className={WELCOME_SUB}>
                     Your workspace is set up and ready. Upload documents and your team can start asking questions immediately.
                 </div>
             </div>
 
-            <div className={styles.statsGrid}>
+            <div className={STATS_GRID}>
                 {stats.map(s => (
-                    <div key={s.label} className={styles.statCard}>
-                        <div className={styles.statBadge}>{s.icon}</div>
-                        <div className={styles.statValue}>{s.value}</div>
-                        <div className={styles.statLabel}>{s.label}</div>
-                        <div className={styles.statSub}>{s.sub}</div>
+                    <div key={s.label} className={STAT_CARD}>
+                        <div className={STAT_BADGE}>{s.icon}</div>
+                        <div className={STAT_VALUE}>{s.value}</div>
+                        <div className={STAT_LABEL}>{s.label}</div>
+                        <div className={STAT_SUB}>{s.sub}</div>
                     </div>
                 ))}
             </div>
 
-            <div className={styles.quickActions}>
-                <div className={styles.sectionTitle}>Quick Actions</div>
-                <div className={styles.actionCards}>
-                    <div className={styles.actionCard}>
-                        <div className={styles.actionCardIcon}>D</div>
+            <div className={QUICK_ACTIONS}>
+                <div className={SECTION_TITLE}>Quick Actions</div>
+                <div className={ACTION_CARDS}>
+                    <div className={ACTION_CARD}>
+                        <div className={ACTION_CARD_ICON}>D</div>
                         <div>
-                            <div className={styles.actionCardTitle}>Upload Documents</div>
-                            <div className={styles.actionCardSub}>Add contracts, case files, or reports to your library</div>
+                            <div className={ACTION_CARD_TITLE}>Upload Documents</div>
+                            <div className={ACTION_CARD_SUB}>Add contracts, case files, or reports to your library</div>
                         </div>
                     </div>
-                    <div className={styles.actionCard}>
-                        <div className={styles.actionCardIcon}>T</div>
+                    <div className={ACTION_CARD}>
+                        <div className={ACTION_CARD_ICON}>T</div>
                         <div>
-                            <div className={styles.actionCardTitle}>Invite Team Members</div>
-                            <div className={styles.actionCardSub}>Give your staff access to the workspace</div>
+                            <div className={ACTION_CARD_TITLE}>Invite Team Members</div>
+                            <div className={ACTION_CARD_SUB}>Give your staff access to the workspace</div>
                         </div>
                     </div>
-                    <div className={styles.actionCard}>
-                        <div className={styles.actionCardIcon}>C</div>
+                    <div className={ACTION_CARD}>
+                        <div className={ACTION_CARD_ICON}>C</div>
                         <div>
-                            <div className={styles.actionCardTitle}>Ask a Question</div>
-                            <div className={styles.actionCardSub}>Search your documents using plain language</div>
+                            <div className={ACTION_CARD_TITLE}>Ask a Question</div>
+                            <div className={ACTION_CARD_SUB}>Search your documents using plain language</div>
                         </div>
                     </div>
                 </div>

@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import styles from "./OwnerPortal.module.css";
+import {
+    SHELL, MOBILE_TOP_BAR, HAMBURGER, MOBILE_LOGO_TEXT, LOGO_ACCENT, NAV_OVERLAY,
+    SIDEBAR, SIDEBAR_OPEN, SIDEBAR_LOGO, ORG_BADGE, ORG_BADGE_NAME, ORG_BADGE_TYPE,
+    NAV as NAV_WRAP, NAV_ITEM, NAV_ITEM_ACTIVE, NAV_ITEM_CHAT, NAV_DIVIDER, NAV_ICON_BOX,
+    SIDEBAR_FOOTER, SIDEBAR_USER_BOX, SIDEBAR_USER_NAME, SIDEBAR_USER_ROLE, SIGN_OUT_BTN,
+    MAIN, HEADER, HEADER_TITLE, HEADER_SUB, THEME_TOGGLE, BODY, PANEL_CONTENT,
+} from "./ownerStyles";
 import { toggleTheme, getTheme, Theme } from "../../theme";
 import { initOfflineSync, getPendingCount } from "../../offline/offlineQueue";
 
@@ -171,12 +177,12 @@ const PANEL_SUBS_UR: Record<Panel, string> = {
 const ThemeToggle = () => {
     const [theme, setTheme] = useState<Theme>(getTheme());
     const handle = () => { const next = toggleTheme(); setTheme(next); };
-    return <button className={styles.themeToggle} onClick={handle}>{theme === "dark" ? "Light Mode" : "Dark Mode"}</button>;
+    return <button className={THEME_TOGGLE} onClick={handle}>{theme === "dark" ? "Light Mode" : "Dark Mode"}</button>;
 };
 
 // ── Disabled Feature Placeholder — Task #162 ─────────────────────────────────
 const DisabledFeature = ({ name }: { name: string }) => (
-    <div className={styles.panelContent} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 320, gap: 14, textAlign: "center" }}>
+    <div className={PANEL_CONTENT} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 320, gap: 14, textAlign: "center" }}>
         <div style={{ fontSize: 40 }}>🔒</div>
         <div style={{ fontWeight: 700, fontSize: 16, color: "var(--text-1)" }}>{name} is disabled</div>
         <div style={{ color: "var(--text-3)", fontSize: 13, maxWidth: 360 }}>
@@ -335,7 +341,7 @@ const OwnerPortal = () => {
     };
 
     return (
-        <div className={styles.shell}>
+        <div className={SHELL}>
             {/* Offline / sync status banner */}
             {(!isOnline || offlinePendingCount > 0 || offlineSyncNotice) && (
                 <div style={{
@@ -353,65 +359,65 @@ const OwnerPortal = () => {
             )}
 
             {/* Mobile top bar */}
-            <div className={styles.mobileTopBar}>
-                <button className={styles.hamburger} onClick={() => setNavOpen(v => !v)} aria-label="Menu">
+            <div className={MOBILE_TOP_BAR}>
+                <button className={HAMBURGER} onClick={() => setNavOpen(v => !v)} aria-label="Menu">
                     <span /><span /><span />
                 </button>
-                <span className={styles.mobileLogoText}>Project<span className={styles.logoAccent}> Ease</span></span>
+                <span className={MOBILE_LOGO_TEXT}>Project<span className={LOGO_ACCENT}> Ease</span></span>
             </div>
 
             {/* Mobile overlay */}
-            {navOpen && <div className={styles.navOverlay} onClick={() => setNavOpen(false)} />}
+            {navOpen && <div className={NAV_OVERLAY} onClick={() => setNavOpen(false)} />}
 
             {/* Sidebar */}
-            <aside className={`${styles.sidebar} ${navOpen ? styles.sidebarOpen : ""}`}>
-                <div className={styles.sidebarLogo}>
-                    Project<span className={styles.logoAccent}> Ease</span>
+            <aside className={`${SIDEBAR} ${navOpen ? SIDEBAR_OPEN : ""}`}>
+                <div className={SIDEBAR_LOGO}>
+                    Project<span className={LOGO_ACCENT}> Ease</span>
                 </div>
 
-                <div className={styles.orgBadge} dir={lang === "ur" ? "rtl" : undefined}>
-                    <div className={styles.orgBadgeName}>{orgName}</div>
-                    <div className={styles.orgBadgeType}>{lang === "ur" ? "فرم مالک" : "Firm Owner"}</div>
+                <div className={ORG_BADGE} dir={lang === "ur" ? "rtl" : undefined}>
+                    <div className={ORG_BADGE_NAME}>{orgName}</div>
+                    <div className={ORG_BADGE_TYPE}>{lang === "ur" ? "فرم مالک" : "Firm Owner"}</div>
                 </div>
 
-                <nav className={styles.nav}>
+                <nav className={NAV_WRAP}>
                     {visibleNav.map(({ id, icon, label }) => (
                         <button
                             key={id}
-                            className={`${styles.navItem} ${panel === id ? styles.navItemActive : ""}`}
+                            className={`${NAV_ITEM} ${panel === id ? NAV_ITEM_ACTIVE : ""}`}
                             onClick={() => navClick(id)}
                             dir={lang === "ur" ? "rtl" : undefined}
                         >
-                            <span className={styles.navIconBox}>{icon}</span>
+                            <span className={NAV_ICON_BOX}>{icon}</span>
                             {lang === "ur" ? NAV_LABELS_UR[id] : label}
                         </button>
                     ))}
 
-                    <div className={styles.navDivider} />
+                    <div className={NAV_DIVIDER} />
 
-                    <button className={styles.navItemChat} onClick={() => { window.location.hash = "/app"; }}
+                    <button className={NAV_ITEM_CHAT} onClick={() => { window.location.hash = "/app"; }}
                         dir={lang === "ur" ? "rtl" : undefined}>
-                        <span className={styles.navIconBox}>A</span>
+                        <span className={NAV_ICON_BOX}>A</span>
                         {lang === "ur" ? "سوال پوچھیں" : "Ask a Question"}
                     </button>
                 </nav>
 
-                <div className={styles.sidebarFooter}>
-                    <div className={styles.sidebarUserBox}>
-                        <div className={styles.sidebarUserName}>{user.name}</div>
-                        <div className={styles.sidebarUserRole} dir={lang === "ur" ? "rtl" : undefined}>
+                <div className={SIDEBAR_FOOTER}>
+                    <div className={SIDEBAR_USER_BOX}>
+                        <div className={SIDEBAR_USER_NAME}>{user.name}</div>
+                        <div className={SIDEBAR_USER_ROLE} dir={lang === "ur" ? "rtl" : undefined}>
                             {lang === "ur" ? "فرم مالک" : "Firm Owner"}
                         </div>
                     </div>
                     <button
-                        className={styles.themeToggle}
+                        className={THEME_TOGGLE}
                         style={{ textAlign: lang === "ur" ? "right" : "left", width: "100%", marginBottom: "0.35rem" }}
                         onClick={() => { window.location.hash = "/settings"; }}
                         dir={lang === "ur" ? "rtl" : undefined}
                     >
                         {lang === "ur" ? "اکاؤنٹ ترتیبات" : "Account Settings"}
                     </button>
-                    <button className={styles.signOutBtn} onClick={signOut}
+                    <button className={SIGN_OUT_BTN} onClick={signOut}
                         dir={lang === "ur" ? "rtl" : undefined}>
                         {lang === "ur" ? "لاگ آؤٹ" : "Sign Out"}
                     </button>
@@ -419,13 +425,13 @@ const OwnerPortal = () => {
             </aside>
 
             {/* Main */}
-            <div className={styles.main}>
-                <header className={styles.header}>
+            <div className={MAIN}>
+                <header className={HEADER}>
                     <div dir={lang === "ur" ? "rtl" : undefined}>
-                        <h1 className={styles.headerTitle}>
+                        <h1 className={HEADER_TITLE}>
                             {lang === "ur" ? PANEL_TITLES_UR[panel] : PANEL_TITLES[panel]}
                         </h1>
-                        <p className={styles.headerSub}>
+                        <p className={HEADER_SUB}>
                             {lang === "ur" ? PANEL_SUBS_UR[panel] : PANEL_SUBS[panel]}
                         </p>
                     </div>
@@ -466,7 +472,7 @@ const OwnerPortal = () => {
                     </div>
                 </header>
 
-                <div className={styles.body}>
+                <div className={BODY}>
                     {loading ? (
                         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
                     ) : (

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import styles from "./AdminDashboard.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
 import { Table, Modal, Badge, Button, BadgeTone } from "../../components/ui";
 import type { Org, PlatformStats } from "./types";
@@ -34,6 +33,62 @@ const PLAN_COLORS: Record<string, string> = {
 
 const INDUSTRIES = ["Law Practice", "CA / Accounting", "Logistics", "Financial Services", "Healthcare", "Other"];
 
+// ── Tailwind class constants (ported 1:1 from AdminDashboard.module.css) ───────
+
+const MUTED = "text-sm !text-ink-3";
+const SECTION_TITLE = "m-0 mb-[0.85rem] font-serif text-[1rem] font-bold tracking-[-0.01em] text-ink-1";
+const PANEL_CONTENT = "max-w-[1100px]";
+const PANEL_TOOLBAR = "mb-5 flex items-center justify-between";
+const RESULT_COUNT = "text-sm text-ink-3";
+const ERROR_BANNER = "mb-3 flex items-center gap-3 rounded-[12px] border border-[rgba(220,53,69,0.35)] bg-[rgba(220,53,69,0.12)] px-4 py-[0.7rem] text-[0.85rem] text-[#e05260]";
+const ERROR_DISMISS = "ml-auto cursor-pointer border-none bg-transparent text-[1.1rem] text-inherit opacity-70 hover:opacity-100";
+const FORM_GROUP = "mb-4";
+const FORM_LABEL = "mb-[0.4rem] block text-xs font-bold uppercase tracking-[0.05em] text-ink-2";
+const FORM_INPUT = "w-full box-border rounded-[7px] border border-border-md bg-bg-2 px-[0.9rem] py-[0.65rem] font-sans text-[0.875rem] text-ink-1 outline-none transition-[border-color] duration-150 placeholder:text-ink-3 focus:border-gold-border focus:bg-gold-dim";
+const FORM_SELECT = `${FORM_INPUT} cursor-pointer appearance-none [&>option]:bg-bg-1 [&>option]:text-ink-1`;
+const INFO_BOX = "rounded-[12px] border border-gold-border bg-gold-dim px-6 py-5 text-[0.875rem] leading-[1.65] text-ink-2";
+const EMPTY_STATE = "py-16 text-center text-[0.9rem] text-ink-3";
+const SERVICE_GRID = "grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4";
+const SERVICE_CARD = "rounded-[12px] border-l-[3px] bg-bg-1 p-5";
+const SERVICE_CARD_OK = "border-success";
+const SERVICE_CARD_WARN = "border-border-md";
+const SERVICE_NAME = "mb-[0.4rem] font-semibold";
+const SERVICE_NOTE = "text-[0.78rem] leading-[1.5] text-ink-3";
+const QUERY_CELL = "max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap";
+const BTN_PRIMARY = "rounded-sm border-none bg-[linear-gradient(135deg,var(--gold)_0%,#9C7A28_100%)] px-5 py-[0.55rem] font-sans text-[0.85rem] font-bold text-[#05080F] transition-[opacity,transform] duration-150 hover:-translate-y-px hover:opacity-[0.88]";
+const BTN_GHOST = "rounded-sm border border-border-md bg-transparent px-5 py-[0.55rem] font-sans text-[0.85rem] text-ink-2 transition-[border-color,color] duration-150 hover:border-ink-2 hover:text-ink-1";
+const SUCCESS_BANNER = "rounded-sm border border-[rgba(46,158,79,0.35)] bg-[rgba(46,158,79,0.10)] px-4 py-[0.65rem] text-[0.83rem] leading-[1.5] text-[#2e9e4f]";
+const CHIP = "inline-flex cursor-pointer items-center rounded-pill border border-border bg-transparent px-[0.85rem] py-[0.3rem] font-sans text-[0.75rem] font-semibold text-ink-2 transition-[border-color,color] duration-150 hover:border-gold hover:text-gold";
+const CHIP_ACTIVE = "inline-flex cursor-pointer items-center rounded-pill border border-gold bg-[rgba(184,150,76,0.10)] px-[0.85rem] py-[0.3rem] font-sans text-[0.75rem] font-bold text-gold";
+
+const STATS_GRID = "mb-10 grid grid-cols-4 gap-4 max-[901px]:grid-cols-2";
+const STAT_CARD = "rounded-[12px] border border-border bg-bg-1 px-5 py-6 transition-[border-color] duration-200 hover:border-gold-border";
+const STAT_ICON = "mb-3 text-[1.5rem]";
+const STAT_VALUE = "mb-[0.3rem] font-serif text-2xl font-bold leading-none text-gold";
+const STAT_LABEL = "mb-[0.2rem] text-[0.85rem] font-semibold text-ink-1";
+const STAT_SUB = "text-xs text-ink-3";
+
+const SHELL = "flex h-screen overflow-hidden bg-bg-0 font-sans text-ink-1 antialiased max-[481px]:h-auto max-[481px]:min-h-[100dvh]";
+const SIDEBAR = "flex w-[232px] shrink-0 flex-col overflow-hidden border-r border-border bg-bg-1 max-[641px]:w-[60px] max-[481px]:w-full max-[481px]:h-auto max-[481px]:flex-row max-[481px]:overflow-x-auto max-[481px]:border-r-0 max-[481px]:border-b max-[481px]:border-border max-[481px]:p-2";
+const SIDEBAR_LOGO = "border-b border-border px-6 pt-6 pb-5 font-serif text-[1.25rem] font-bold tracking-tight text-gold max-[641px]:px-0 max-[641px]:py-5 max-[641px]:text-center max-[641px]:text-[0px] max-[641px]:after:content-['PE'] max-[641px]:after:font-serif max-[641px]:after:text-[1rem] max-[641px]:after:text-gold max-[481px]:hidden";
+const LOGO_ACCENT = "text-ink-1";
+const ADMIN_CHIP = "ml-2 inline-block align-middle rounded-[6px] border border-[rgba(99,102,241,0.35)] bg-[rgba(99,102,241,0.2)] px-[0.45rem] py-[0.1rem] font-sans text-[0.62rem] font-extrabold uppercase tracking-[0.06em] text-[#a5b4fc]";
+const NAV = "flex flex-1 flex-col gap-[0.2rem] overflow-y-auto px-3 py-4 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-[2px] [&::-webkit-scrollbar-thumb]:bg-border-md";
+const NAV_ITEM = "flex w-full cursor-pointer items-center gap-3 rounded-sm border-none bg-transparent px-[0.9rem] py-[0.65rem] text-left font-sans text-[0.875rem] font-medium text-ink-2 transition-[background,color] duration-150 hover:bg-gold-dim hover:text-ink-1 max-[481px]:whitespace-nowrap max-[481px]:px-[0.6rem] max-[481px]:py-[0.4rem] max-[481px]:text-[0.78rem]";
+const NAV_ITEM_ACTIVE = "!bg-gold-dim !text-gold border-l-2 border-l-gold pl-[calc(0.9rem-2px)] font-semibold";
+const NAV_ICON = "w-[22px] shrink-0 text-center text-[1rem]";
+const SIDEBAR_FOOTER = "flex flex-col gap-[0.6rem] border-t border-border px-4 pt-4 pb-5 max-[641px]:px-2 max-[641px]:py-3 max-[481px]:hidden";
+const SIDEBAR_USER_BOX = "leading-[1.4] max-[641px]:hidden";
+const SIDEBAR_USER_NAME = "text-sm font-semibold text-ink-1";
+const SIDEBAR_USER_ROLE = "text-xs font-medium uppercase tracking-[0.04em] text-gold";
+const SIGN_OUT_BTN = "w-full cursor-pointer rounded-[7px] border border-border-md bg-transparent px-[0.85rem] py-[0.4rem] text-left font-sans text-[0.8rem] text-ink-2 transition-[border-color,color] duration-150 hover:border-danger hover:text-danger";
+const MAIN = "flex flex-1 flex-col overflow-hidden bg-bg-0 max-[481px]:h-auto max-[481px]:overflow-auto";
+const HEADER = "flex shrink-0 items-center justify-between border-b border-border bg-bg-1 px-8 pt-6 pb-5";
+const HEADER_TITLE = "m-0 mb-[0.15rem] font-serif text-[1.45rem] font-bold tracking-tight text-ink-1";
+const HEADER_SUB = "m-0 text-sm text-ink-3";
+const THEME_BTN = "cursor-pointer whitespace-nowrap rounded-sm border border-border-md bg-bg-2 px-4 py-[0.45rem] font-sans text-[0.8rem] text-ink-2 transition-[border-color,color] duration-150 hover:border-gold-border hover:text-gold";
+const BODY = "flex-1 overflow-y-auto p-8 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-[2px] [&::-webkit-scrollbar-thumb]:bg-border-md";
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtBytes(b: number): string {
@@ -53,7 +108,7 @@ const PlanBadge = ({ plan }: { plan: string }) => (
 );
 
 const ScoreBadge = ({ val }: { val: number | null }) => {
-    if (val === null) return <span className={styles.muted}>—</span>;
+    if (val === null) return <span className={MUTED}>—</span>;
     const pct = Math.round(val * 100);
     const color = pct >= 80 ? "var(--success)" : pct >= 50 ? "var(--warning)" : "var(--danger)";
     return <span style={{ color, fontWeight: 700 }}>{pct}%</span>;
@@ -79,7 +134,7 @@ const OrgDetailModal = ({ orgId, onClose }: { orgId: string; onClose: () => void
                     <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "1.25rem" }}>
                         <PlanBadge plan={details.plan} />
                         <Badge tone={orgStatusTone(details.status)}>{details.status}</Badge>
-                        <span className={styles.muted} style={{ fontSize: "0.78rem" }}>{details.industry}</span>
+                        <span className={MUTED} style={{ fontSize: "0.78rem" }}>{details.industry}</span>
                     </div>
 
                     {/* Stats row */}
@@ -98,7 +153,7 @@ const OrgDetailModal = ({ orgId, onClose }: { orgId: string; onClose: () => void
                     </div>
 
                     {/* Users */}
-                    <div className={styles.sectionTitle} style={{ marginBottom: "0.5rem" }}>Team Members</div>
+                    <div className={SECTION_TITLE} style={{ marginBottom: "0.5rem" }}>Team Members</div>
                     <div style={{ marginBottom: "1.25rem", maxHeight: 180, overflowY: "auto" }}>
                         <Table dense>
                             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
@@ -106,9 +161,9 @@ const OrgDetailModal = ({ orgId, onClose }: { orgId: string; onClose: () => void
                                 {details.users.map(u => (
                                     <tr key={u.user_id}>
                                         <td><strong>{u.name}</strong></td>
-                                        <td className={styles.muted}>{u.email}</td>
+                                        <td className={MUTED}>{u.email}</td>
                                         <td><span style={{ color: u.role === "org_owner" ? "var(--gold)" : "var(--text-3)", fontSize: "0.78rem", fontWeight: 600 }}>{u.role === "org_owner" ? "Owner" : "Employee"}</span></td>
-                                        <td className={styles.muted}>{fmtDate(u.created_at)}</td>
+                                        <td className={MUTED}>{fmtDate(u.created_at)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -116,7 +171,7 @@ const OrgDetailModal = ({ orgId, onClose }: { orgId: string; onClose: () => void
                     </div>
 
                     {/* Documents */}
-                    <div className={styles.sectionTitle} style={{ marginBottom: "0.5rem" }}>Documents ({details.documents.length})</div>
+                    <div className={SECTION_TITLE} style={{ marginBottom: "0.5rem" }}>Documents ({details.documents.length})</div>
                     <div style={{ maxHeight: 180, overflowY: "auto" }}>
                         <Table dense empty={details.documents.length === 0} emptyMessage="No documents uploaded yet.">
                             <thead><tr><th>File</th><th>Size</th><th>Status</th><th>Uploaded</th></tr></thead>
@@ -124,9 +179,9 @@ const OrgDetailModal = ({ orgId, onClose }: { orgId: string; onClose: () => void
                                 {details.documents.map(d => (
                                     <tr key={d.doc_id}>
                                         <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.filename}</td>
-                                        <td className={styles.muted}>{fmtBytes(d.size_bytes)}</td>
+                                        <td className={MUTED}>{fmtBytes(d.size_bytes)}</td>
                                         <td><Badge tone={docStatusTone(d.status)}>{d.status}</Badge></td>
-                                        <td className={styles.muted}>{fmtDate(d.uploaded_at)}</td>
+                                        <td className={MUTED}>{fmtDate(d.uploaded_at)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -151,20 +206,20 @@ const OverviewPanel = ({ stats, orgs }: { stats: PlatformStats | null; orgs: Org
     const planBreakdown = stats?.plans ?? {};
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.statsGrid}>
+        <div className={PANEL_CONTENT}>
+            <div className={STATS_GRID}>
                 {cards.map(c => (
-                    <div key={c.label} className={styles.statCard}>
-                        <div className={styles.statIcon}>{c.icon}</div>
-                        <div className={styles.statValue}>{c.value}</div>
-                        <div className={styles.statLabel}>{c.label}</div>
-                        <div className={styles.statSub}>{c.sub}</div>
+                    <div key={c.label} className={STAT_CARD}>
+                        <div className={STAT_ICON}>{c.icon}</div>
+                        <div className={STAT_VALUE}>{c.value}</div>
+                        <div className={STAT_LABEL}>{c.label}</div>
+                        <div className={STAT_SUB}>{c.sub}</div>
                     </div>
                 ))}
             </div>
 
             {/* Plan breakdown */}
-            <div className={styles.sectionTitle}>Plan Distribution</div>
+            <div className={SECTION_TITLE}>Plan Distribution</div>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "2rem" }}>
                 {["free", "pro", "enterprise"].map(plan => (
                     <div key={plan} style={{
@@ -181,7 +236,7 @@ const OverviewPanel = ({ stats, orgs }: { stats: PlatformStats | null; orgs: Org
             </div>
 
             {/* Recent orgs */}
-            <div className={styles.sectionTitle}>All Organizations</div>
+            <div className={SECTION_TITLE}>All Organizations</div>
             <Table>
                 <thead><tr><th>Name</th><th>Plan</th><th>Users</th><th>Docs</th><th>Status</th><th>Created</th></tr></thead>
                 <tbody>
@@ -189,10 +244,10 @@ const OverviewPanel = ({ stats, orgs }: { stats: PlatformStats | null; orgs: Org
                         <tr key={o.org_id}>
                             <td><strong>{o.name}</strong><div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{o.industry}</div></td>
                             <td><PlanBadge plan={o.plan} /></td>
-                            <td className={styles.muted}>{o.user_count}</td>
-                            <td className={styles.muted}>{o.doc_count}</td>
+                            <td className={MUTED}>{o.user_count}</td>
+                            <td className={MUTED}>{o.doc_count}</td>
                             <td><Badge tone={orgStatusTone(o.status)}>{o.status}</Badge></td>
-                            <td className={styles.muted}>{fmtDate(o.created_at)}</td>
+                            <td className={MUTED}>{fmtDate(o.created_at)}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -260,18 +315,18 @@ const OrgsPanel = () => {
     };
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.panelToolbar}>
-                <span className={styles.resultCount}>{orgs.length} organization{orgs.length !== 1 ? "s" : ""}</span>
+        <div className={PANEL_CONTENT}>
+            <div className={PANEL_TOOLBAR}>
+                <span className={RESULT_COUNT}>{orgs.length} organization{orgs.length !== 1 ? "s" : ""}</span>
                 <Button onClick={() => { setShowCreate(true); setActionError(null); }}>
                     + Add Organization
                 </Button>
             </div>
 
             {actionError && (
-                <div className={styles.errorBanner}>
+                <div className={ERROR_BANNER}>
                     ⚠ {actionError}
-                    <button className={styles.errorDismiss} onClick={() => setActionError(null)}>×</button>
+                    <button className={ERROR_DISMISS} onClick={() => setActionError(null)}>×</button>
                 </div>
             )}
 
@@ -296,11 +351,11 @@ const OrgsPanel = () => {
                                 <div style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{o.industry}</div>
                             </td>
                             <td><PlanBadge plan={o.plan} /></td>
-                            <td className={styles.muted}>{o.user_count} / {o.max_users}</td>
-                            <td className={styles.muted}>{o.doc_count} / {o.max_docs}</td>
-                            <td className={styles.muted}>{fmtBytes(o.total_bytes)}</td>
+                            <td className={MUTED}>{o.user_count} / {o.max_users}</td>
+                            <td className={MUTED}>{o.doc_count} / {o.max_docs}</td>
+                            <td className={MUTED}>{fmtBytes(o.total_bytes)}</td>
                             <td><Badge tone={orgStatusTone(o.status)}>{o.status}</Badge></td>
-                            <td className={styles.muted}>{fmtDate(o.created_at)}</td>
+                            <td className={MUTED}>{fmtDate(o.created_at)}</td>
                             <td>
                                 <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
                                     <Button variant="ghost" size="sm" onClick={() => setDetailOrgId(o.org_id)}>
@@ -335,22 +390,22 @@ const OrgsPanel = () => {
                     <Button onClick={handleCreate} loading={createOrgMut.isPending}>Create Organization</Button>
                 </>}
             >
-                {actionError && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {actionError}</div>}
+                {actionError && <div className={ERROR_BANNER} style={{ marginBottom: "0.75rem" }}>⚠ {actionError}</div>}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
-                    <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
-                        <label className={styles.formLabel}>Organization Name</label>
-                        <input className={styles.formInput} value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} placeholder="Acme Legal" />
+                    <div className={FORM_GROUP} style={{ gridColumn: "1 / -1" }}>
+                        <label className={FORM_LABEL}>Organization Name</label>
+                        <input className={FORM_INPUT} value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} placeholder="Acme Legal" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Industry</label>
-                        <select className={styles.formSelect} value={createForm.industry} onChange={e => setCreateForm(f => ({ ...f, industry: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Industry</label>
+                        <select className={FORM_SELECT} value={createForm.industry} onChange={e => setCreateForm(f => ({ ...f, industry: e.target.value }))}>
                             {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Plan</label>
-                        <select className={styles.formSelect} value={createForm.plan} onChange={e => setCreateForm(f => ({ ...f, plan: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Plan</label>
+                        <select className={FORM_SELECT} value={createForm.plan} onChange={e => setCreateForm(f => ({ ...f, plan: e.target.value }))}>
                             <option value="free">Free</option>
                             <option value="pro">Pro</option>
                             <option value="enterprise">Enterprise</option>
@@ -360,13 +415,13 @@ const OrgsPanel = () => {
                     <div style={{ gridColumn: "1 / -1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem", marginBottom: "0.25rem" }}>
                         <div style={{ fontSize: "0.78rem", color: "var(--text-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Owner Account</div>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Owner Full Name</label>
-                        <input className={styles.formInput} value={createForm.owner_name} onChange={e => setCreateForm(f => ({ ...f, owner_name: e.target.value }))} placeholder="Jane Smith" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Owner Full Name</label>
+                        <input className={FORM_INPUT} value={createForm.owner_name} onChange={e => setCreateForm(f => ({ ...f, owner_name: e.target.value }))} placeholder="Jane Smith" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Owner Email</label>
-                        <input className={styles.formInput} type="email" value={createForm.owner_email} onChange={e => setCreateForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="owner@firm.com" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Owner Email</label>
+                        <input className={FORM_INPUT} type="email" value={createForm.owner_email} onChange={e => setCreateForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="owner@firm.com" />
                     </div>
                 </div>
             </Modal>
@@ -378,16 +433,16 @@ const OrgsPanel = () => {
                 title="Organization Created ✓"
                 footer={<Button onClick={() => setCreateCreds(null)}>Done</Button>}
             >
-                <p className={styles.muted} style={{ fontSize: "0.84rem", marginBottom: "1rem" }}>
+                <p className={MUTED} style={{ fontSize: "0.84rem", marginBottom: "1rem" }}>
                     Share these login credentials with the org owner. They will be prompted to set a new password on first login.
                 </p>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Owner Email</label>
-                    <input className={styles.formInput} readOnly value={createCreds?.email ?? ""} />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Owner Email</label>
+                    <input className={FORM_INPUT} readOnly value={createCreds?.email ?? ""} />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Temporary Password</label>
-                    <input className={styles.formInput} readOnly value={createCreds?.password ?? ""} />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Temporary Password</label>
+                    <input className={FORM_INPUT} readOnly value={createCreds?.password ?? ""} />
                 </div>
             </Modal>
 
@@ -401,22 +456,22 @@ const OrgsPanel = () => {
                     <Button onClick={handlePlanSave} loading={updateOrgMut.isPending}>Save</Button>
                 </>}
             >
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Plan</label>
-                    <select className={styles.formSelect} value={planForm.plan} onChange={e => setPlanForm(f => ({ ...f, plan: e.target.value }))}>
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Plan</label>
+                    <select className={FORM_SELECT} value={planForm.plan} onChange={e => setPlanForm(f => ({ ...f, plan: e.target.value }))}>
                         <option value="free">Free</option>
                         <option value="pro">Pro</option>
                         <option value="enterprise">Enterprise</option>
                     </select>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Max Documents</label>
-                        <input className={styles.formInput} type="number" value={planForm.max_docs} onChange={e => setPlanForm(f => ({ ...f, max_docs: +e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Max Documents</label>
+                        <input className={FORM_INPUT} type="number" value={planForm.max_docs} onChange={e => setPlanForm(f => ({ ...f, max_docs: +e.target.value }))} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Max Users</label>
-                        <input className={styles.formInput} type="number" value={planForm.max_users} onChange={e => setPlanForm(f => ({ ...f, max_users: +e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Max Users</label>
+                        <input className={FORM_INPUT} type="number" value={planForm.max_users} onChange={e => setPlanForm(f => ({ ...f, max_users: +e.target.value }))} />
                     </div>
                 </div>
             </Modal>
@@ -431,7 +486,7 @@ const OrgsPanel = () => {
                     <Button variant="danger" onClick={() => confirmDelete && handleDelete(confirmDelete)}>Delete Forever</Button>
                 </>}
             >
-                <p className={styles.muted} style={{ fontSize: "0.84rem" }}>
+                <p className={MUTED} style={{ fontSize: "0.84rem" }}>
                     This will permanently delete <strong style={{ color: "var(--text-1)" }}>{confirmDelete?.name}</strong> and all its users, documents, and data. This cannot be undone.
                 </p>
             </Modal>
@@ -449,25 +504,25 @@ const EvalsPanel = () => {
     const { data, isLoading: loading, isError } = useEvalResults(key);
     const results = data?.results ?? [];
 
-    if (!key) return <div className={styles.panelContent}><div className={styles.infoBox}><strong>Eval results not available</strong><br />Set VITE_ADMIN_EVAL_KEY in your .env to load eval results.</div></div>;
-    if (loading) return <div className={styles.emptyState}>Loading…</div>;
-    if (isError) return <div className={styles.panelContent}><div className={styles.infoBox}><strong>Eval results not available</strong><br />Could not load eval results.</div></div>;
-    if (!results.length) return <div className={styles.panelContent}><div className={styles.infoBox}>No eval results yet. Scores are recorded automatically each time a user asks a question.</div></div>;
+    if (!key) return <div className={PANEL_CONTENT}><div className={INFO_BOX}><strong>Eval results not available</strong><br />Set VITE_ADMIN_EVAL_KEY in your .env to load eval results.</div></div>;
+    if (loading) return <div className={EMPTY_STATE}>Loading…</div>;
+    if (isError) return <div className={PANEL_CONTENT}><div className={INFO_BOX}><strong>Eval results not available</strong><br />Could not load eval results.</div></div>;
+    if (!results.length) return <div className={PANEL_CONTENT}><div className={INFO_BOX}>No eval results yet. Scores are recorded automatically each time a user asks a question.</div></div>;
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.panelToolbar}><span className={styles.resultCount}>{results.length} eval records</span></div>
+        <div className={PANEL_CONTENT}>
+            <div className={PANEL_TOOLBAR}><span className={RESULT_COUNT}>{results.length} eval records</span></div>
             <Table>
                 <thead><tr><th>Time</th><th>Org</th><th>Query</th><th>Precision</th><th>Relevance</th><th>Latency</th></tr></thead>
                 <tbody>
                     {results.map(r => (
                         <tr key={r.id}>
-                            <td className={styles.muted}>{r.timestamp?.slice(0, 16).replace("T", " ")}</td>
+                            <td className={MUTED}>{r.timestamp?.slice(0, 16).replace("T", " ")}</td>
                             <td>{r.organization_id ?? "—"}</td>
-                            <td className={styles.queryCell}>{r.original_query}</td>
+                            <td className={QUERY_CELL}>{r.original_query}</td>
                             <td><ScoreBadge val={r.precision_at_k} /></td>
                             <td><ScoreBadge val={r.answer_relevance_score} /></td>
-                            <td className={styles.muted}>{r.latency_ms != null ? `${r.latency_ms}ms` : "—"}</td>
+                            <td className={MUTED}>{r.latency_ms != null ? `${r.latency_ms}ms` : "—"}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -496,8 +551,8 @@ const SettingsPanel = () => {
     ];
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.sectionTitle}>Plan Tiers</div>
+        <div className={PANEL_CONTENT}>
+            <div className={SECTION_TITLE}>Plan Tiers</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "0.75rem", marginBottom: "2rem" }}>
                 {planTiers.map(t => (
                     <div key={t.plan} style={{
@@ -514,12 +569,12 @@ const SettingsPanel = () => {
                 ))}
             </div>
 
-            <div className={styles.sectionTitle}>Service Status</div>
-            <div className={styles.serviceGrid}>
+            <div className={SECTION_TITLE}>Service Status</div>
+            <div className={SERVICE_GRID}>
                 {services.map(s => (
-                    <div key={s.name} className={`${styles.serviceCard} ${s.ok ? styles.serviceCardOk : styles.serviceCardWarn}`}>
-                        <div className={styles.serviceName}><StatusDot ok={s.ok} label={s.name} /></div>
-                        <div className={styles.serviceNote}>{s.note}</div>
+                    <div key={s.name} className={`${SERVICE_CARD} ${s.ok ? SERVICE_CARD_OK : SERVICE_CARD_WARN}`}>
+                        <div className={SERVICE_NAME}><StatusDot ok={s.ok} label={s.name} /></div>
+                        <div className={SERVICE_NOTE}>{s.note}</div>
                     </div>
                 ))}
             </div>
@@ -596,8 +651,8 @@ const RegistrationsPanel = () => {
                                         </a>
                                     </td>
                                     <td><PlanBadge plan={r.plan} /></td>
-                                    <td className={styles.muted}>{r.city ?? "—"}</td>
-                                    <td className={styles.muted}>{fmtDate(r.created_at)}</td>
+                                    <td className={MUTED}>{r.city ?? "—"}</td>
+                                    <td className={MUTED}>{fmtDate(r.created_at)}</td>
                                     <td>
                                         <Button
                                             size="sm"
@@ -671,7 +726,7 @@ const AdminUpgradesPanel = () => {
                         {s}{s === "pending" && pending > 0 ? ` (${pending})` : ""}
                     </button>
                 ))}
-                <span className={styles.muted} style={{ marginLeft: "auto", fontSize: "0.8rem" }}>
+                <span className={MUTED} style={{ marginLeft: "auto", fontSize: "0.8rem" }}>
                     {requests.length} result{requests.length !== 1 ? "s" : ""}
                 </span>
             </div>
@@ -724,7 +779,7 @@ const AdminUpgradesPanel = () => {
                                         fontWeight: 700,
                                         textTransform: "capitalize",
                                     }}>{req.status}</span>
-                                    <span className={styles.muted} style={{ fontSize: "0.75rem" }}>
+                                    <span className={MUTED} style={{ fontSize: "0.75rem" }}>
                                         {fmtDate(req.created_at)}
                                     </span>
                                 </div>
@@ -769,7 +824,7 @@ const AdminUpgradesPanel = () => {
                             {req.status === "pending" && (
                                 <div style={{ marginTop: "0.85rem", display: "flex", gap: "0.6rem" }}>
                                     <button
-                                        className={styles.btnPrimary}
+                                        className={BTN_PRIMARY}
                                         style={{ padding: "0.4rem 1.1rem", fontSize: "0.82rem" }}
                                         disabled={acting === req.request_id}
                                         onClick={() => resolve(req.request_id, "approve")}
@@ -777,7 +832,7 @@ const AdminUpgradesPanel = () => {
                                         {acting === req.request_id ? "…" : "Approve"}
                                     </button>
                                     <button
-                                        className={styles.btnGhost}
+                                        className={BTN_GHOST}
                                         style={{ padding: "0.4rem 1.1rem", fontSize: "0.82rem", borderColor: "var(--danger, #c94040)", color: "var(--danger, #c94040)" }}
                                         disabled={acting === req.request_id}
                                         onClick={() => resolve(req.request_id, "reject")}
@@ -853,28 +908,28 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
     const totalPages = Math.ceil(total / PAGE_SIZE);
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.panelToolbar}>
+        <div className={PANEL_CONTENT}>
+            <div className={PANEL_TOOLBAR}>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-                    <select className={styles.formSelect} value={filterOrg} onChange={e => setFilterOrg(e.target.value)}>
+                    <select className={FORM_SELECT} value={filterOrg} onChange={e => setFilterOrg(e.target.value)}>
                         <option value="all">All organizations</option>
                         {orgs.map(o => <option key={o.org_id} value={o.org_id}>{o.name}</option>)}
                     </select>
-                    <select className={styles.formSelect} value={filterType} onChange={e => setFilterType(e.target.value)}>
+                    <select className={FORM_SELECT} value={filterType} onChange={e => setFilterType(e.target.value)}>
                         <option value="all">All events</option>
                         {Object.entries(ADMIN_EVENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
-                    <input type="date" className={styles.formInput} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="From" />
-                    <input type="date" className={styles.formInput} value={dateTo}   onChange={e => setDateTo(e.target.value)}   title="To" />
-                    <span className={styles.muted} style={{ fontSize: "0.8rem" }}>{total} event{total !== 1 ? "s" : ""}</span>
+                    <input type="date" className={FORM_INPUT} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="From" />
+                    <input type="date" className={FORM_INPUT} value={dateTo}   onChange={e => setDateTo(e.target.value)}   title="To" />
+                    <span className={MUTED} style={{ fontSize: "0.8rem" }}>{total} event{total !== 1 ? "s" : ""}</span>
                 </div>
                 <Button variant="ghost" size="sm" onClick={exportCsv} disabled={logs.length === 0}>↓ Export CSV</Button>
             </div>
 
             {loading ? (
-                <div className={styles.emptyState}>Loading…</div>
+                <div className={EMPTY_STATE}>Loading…</div>
             ) : logs.length === 0 ? (
-                <div className={styles.emptyState}>No events match the selected filters.</div>
+                <div className={EMPTY_STATE}>No events match the selected filters.</div>
             ) : (
                 <>
                     <Table>
@@ -895,16 +950,16 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
                                 }
                                 return (
                                     <tr key={l.log_id}>
-                                        <td className={styles.muted} style={{ whiteSpace: "nowrap", fontSize: "0.78rem" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
+                                        <td className={MUTED} style={{ whiteSpace: "nowrap", fontSize: "0.78rem" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
                                         <td style={{ fontSize: "0.8rem" }}>{orgName}</td>
                                         <td style={{ fontSize: "0.8rem", fontWeight: 600 }}>{ADMIN_EVENT_LABELS[l.event_type] ?? l.event_type}</td>
                                         <td style={{ fontSize: "0.8rem" }}>{l.actor_name ?? "—"}</td>
-                                        <td className={styles.muted}>{l.actor_role ?? "—"}</td>
-                                        <td className={styles.muted} style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        <td className={MUTED}>{l.actor_role ?? "—"}</td>
+                                        <td className={MUTED} style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                             {[l.resource_type, l.resource_name].filter(Boolean).join(": ") || "—"}
                                         </td>
-                                        <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
-                                        <td className={styles.muted} style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
+                                        <td className={MUTED} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
+                                        <td className={MUTED} style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
                                             {detailStr || "—"}
                                         </td>
                                     </tr>
@@ -916,7 +971,7 @@ const AdminAuditPanel = ({ orgs }: { orgs: { org_id: string; name: string }[] })
                         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem", justifyContent: "center" }}>
                             <Button variant="ghost" size="sm" disabled={page === 0}
                                 onClick={() => setPage(page - 1)}>← Prev</Button>
-                            <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Page {page + 1} of {totalPages}</span>
+                            <span className={MUTED} style={{ fontSize: "0.82rem" }}>Page {page + 1} of {totalPages}</span>
                             <Button variant="ghost" size="sm" disabled={page >= totalPages - 1}
                                 onClick={() => setPage(page + 1)}>Next →</Button>
                         </div>
@@ -985,11 +1040,11 @@ const FeatureAccessPanel = () => {
     ];
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.panelToolbar}>
-                <span className={styles.muted}>Toggle features on/off per organisation. Changes take effect immediately.</span>
+        <div className={PANEL_CONTENT}>
+            <div className={PANEL_TOOLBAR}>
+                <span className={MUTED}>Toggle features on/off per organisation. Changes take effect immediately.</span>
                 <input
-                    className={styles.formInput}
+                    className={FORM_INPUT}
                     placeholder="Search organisations…"
                     value={search} onChange={e => setSearch(e.target.value)}
                     style={{ marginLeft: "auto", width: 220 }}
@@ -998,9 +1053,9 @@ const FeatureAccessPanel = () => {
             {queryError && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>Error: {queryError.message}</div>}
 
             {loading ? (
-                <div className={styles.muted} style={{ textAlign: "center", padding: "3rem" }}>Loading feature flags…</div>
+                <div className={MUTED} style={{ textAlign: "center", padding: "3rem" }}>Loading feature flags…</div>
             ) : filtered.length === 0 ? (
-                <div className={styles.muted} style={{ textAlign: "center", padding: "3rem" }}>No organisations found.</div>
+                <div className={MUTED} style={{ textAlign: "center", padding: "3rem" }}>No organisations found.</div>
             ) : filtered.map(org => {
                 const isSaving = savingOrgId === org.org_id;
                 const enabledCount = keys.filter(k => org.flags[k] !== false).length;
@@ -1015,7 +1070,7 @@ const FeatureAccessPanel = () => {
                             borderBottom: "1px solid var(--border)", background: "var(--bg-0)"
                         }}>
                             <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text-1)" }}>{org.name}</span>
-                            <span className={styles.muted} style={{ marginRight: "auto" }}>
+                            <span className={MUTED} style={{ marginRight: "auto" }}>
                                 {enabledCount}/{keys.length} features enabled
                             </span>
                             {isSaving && <span style={{ fontSize: "0.75rem", color: "var(--gold)" }}>Saving…</span>}
@@ -1112,54 +1167,54 @@ const AdminCaseLawPanel = () => {
     };
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             {/* ── Upload form ── */}
             <div style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1.75rem", marginBottom: "1.5rem" }}>
-                <div className={styles.sectionTitle}>Upload Case Law Document</div>
+                <div className={SECTION_TITLE}>Upload Case Law Document</div>
                 <p style={{ fontSize: "0.82rem", color: "var(--text-3)", marginBottom: "1.25rem" }}>
                     Upload a PDF volume of PLD, SCMR, MLD, or CLC. It will be indexed into the shared
                     case law pool and will appear in every user's AI search results automatically.
                 </p>
 
                 {uploadErr && (
-                    <div className={styles.errorBanner} style={{ marginBottom: "1rem" }}>{uploadErr}</div>
+                    <div className={ERROR_BANNER} style={{ marginBottom: "1rem" }}>{uploadErr}</div>
                 )}
                 {uploadOk && (
-                    <div className={styles.successBanner} style={{ marginBottom: "1rem" }}>
+                    <div className={SUCCESS_BANNER} style={{ marginBottom: "1rem" }}>
                         ✓ Upload started — indexing in background. Status will update to "Ready" when complete.
                     </div>
                 )}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                     <div>
-                        <label className={styles.formLabel}>Publisher</label>
-                        <select className={styles.formInput} value={publisher} onChange={e => setPublisher(e.target.value)}>
+                        <label className={FORM_LABEL}>Publisher</label>
+                        <select className={FORM_INPUT} value={publisher} onChange={e => setPublisher(e.target.value)}>
                             {PUBLISHERS.map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label className={styles.formLabel}>Year</label>
-                        <input className={styles.formInput} type="number" placeholder="2019" value={year}
+                        <label className={FORM_LABEL}>Year</label>
+                        <input className={FORM_INPUT} type="number" placeholder="2019" value={year}
                             onChange={e => setYear(e.target.value)} min={1900} max={2099} />
                     </div>
                     <div style={{ gridColumn: "1/-1" }}>
-                        <label className={styles.formLabel}>Title <span style={{ color: "var(--gold)" }}>*</span></label>
-                        <input className={styles.formInput} type="text"
+                        <label className={FORM_LABEL}>Title <span style={{ color: "var(--gold)" }}>*</span></label>
+                        <input className={FORM_INPUT} type="text"
                             placeholder="e.g. PLD 2019 Supreme Court 412"
                             value={title} onChange={e => setTitle(e.target.value)} />
                     </div>
                     <div>
-                        <label className={styles.formLabel}>Volume / Issue</label>
-                        <input className={styles.formInput} type="text" placeholder="Vol. 5 (optional)"
+                        <label className={FORM_LABEL}>Volume / Issue</label>
+                        <input className={FORM_INPUT} type="text" placeholder="Vol. 5 (optional)"
                             value={volume} onChange={e => setVolume(e.target.value)} />
                     </div>
                     <div>
-                        <label className={styles.formLabel}>Court</label>
-                        <input className={styles.formInput} type="text" placeholder="Supreme Court (optional)"
+                        <label className={FORM_LABEL}>Court</label>
+                        <input className={FORM_INPUT} type="text" placeholder="Supreme Court (optional)"
                             value={court} onChange={e => setCourt(e.target.value)} />
                     </div>
                     <div style={{ gridColumn: "1/-1" }}>
-                        <label className={styles.formLabel}>PDF File <span style={{ color: "var(--gold)" }}>*</span></label>
+                        <label className={FORM_LABEL}>PDF File <span style={{ color: "var(--gold)" }}>*</span></label>
                         <input type="file" accept=".pdf"
                             onChange={e => setFile(e.target.files?.[0] ?? null)}
                             style={{ color: "var(--text-2)", fontSize: "0.85rem" }} />
@@ -1180,13 +1235,13 @@ const AdminCaseLawPanel = () => {
                 {["ALL", ...PUBLISHERS].map(p => (
                     <button
                         key={p}
-                        className={pubFilter === p ? styles.chipActive : styles.chip}
+                        className={pubFilter === p ? CHIP_ACTIVE : CHIP}
                         onClick={() => setPubFilter(p)}
                     >
                         {p}
                     </button>
                 ))}
-                <button className={styles.chip} onClick={() => refetch()} style={{ marginLeft: "auto" }}>↻ Refresh</button>
+                <button className={CHIP} onClick={() => refetch()} style={{ marginLeft: "auto" }}>↻ Refresh</button>
             </div>
 
             {loading ? (
@@ -1304,47 +1359,47 @@ const AdminDashboard = () => {
     };
 
     return (
-        <div className={styles.shell}>
-            <aside className={styles.sidebar}>
-                <div className={styles.sidebarLogo}>
-                    Project<span className={styles.logoAccent}> Ease</span>
-                    <span className={styles.adminChip}>Admin</span>
+        <div className={SHELL}>
+            <aside className={SIDEBAR}>
+                <div className={SIDEBAR_LOGO}>
+                    Project<span className={LOGO_ACCENT}> Ease</span>
+                    <span className={ADMIN_CHIP}>Admin</span>
                 </div>
 
-                <nav className={styles.nav}>
+                <nav className={NAV}>
                     {NAV_ITEMS.map(({ id, icon, label }) => (
                         <button
                             key={id}
-                            className={`${styles.navItem} ${panel === id ? styles.navItemActive : ""}`}
+                            className={`${NAV_ITEM} ${panel === id ? NAV_ITEM_ACTIVE : ""}`}
                             onClick={() => setPanel(id)}
                         >
-                            <span className={styles.navIcon}>{icon}</span>
+                            <span className={NAV_ICON}>{icon}</span>
                             {label}
                         </button>
                     ))}
                 </nav>
 
-                <div className={styles.sidebarFooter}>
-                    <div className={styles.sidebarUserBox}>
-                        <div className={styles.sidebarUserName}>{user.name}</div>
-                        <div className={styles.sidebarUserRole}>Platform Admin</div>
+                <div className={SIDEBAR_FOOTER}>
+                    <div className={SIDEBAR_USER_BOX}>
+                        <div className={SIDEBAR_USER_NAME}>{user.name}</div>
+                        <div className={SIDEBAR_USER_ROLE}>Platform Admin</div>
                     </div>
-                    <button className={styles.signOutBtn} onClick={signOut}>Sign Out</button>
+                    <button className={SIGN_OUT_BTN} onClick={signOut}>Sign Out</button>
                 </div>
             </aside>
 
-            <div className={styles.main}>
-                <header className={styles.header}>
+            <div className={MAIN}>
+                <header className={HEADER}>
                     <div>
-                        <h1 className={styles.headerTitle}>{PANEL_TITLES[panel]}</h1>
-                        <p className={styles.headerSub}>{PANEL_SUBS[panel]}</p>
+                        <h1 className={HEADER_TITLE}>{PANEL_TITLES[panel]}</h1>
+                        <p className={HEADER_SUB}>{PANEL_SUBS[panel]}</p>
                     </div>
-                    <button className={styles.themeBtn} onClick={() => setTheme(toggleTheme())}>
+                    <button className={THEME_BTN} onClick={() => setTheme(toggleTheme())}>
                         {theme === "dark" ? "Light Mode" : "Dark Mode"}
                     </button>
                 </header>
 
-                <div className={styles.body}>
+                <div className={BODY}>
                     {loading ? (
                         <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
                     ) : (

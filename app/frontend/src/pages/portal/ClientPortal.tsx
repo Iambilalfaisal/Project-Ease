@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import styles from "./ClientPortal.module.css";
 import { Badge, Button, EmptyState, BadgeTone } from "../../components/ui";
 
 const MATTER_STATUS_TONE: Record<string, BadgeTone> = {
@@ -109,11 +108,13 @@ export default function ClientPortal() {
     // ── Loading ──────────────────────────────────────────────────────────────
     if (loading) {
         return (
-            <div className={styles.page}>
-                <nav className={styles.nav}><span className={styles.navLogo}>Project Ease</span></nav>
-                <div className={styles.centered}>
-                    <div className={styles.spinner} />
-                    <p style={{ color: "var(--text-3)", marginTop: "1rem" }}>Loading your portal…</p>
+            <div className="flex min-h-screen flex-col bg-bg-0 font-sans text-ink-1">
+                <nav className="flex h-[56px] shrink-0 items-center justify-between border-b border-border bg-bg-1 px-8 max-[641px]:px-4">
+                    <span className="font-serif text-[1.1rem] font-bold tracking-tight text-gold">Project Ease</span>
+                </nav>
+                <div className="flex flex-1 flex-col items-center justify-center px-8 py-16 text-center">
+                    <div className="h-[36px] w-[36px] animate-[spin_0.8s_linear_infinite] rounded-full border-[3px] border-border [border-top-color:var(--gold)]" />
+                    <p className="mt-4 text-ink-3">Loading your portal…</p>
                 </div>
             </div>
         );
@@ -122,13 +123,15 @@ export default function ClientPortal() {
     // ── Error ────────────────────────────────────────────────────────────────
     if (error || !info) {
         return (
-            <div className={styles.page}>
-                <nav className={styles.nav}><span className={styles.navLogo}>Project Ease</span></nav>
-                <div className={styles.centered}>
-                    <div className={styles.errorIcon}>🔒</div>
-                    <h2 className={styles.errorTitle}>Access Denied</h2>
-                    <p className={styles.errorSub}>{error ?? "Invalid or expired link."}</p>
-                    <p className={styles.errorSub} style={{ marginTop: "0.5rem" }}>
+            <div className="flex min-h-screen flex-col bg-bg-0 font-sans text-ink-1">
+                <nav className="flex h-[56px] shrink-0 items-center justify-between border-b border-border bg-bg-1 px-8 max-[641px]:px-4">
+                    <span className="font-serif text-[1.1rem] font-bold tracking-tight text-gold">Project Ease</span>
+                </nav>
+                <div className="flex flex-1 flex-col items-center justify-center px-8 py-16 text-center">
+                    <div className="mb-3 text-[2.5rem]">🔒</div>
+                    <h2 className="m-0 mb-2 text-lg font-bold text-ink-1">Access Denied</h2>
+                    <p className="m-0 text-[0.88rem] text-ink-2">{error ?? "Invalid or expired link."}</p>
+                    <p className="m-0 mt-2 text-[0.88rem] text-ink-2">
                         Please contact your legal representative for a new link.
                     </p>
                 </div>
@@ -138,58 +141,58 @@ export default function ClientPortal() {
 
     // ── Portal ───────────────────────────────────────────────────────────────
     return (
-        <div className={styles.page}>
+        <div className="flex min-h-screen flex-col bg-bg-0 font-sans text-ink-1">
             {/* Nav */}
-            <nav className={styles.nav}>
-                <span className={styles.navLogo}>{info.org_name}</span>
-                <span className={styles.navTag}>Client Portal</span>
+            <nav className="flex h-[56px] shrink-0 items-center justify-between border-b border-border bg-bg-1 px-8 max-[641px]:px-4">
+                <span className="font-serif text-[1.1rem] font-bold tracking-tight text-gold">{info.org_name}</span>
+                <span className="rounded-pill border border-border bg-bg-2 px-[0.65rem] py-[0.2rem] text-[0.75rem] font-medium tracking-[0.04em] text-ink-3">Client Portal</span>
             </nav>
 
-            <div className={styles.content}>
+            <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col gap-6 px-8 py-10 max-[641px]:gap-4 max-[641px]:px-4 max-[641px]:py-5">
                 {/* Welcome card */}
-                <div className={styles.welcomeCard}>
-                    <div className={styles.welcomeIcon}>👤</div>
+                <div className="flex items-center gap-5 rounded-[12px] border border-[rgba(184,150,76,0.25)] bg-[linear-gradient(135deg,rgba(184,150,76,0.08)_0%,var(--bg-1)_100%)] px-7 py-6 max-[641px]:flex-col max-[641px]:gap-3 max-[641px]:px-4 max-[641px]:py-[1.1rem]">
+                    <div className="shrink-0 text-[2.25rem]">👤</div>
                     <div>
-                        <h1 className={styles.welcomeTitle}>Welcome, {info.client_name}</h1>
+                        <h1 className="m-0 mb-[0.2rem] font-serif text-[1.35rem] font-bold text-ink-1">Welcome, {info.client_name}</h1>
                         {info.label && (
-                            <p className={styles.welcomeSub}>{info.label}</p>
+                            <p className="m-0 mb-[0.15rem] text-[0.88rem] text-ink-2">{info.label}</p>
                         )}
                         {info.client_email && (
-                            <p className={styles.welcomeMeta}>{info.client_email}</p>
+                            <p className="m-0 text-[0.78rem] text-ink-3">{info.client_email}</p>
                         )}
                     </div>
                 </div>
 
                 {/* Matter info */}
                 {info.matter_title && (
-                    <div className={styles.matterCard}>
-                        <h2 className={styles.matterTitle}>Your Matter</h2>
-                        <div className={styles.matterGrid}>
-                            <div className={styles.matterField}>
-                                <span className={styles.matterLabel}>Matter</span>
-                                <span className={styles.matterValue}>{info.matter_title}</span>
+                    <div className="rounded-[10px] border border-border bg-bg-1 px-6 py-5">
+                        <h2 className="m-0 mb-[0.85rem] text-[0.85rem] font-bold uppercase tracking-[0.06em] text-gold">Your Matter</h2>
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3 max-[641px]:grid-cols-2">
+                            <div className="flex flex-col gap-[0.2rem]">
+                                <span className="text-[0.7rem] font-semibold uppercase tracking-[0.05em] text-ink-3">Matter</span>
+                                <span className="text-[0.88rem] font-medium text-ink-1">{info.matter_title}</span>
                             </div>
                             {info.matter_type && (
-                                <div className={styles.matterField}>
-                                    <span className={styles.matterLabel}>Type</span>
-                                    <span className={styles.matterValue}>{info.matter_type}</span>
+                                <div className="flex flex-col gap-[0.2rem]">
+                                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.05em] text-ink-3">Type</span>
+                                    <span className="text-[0.88rem] font-medium text-ink-1">{info.matter_type}</span>
                                 </div>
                             )}
                             {info.case_number && (
-                                <div className={styles.matterField}>
-                                    <span className={styles.matterLabel}>Case No.</span>
-                                    <span className={styles.matterValue}>{info.case_number}</span>
+                                <div className="flex flex-col gap-[0.2rem]">
+                                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.05em] text-ink-3">Case No.</span>
+                                    <span className="text-[0.88rem] font-medium text-ink-1">{info.case_number}</span>
                                 </div>
                             )}
                             {info.court_name && (
-                                <div className={styles.matterField}>
-                                    <span className={styles.matterLabel}>Court</span>
-                                    <span className={styles.matterValue}>{info.court_name}</span>
+                                <div className="flex flex-col gap-[0.2rem]">
+                                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.05em] text-ink-3">Court</span>
+                                    <span className="text-[0.88rem] font-medium text-ink-1">{info.court_name}</span>
                                 </div>
                             )}
                             {info.matter_status && (
-                                <div className={styles.matterField}>
-                                    <span className={styles.matterLabel}>Status</span>
+                                <div className="flex flex-col gap-[0.2rem]">
+                                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.05em] text-ink-3">Status</span>
                                     <Badge tone={MATTER_STATUS_TONE[info.matter_status.toLowerCase()] ?? "gray"}>
                                         {info.matter_status}
                                     </Badge>
@@ -200,22 +203,22 @@ export default function ClientPortal() {
                 )}
 
                 {/* Documents */}
-                <div className={styles.docsSection}>
-                    <h2 className={styles.docsTitle}>
+                <div className="flex flex-col gap-[0.85rem]">
+                    <h2 className="m-0 flex items-center gap-[0.6rem] text-[1rem] font-bold text-ink-1">
                         Your Documents
-                        <span className={styles.docsCount}>{docs.length}</span>
+                        <span className="rounded-pill border border-border bg-bg-2 px-2 py-[0.1rem] text-xs font-semibold text-ink-3">{docs.length}</span>
                     </h2>
 
                     {docs.length === 0 ? (
                         <EmptyState message="No documents have been shared with you yet. Your legal representative will add documents here as your matter progresses." />
                     ) : (
-                        <div className={styles.docList}>
+                        <div className="flex flex-col gap-[0.6rem]">
                             {docs.map(doc => (
-                                <div key={doc.doc_id} className={styles.docRow}>
-                                    <div className={styles.docIcon}>📄</div>
-                                    <div className={styles.docInfo}>
-                                        <div className={styles.docName}>{doc.name}</div>
-                                        <div className={styles.docMeta}>
+                                <div key={doc.doc_id} className="flex items-center gap-4 rounded-sm border border-border bg-bg-1 px-4 py-[0.85rem] transition-[border-color] duration-150 hover:border-gold max-[641px]:flex-wrap max-[641px]:gap-[0.6rem]">
+                                    <div className="shrink-0 text-[1.3rem]">📄</div>
+                                    <div className="min-w-0 flex-1 max-[641px]:min-w-0 max-[641px]:flex-[1_1_100%]">
+                                        <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.88rem] font-semibold text-ink-1">{doc.name}</div>
+                                        <div className="mt-[0.15rem] text-xs text-ink-3">
                                             {fmtBytes(doc.size_bytes)}
                                             {doc.uploaded_at && ` · Added ${fmtDate(doc.uploaded_at)}`}
                                             {doc.category_name && ` · ${doc.category_name}`}
@@ -235,13 +238,13 @@ export default function ClientPortal() {
                 </div>
 
                 {/* Footer note */}
-                <div className={styles.securityNote}>
+                <div className="rounded-sm border border-border bg-bg-1 px-4 py-3 text-[0.75rem] leading-[1.5] text-ink-3">
                     🔒 This portal is secured by Project Ease. Your documents are encrypted and only accessible via this private link.
                     Do not share this URL with others.
                 </div>
             </div>
 
-            <footer className={styles.footer}>
+            <footer className="border-t border-border px-8 py-4 text-center text-[0.75rem] text-ink-3">
                 <span>Powered by <strong>Project Ease</strong> · {info.org_name}</span>
             </footer>
         </div>

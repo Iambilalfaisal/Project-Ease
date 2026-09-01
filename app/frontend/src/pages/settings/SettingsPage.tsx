@@ -1,5 +1,4 @@
 import { useState } from "react";
-import styles from "./SettingsPage.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -25,33 +24,38 @@ const BACK_ROUTES: Record<string, string> = {
     employee:       "/app",
 };
 
+const CARD = "flex flex-col gap-[0.9rem] rounded-lg border border-border bg-bg-1 p-8";
+const CARD_TITLE = "m-0 mb-[0.25rem] border-b border-border pb-3 font-serif text-[1.1rem] font-bold tracking-tight text-ink-1";
+
 // ── Cards ─────────────────────────────────────────────────────────────────────
 
 const ProfileCard = ({ user }: { user: PeUser }) => (
-    <div className={styles.card}>
-        <h2 className={styles.cardTitle}>Your Profile</h2>
+    <div className={CARD}>
+        <h2 className={CARD_TITLE}>Your Profile</h2>
 
-        <div className={styles.avatar}>
+        <div className="flex h-[56px] w-[56px] shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,var(--gold)_0%,#9C7A28_100%)] font-serif text-[1.5rem] font-bold text-[#05080F]">
             {user.name.charAt(0).toUpperCase()}
         </div>
 
-        <div className={styles.fieldGroup}>
-            <div className={styles.field}>
-                <span className={styles.fieldLabel}>Full Name</span>
-                <span className={styles.fieldValue}>{user.name}</span>
+        <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-[0.2rem]">
+                <span className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-ink-3">Full Name</span>
+                <span className="text-[0.9rem] font-medium text-ink-1">{user.name}</span>
             </div>
-            <div className={styles.field}>
-                <span className={styles.fieldLabel}>Email</span>
-                <span className={styles.fieldValue}>{user.email}</span>
+            <div className="flex flex-col gap-[0.2rem]">
+                <span className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-ink-3">Email</span>
+                <span className="text-[0.9rem] font-medium text-ink-1">{user.email}</span>
             </div>
-            <div className={styles.field}>
-                <span className={styles.fieldLabel}>Role</span>
-                <span className={styles.roleBadge}>{ROLE_LABELS[user.role] ?? user.role}</span>
+            <div className="flex flex-col gap-[0.2rem]">
+                <span className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-ink-3">Role</span>
+                <span className="inline-block w-fit rounded-pill border border-gold-border bg-gold-dim px-3 py-[0.2rem] text-xs font-bold uppercase tracking-[0.04em] text-gold">
+                    {ROLE_LABELS[user.role] ?? user.role}
+                </span>
             </div>
             {user.org && (
-                <div className={styles.field}>
-                    <span className={styles.fieldLabel}>Organization</span>
-                    <span className={styles.fieldValue}>
+                <div className="flex flex-col gap-[0.2rem]">
+                    <span className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-ink-3">Organization</span>
+                    <span className="text-[0.9rem] font-medium text-ink-1">
                         {ORG_DISPLAY_NAMES[user.org] ?? user.org}
                     </span>
                 </div>
@@ -59,6 +63,8 @@ const ProfileCard = ({ user }: { user: PeUser }) => (
         </div>
     </div>
 );
+
+const FORM_INPUT = "w-full box-border rounded-[7px] border border-border-md bg-bg-2 px-[0.85rem] py-[0.6rem] font-sans text-[0.875rem] text-ink-1 outline-none transition-[border-color] duration-150 placeholder:text-ink-3 focus:border-gold-border focus:bg-gold-dim";
 
 const SecurityCard = () => {
     const [current,  setCurrent]  = useState("");
@@ -84,33 +90,33 @@ const SecurityCard = () => {
     };
 
     return (
-        <div className={styles.card}>
-            <h2 className={styles.cardTitle}>Security</h2>
+        <div className={CARD}>
+            <h2 className={CARD_TITLE}>Security</h2>
 
-            <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Current Password</label>
+            <div className="flex flex-col gap-[0.35rem]">
+                <label className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-ink-3">Current Password</label>
                 <input
-                    className={styles.formInput}
+                    className={FORM_INPUT}
                     type="password"
                     value={current}
                     onChange={e => setCurrent(e.target.value)}
                     placeholder="Enter current password"
                 />
             </div>
-            <div className={styles.formGroup}>
-                <label className={styles.formLabel}>New Password</label>
+            <div className="flex flex-col gap-[0.35rem]">
+                <label className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-ink-3">New Password</label>
                 <input
-                    className={styles.formInput}
+                    className={FORM_INPUT}
                     type="password"
                     value={next}
                     onChange={e => setNext(e.target.value)}
                     placeholder="At least 6 characters"
                 />
             </div>
-            <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Confirm New Password</label>
+            <div className="flex flex-col gap-[0.35rem]">
+                <label className="text-[0.68rem] font-bold uppercase tracking-[0.06em] text-ink-3">Confirm New Password</label>
                 <input
-                    className={styles.formInput}
+                    className={FORM_INPUT}
                     type="password"
                     value={confirm}
                     onChange={e => setConfirm(e.target.value)}
@@ -119,16 +125,23 @@ const SecurityCard = () => {
             </div>
 
             {status !== "idle" && (
-                <div className={status === "success" ? styles.alertSuccess : styles.alertError}>
+                <div className={
+                    status === "success"
+                        ? "rounded-sm border border-[rgba(74,222,128,0.3)] bg-[rgba(74,222,128,0.1)] px-[0.9rem] py-[0.6rem] text-sm text-success"
+                        : "rounded-sm border border-[rgba(248,113,113,0.3)] bg-[rgba(248,113,113,0.1)] px-[0.9rem] py-[0.6rem] text-sm text-danger"
+                }>
                     {msg}
                 </div>
             )}
 
-            <button className={styles.btnPrimary} onClick={submit}>
+            <button
+                className="w-fit rounded-sm border-none bg-[linear-gradient(135deg,var(--gold)_0%,#9C7A28_100%)] px-[1.35rem] py-[0.6rem] font-sans text-[0.875rem] font-bold text-[#05080F] transition-[opacity,transform] duration-150 hover:-translate-y-px hover:opacity-[0.88]"
+                onClick={submit}
+            >
                 Change Password
             </button>
 
-            <p className={styles.secNote}>
+            <p className="m-0 text-[0.75rem] leading-[1.5] text-ink-3">
                 Password changes will take effect on your next login.
             </p>
         </div>
@@ -144,29 +157,35 @@ const PreferencesCard = () => {
     };
 
     return (
-        <div className={styles.card}>
-            <h2 className={styles.cardTitle}>Preferences</h2>
+        <div className={CARD}>
+            <h2 className={CARD_TITLE}>Preferences</h2>
 
-            <div className={styles.prefRow}>
+            <div className="flex items-center justify-between gap-4 max-[681px]:flex-col max-[681px]:items-start">
                 <div>
-                    <div className={styles.prefLabel}>Interface Theme</div>
-                    <div className={styles.prefSub}>
+                    <div className="mb-[0.2rem] text-[0.875rem] font-semibold text-ink-1">Interface Theme</div>
+                    <div className="text-[0.78rem] leading-[1.4] text-ink-3">
                         Currently using <strong>{theme === "dark" ? "Dark" : "Light"}</strong> mode
                     </div>
                 </div>
-                <button className={styles.themeToggle} onClick={handle}>
+                <button
+                    className="shrink-0 whitespace-nowrap rounded-sm border border-border-md bg-bg-2 px-4 py-[0.45rem] font-sans text-[0.8rem] text-ink-2 transition-[border-color,color] duration-150 hover:border-gold-border hover:text-gold"
+                    onClick={handle}
+                >
                     Switch to {theme === "dark" ? "Light" : "Dark"} Mode
                 </button>
             </div>
 
-            <div className={styles.divider} />
+            <div className="my-1 h-px bg-border" />
 
-            <div className={styles.prefRow}>
+            <div className="flex items-center justify-between gap-4 max-[681px]:flex-col max-[681px]:items-start">
                 <div>
-                    <div className={styles.prefLabel}>Language</div>
-                    <div className={styles.prefSub}>Document search and interface language</div>
+                    <div className="mb-[0.2rem] text-[0.875rem] font-semibold text-ink-1">Language</div>
+                    <div className="text-[0.78rem] leading-[1.4] text-ink-3">Document search and interface language</div>
                 </div>
-                <select className={styles.langSelect} defaultValue="en">
+                <select
+                    className="shrink-0 cursor-pointer rounded-[7px] border border-border-md bg-bg-2 px-[0.85rem] py-[0.45rem] text-sm text-ink-1 outline-none [&>option]:bg-bg-1 [&>option]:text-ink-1"
+                    defaultValue="en"
+                >
                     <option value="en">English</option>
                     <option value="ur">Urdu</option>
                 </select>
@@ -184,12 +203,15 @@ const DangerCard = () => {
     };
 
     return (
-        <div className={`${styles.card} ${styles.cardDanger}`}>
-            <h2 className={styles.cardTitle}>Session</h2>
-            <p className={styles.dangerText}>
+        <div className={`${CARD} border-[rgba(248,113,113,0.22)]`}>
+            <h2 className={CARD_TITLE}>Session</h2>
+            <p className="m-0 text-[0.875rem] leading-[1.6] text-ink-3">
                 Sign out of your account on this device. Your documents and settings are saved.
             </p>
-            <button className={styles.btnDanger} onClick={signOut}>
+            <button
+                className="w-fit rounded-sm border border-danger bg-transparent px-[1.35rem] py-[0.6rem] font-sans text-[0.875rem] text-danger transition-[background] duration-150 hover:bg-[rgba(248,113,113,0.08)]"
+                onClick={signOut}
+            >
                 Sign Out
             </button>
         </div>
@@ -206,38 +228,41 @@ const SettingsPage = () => {
     const goBack = () => { window.location.hash = backRoute; };
 
     return (
-        <div className={styles.page}>
-            <div className={styles.container}>
+        <div className="min-h-screen bg-bg-0 px-6 pt-10 pb-16 font-sans text-ink-1 antialiased">
+            <div className="mx-auto max-w-[820px]">
 
                 {/* Top bar */}
-                <div className={styles.topBar}>
-                    <button className={styles.backBtn} onClick={goBack}>
+                <div className="mb-8 flex items-center gap-4">
+                    <button
+                        className="whitespace-nowrap rounded-[7px] border border-border-md bg-transparent px-[0.9rem] py-[0.35rem] font-sans text-[0.82rem] text-ink-2 transition-[border-color,color] duration-150 hover:border-gold-border hover:text-gold"
+                        onClick={goBack}
+                    >
                         &larr; Back
                     </button>
-                    <div className={styles.breadcrumb}>
-                        <span className={styles.breadcrumbBrand}>Project Ease</span>
-                        <span className={styles.breadcrumbSep}>/</span>
+                    <div className="flex items-center gap-2 text-[0.8rem] text-ink-3">
+                        <span className="font-serif font-bold text-gold">Project Ease</span>
+                        <span className="text-ink-3">/</span>
                         <span>Account Settings</span>
                     </div>
                 </div>
 
                 {/* Page header */}
-                <div className={styles.pageHeader}>
-                    <h1 className={styles.pageTitle}>Account Settings</h1>
-                    <p className={styles.pageSub}>Manage your profile, password, and preferences</p>
+                <div className="mb-8">
+                    <h1 className="m-0 mb-[0.4rem] font-serif text-2xl font-bold tracking-[-0.03em] text-ink-1">Account Settings</h1>
+                    <p className="m-0 text-[0.9rem] text-ink-3">Manage your profile, password, and preferences</p>
                 </div>
 
                 {/* Cards grid */}
                 {user ? (
-                    <div className={styles.grid}>
+                    <div className="grid grid-cols-2 gap-6 max-[681px]:grid-cols-1">
                         <ProfileCard user={user} />
                         <SecurityCard />
                         <PreferencesCard />
                         <DangerCard />
                     </div>
                 ) : (
-                    <div className={styles.noSession}>
-                        <p>No active session found. <a className={styles.link} href="/#/">Sign in</a></p>
+                    <div className="rounded-lg border border-border bg-bg-1 p-12 text-center text-[0.9rem] text-ink-3">
+                        <p>No active session found. <a className="text-gold no-underline hover:underline" href="/#/">Sign in</a></p>
                     </div>
                 )}
             </div>

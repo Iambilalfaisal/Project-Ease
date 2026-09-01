@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import readNDJSONStream from "ndjson-readablestream";
-import styles from "./EmployeePortal.module.css";
 import { toggleTheme, getTheme, Theme } from "../../theme";
 import { Table } from "../../components/ui";
 import type { PermittedCategory, MyProfile, DocFile, Verification, ChatMessage, AssignedHearing } from "./types";
@@ -31,12 +30,105 @@ function isCaseLawCitation(citation: string): boolean {
     return CASE_LAW_RE.test(citation.trim());
 }
 
+// ── Tailwind class constants (ported 1:1 from EmployeePortal.module.css) ───────
+
+const SHELL = "flex h-screen overflow-hidden bg-bg-0 font-sans text-ink-1 max-[769px]:h-[100dvh] max-[769px]:flex-col";
+const SIDEBAR = "flex w-[230px] min-w-[230px] flex-col overflow-hidden border-r border-border bg-bg-1 max-[769px]:h-auto max-[769px]:w-full max-[769px]:min-w-0 max-[769px]:shrink-0 max-[769px]:flex-row max-[769px]:gap-[0.35rem] max-[769px]:overflow-x-auto max-[769px]:overflow-y-hidden max-[769px]:border-r-0 max-[769px]:border-b max-[769px]:border-border max-[769px]:px-3 max-[769px]:py-2 max-[769px]:[-webkit-overflow-scrolling:touch]";
+const SIDEBAR_LOGO = "shrink-0 px-5 pt-[1.4rem] pb-4 font-serif text-[1.15rem] font-bold tracking-tight text-ink-1";
+const LOGO_ACCENT = "text-gold";
+const ORG_BADGE = "mx-3 mb-2 shrink-0 rounded-[12px] border border-border bg-bg-2 px-3 py-[0.6rem]";
+const ORG_BADGE_NAME = "overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-ink-1";
+const ORG_BADGE_ROLE = "mt-[0.1rem] text-xs text-ink-3";
+const CAT_LIST = "shrink-0 px-3 pb-2";
+const CAT_LIST_LABEL = "px-2 pt-[0.4rem] pb-[0.3rem] text-[0.68rem] font-semibold uppercase tracking-[0.06em] text-ink-3";
+const CAT_CHIP = "mt-[0.15rem] mr-[0.2rem] mb-[0.15rem] ml-0 inline-flex items-center gap-[0.3rem] whitespace-nowrap rounded-[99px] border border-[rgba(212,175,55,0.25)] bg-[rgba(212,175,55,0.12)] px-[0.55rem] py-[0.2rem] text-[0.75rem] text-gold";
+const NAV_WRAP = "flex flex-1 flex-col gap-[0.15rem] overflow-y-auto p-2";
+const NAV_ITEM = "flex w-full cursor-pointer items-center gap-[0.65rem] rounded-[12px] border-none bg-transparent px-3 py-[0.55rem] text-left text-[0.875rem] font-medium text-ink-2 transition-[background,color] duration-150 hover:bg-bg-2 hover:text-ink-1 max-[769px]:min-w-0 max-[769px]:shrink-0 max-[769px]:whitespace-nowrap max-[769px]:rounded-[100px] max-[769px]:px-3 max-[769px]:py-[0.4rem] max-[769px]:text-[0.8rem]";
+const NAV_ITEM_ACTIVE = "!bg-[rgba(212,175,55,0.12)] !text-gold font-semibold";
+const NAV_ICON_BOX = "flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] bg-bg-2 text-xs font-bold";
+const NAV_DIVIDER = "my-[0.4rem] mx-2 h-px bg-border";
+const SIDEBAR_FOOTER = "shrink-0 border-t border-border p-3";
+const SIDEBAR_USER_NAME = "overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-ink-1";
+const SIDEBAR_USER_ROLE = "mb-[0.6rem] text-xs text-ink-3";
+const SIGN_OUT_BTN = "w-full cursor-pointer rounded-[12px] border border-border bg-transparent px-3 py-[0.45rem] text-left text-[0.8rem] text-ink-3 transition-[border-color,color] duration-150 hover:border-ink-3 hover:text-ink-1";
+const MAIN = "flex min-w-0 flex-1 flex-col overflow-hidden";
+const HEADER = "flex shrink-0 items-center justify-between border-b border-border bg-bg-0 px-7 py-[1.1rem]";
+const HEADER_TITLE = "m-0 text-[1.1rem] font-bold tracking-tight text-ink-1";
+const HEADER_SUB = "mt-[0.15rem] mx-0 mb-0 text-[0.8rem] text-ink-3";
+const THEME_TOGGLE = "cursor-pointer rounded-[12px] border border-border bg-bg-2 px-[0.85rem] py-[0.4rem] text-[0.8rem] text-ink-2 hover:border-gold hover:text-gold";
+
+const CHAT_SHELL = "flex flex-1 flex-col overflow-hidden";
+const CHAT_MESSAGES = "flex flex-1 flex-col gap-5 overflow-y-auto px-8 py-6";
+const EMPTY_STATE = "flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center";
+const EMPTY_ICON = "text-[2.5rem] opacity-30";
+const EMPTY_TITLE = "text-[1.1rem] font-semibold text-ink-1";
+const EMPTY_SUB = "max-w-[360px] text-[0.875rem] leading-[1.5] text-ink-3";
+const EXAMPLE_GRID = "mt-3 grid max-w-[480px] grid-cols-2 gap-[0.6rem]";
+const EXAMPLE_BTN = "cursor-pointer rounded-[12px] border border-border bg-bg-1 px-[0.85rem] py-[0.6rem] text-left text-[0.78rem] leading-[1.4] text-ink-2 transition-[border-color,color] duration-150 hover:border-gold hover:text-gold";
+
+const MSG_ROW = "flex w-full max-w-[780px] flex-col";
+const MSG_ROW_USER = "items-end self-end";
+const MSG_ROW_ASSISTANT = "items-start self-start";
+const MSG_BUBBLE = "max-w-full rounded-[12px] px-4 py-3 text-[0.9rem] leading-[1.6] max-[769px]:max-w-[95%]";
+const MSG_BUBBLE_USER = "rounded-tl-[12px] rounded-tr-[12px] rounded-br-[2px] rounded-bl-[12px] bg-gold text-black";
+const MSG_BUBBLE_ASSISTANT = "whitespace-pre-wrap rounded-tl-[12px] rounded-tr-[12px] rounded-br-[12px] rounded-bl-[2px] border border-border bg-bg-1 text-ink-1";
+const MSG_CITATIONS = "mt-2 flex flex-wrap gap-[0.35rem]";
+const CITATION_TAG = "inline-block rounded-[99px] border border-[rgba(212,175,55,0.25)] bg-[rgba(212,175,55,0.1)] px-2 py-[0.15rem] font-mono text-[0.7rem] text-gold";
+const CITATION_TAG_CASE_LAW = "inline-block rounded-[99px] border border-[rgba(59,130,246,0.30)] bg-[rgba(59,130,246,0.10)] px-[0.55rem] py-[0.15rem] font-mono text-[0.7rem] text-[#60a5fa]";
+const VERIFICATION_BADGE = "mt-[0.45rem] inline-flex flex-wrap items-center gap-[0.2rem] rounded-[99px] border border-transparent px-[0.6rem] py-[0.2rem] text-[0.7rem] font-semibold";
+const VERDICT_CLASSES: Record<string, string> = {
+    verified:   "bg-[rgba(46,158,79,0.08)] border-[rgba(46,158,79,0.28)] text-[#2e9e4f]",
+    warning:    "bg-[rgba(212,175,55,0.08)] border-[rgba(212,175,55,0.28)] text-gold",
+    unverified: "bg-[rgba(224,82,96,0.08)] border-[rgba(224,82,96,0.28)] text-[#e05260]",
+};
+const VERIFICATION_ISSUES = "font-normal opacity-90";
+const STREAMING_DOT = "ml-[4px] inline-block h-[8px] w-[8px] rounded-full bg-gold [animation:blink_1s_ease-in-out_infinite]";
+const CHAT_SCROLL_ANCHOR = "h-px";
+
+const CHAT_INPUT_BAR = "shrink-0 border-t border-border bg-bg-0 px-8 py-4";
+const CHAT_INPUT_ROW = "flex max-w-[780px] items-end gap-3";
+const CHAT_INPUT = "min-h-[44px] max-h-[140px] flex-1 resize-none rounded-[12px] border border-border bg-bg-1 px-4 py-3 font-sans text-[0.9rem] leading-[1.5] text-ink-1 outline-none transition-[border-color] duration-150 placeholder:text-ink-3 focus:border-gold";
+const SEND_BTN = "shrink-0 cursor-pointer whitespace-nowrap rounded-[12px] border-none bg-gold px-[1.2rem] py-[0.7rem] text-[0.875rem] font-semibold text-black transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-[0.45]";
+const CHAT_HINT = "mt-[0.4rem] max-w-[780px] text-xs text-ink-3";
+
+const PANEL_CONTENT = "flex-1 overflow-y-auto px-8 py-6";
+const DOC_NAME = "font-medium break-all text-ink-1";
+const CAT_BADGE = "inline-block rounded-[99px] border border-border bg-bg-2 px-2 py-[0.15rem] text-xs text-ink-2";
+const STATUS_READY = "text-[0.78rem] font-medium text-[#2e9e4f]";
+const STATUS_PROC = "text-[0.78rem] text-gold";
+const STATUS_ERROR = "text-[0.78rem] text-[#e05260]";
+const EMPTY_DOCS = "p-12 text-center text-[0.875rem] text-ink-3";
+
+const PROFILE_GRID = "grid max-w-[900px] grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5";
+const PROFILE_CARD = "rounded-[12px] border border-border bg-bg-1 px-6 py-5";
+const PROFILE_CARD_TITLE = "mb-4 text-[0.8rem] font-semibold uppercase tracking-[0.06em] text-ink-3";
+const PROFILE_ROW = "mb-[0.85rem] flex flex-col gap-[0.2rem]";
+const PROFILE_LABEL = "text-[0.75rem] font-medium text-ink-3";
+const PROFILE_VALUE = "text-[0.9rem] font-medium text-ink-1";
+const NO_CATS = "text-[0.85rem] italic text-ink-3";
+
+const PW_INPUT = "mt-[0.3rem] w-full rounded-[12px] border border-border bg-bg-2 px-[0.7rem] py-2 font-sans text-[0.875rem] text-ink-1 outline-none transition-[border-color] duration-150 focus:border-gold";
+const PW_BTN = "mt-4 cursor-pointer rounded-[12px] border-none bg-gold px-5 py-[0.55rem] text-[0.875rem] font-semibold text-black transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-[0.45]";
+const PW_SUCCESS = "mb-[0.85rem] rounded-[12px] border border-[rgba(46,158,79,0.3)] bg-[rgba(46,158,79,0.1)] px-[0.85rem] py-[0.55rem] text-sm text-[#2e9e4f]";
+const PW_ERROR = "mb-[0.85rem] rounded-[12px] border border-[rgba(224,82,96,0.3)] bg-[rgba(224,82,96,0.1)] px-[0.85rem] py-[0.55rem] text-sm text-[#e05260]";
+
+const LOADING_WRAP = "flex h-full items-center justify-center text-[0.875rem] text-ink-3";
+
+const EXPORT_BAR = "mt-[0.4rem] flex gap-[0.4rem] pl-[0.1rem]";
+const EXPORT_BTN = "inline-flex cursor-pointer items-center gap-[0.25rem] rounded-[4px] border border-border bg-transparent px-[0.65rem] py-[0.25rem] font-sans text-xs font-semibold tracking-[0.04em] text-ink-2 transition-[border-color,color,background] duration-150 hover:border-gold hover:bg-[rgba(184,150,76,0.06)] hover:text-gold disabled:cursor-not-allowed disabled:opacity-[0.45]";
+
+const LANG_TOGGLE_ROW = "flex flex-wrap items-center gap-[0.4rem] pt-[0.3rem] pb-[0.4rem]";
+const LANG_TOGGLE_LABEL = "text-xs text-ink-3";
+const LANG_BTN = "cursor-pointer rounded-pill border border-border bg-transparent px-[0.6rem] py-[0.18rem] text-[0.78rem] text-ink-2 transition-all duration-150 hover:border-gold hover:text-gold";
+const LANG_BTN_ACTIVE = "cursor-pointer rounded-pill border border-gold bg-[rgba(184,150,76,0.12)] px-[0.6rem] py-[0.18rem] text-[0.78rem] font-semibold text-gold";
+const URDU_HINT = "text-[0.7rem] text-ink-3 font-['Noto_Nastaliq_Urdu',sans-serif] [direction:rtl]";
+
 // ── Theme Toggle ──────────────────────────────────────────────────────────────
 
 const ThemeToggle = () => {
     const [theme, setTheme] = useState<Theme>(getTheme());
     const handle = () => { const next = toggleTheme(); setTheme(next); };
-    return <button className={styles.themeToggle} onClick={handle}>{theme === "dark" ? "Light Mode" : "Dark Mode"}</button>;
+    return <button className={THEME_TOGGLE} onClick={handle}>{theme === "dark" ? "Light Mode" : "Dark Mode"}</button>;
 };
 
 // ── Chat Panel ────────────────────────────────────────────────────────────────
@@ -233,21 +325,21 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
     const isEmpty = messages.length === 0 && !loading;
 
     return (
-        <div className={styles.chatShell}>
-            <div className={styles.chatMessages}>
+        <div className={CHAT_SHELL}>
+            <div className={CHAT_MESSAGES}>
                 {isEmpty ? (
-                    <div className={styles.emptyState}>
-                        <div className={styles.emptyIcon}>💬</div>
-                        <div className={styles.emptyTitle}>Ask anything about your documents</div>
-                        <div className={styles.emptySub}>
+                    <div className={EMPTY_STATE}>
+                        <div className={EMPTY_ICON}>💬</div>
+                        <div className={EMPTY_TITLE}>Ask anything about your documents</div>
+                        <div className={EMPTY_SUB}>
                             {categories.length > 0
                                 ? `You have access to: ${categories.map(c => c.name).join(", ")}.`
                                 : "Your manager hasn't granted access to any document categories yet."}
                         </div>
                         {categories.length > 0 && (
-                            <div className={styles.exampleGrid}>
+                            <div className={EXAMPLE_GRID}>
                                 {EXAMPLES.map(ex => (
-                                    <button key={ex} className={styles.exampleBtn} onClick={() => send(ex)}>
+                                    <button key={ex} className={EXAMPLE_BTN} onClick={() => send(ex)}>
                                         {ex}
                                     </button>
                                 ))}
@@ -263,47 +355,47 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                                 : "";
                             const isUrduMsg = containsUrdu(msg.content);
                             return (
-                                <div key={i} className={`${styles.msgRow} ${msg.role === "user" ? styles.msgRowUser : styles.msgRowAssistant}`}>
-                                    <div className={`${styles.msgBubble} ${msg.role === "user" ? styles.msgBubbleUser : styles.msgBubbleAssistant}${isUrduMsg ? " urduText" : ""}`}
+                                <div key={i} className={`${MSG_ROW} ${msg.role === "user" ? MSG_ROW_USER : MSG_ROW_ASSISTANT}`}>
+                                    <div className={`${MSG_BUBBLE} ${msg.role === "user" ? MSG_BUBBLE_USER : MSG_BUBBLE_ASSISTANT}${isUrduMsg ? " urduText" : ""}`}
                                          dir={isUrduMsg ? "rtl" : undefined}>
                                         {msg.content}
                                     </div>
                                     {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
-                                        <div className={styles.msgCitations}>
+                                        <div className={MSG_CITATIONS}>
                                             {msg.citations.map(c => (
                                                 isCaseLawCitation(c) ? (
-                                                    <span key={c} className={styles.citationTagCaseLaw} title="Case Law — PLD / SCMR / MLD / CLC">
+                                                    <span key={c} className={CITATION_TAG_CASE_LAW} title="Case Law — PLD / SCMR / MLD / CLC">
                                                         📖 {c}
                                                     </span>
                                                 ) : (
-                                                    <span key={c} className={styles.citationTag}>📁 {c}</span>
+                                                    <span key={c} className={CITATION_TAG}>📁 {c}</span>
                                                 )
                                             ))}
                                         </div>
                                     )}
                                     {msg.role === "assistant" && msg.verification && (
-                                        <div className={`${styles.verificationBadge} ${styles[`verdict_${msg.verification.verdict}`]}`}>
+                                        <div className={`${VERIFICATION_BADGE} ${VERDICT_CLASSES[msg.verification.verdict]}`}>
                                             {msg.verification.verdict === "verified"   && "✓ Verified against sources"}
                                             {msg.verification.verdict === "warning"    && "⚠ Partially verified"}
                                             {msg.verification.verdict === "unverified" && "✗ Could not verify"}
                                             {msg.verification.issues.length > 0 && (
-                                                <span className={styles.verificationIssues}>
+                                                <span className={VERIFICATION_ISSUES}>
                                                     {" — "}{msg.verification.issues[0]}
                                                 </span>
                                             )}
                                         </div>
                                     )}
                                     {msg.role === "assistant" && msg.content && (
-                                        <div className={styles.exportBar}>
+                                        <div className={EXPORT_BAR}>
                                             <button
-                                                className={styles.exportBtn}
+                                                className={EXPORT_BTN}
                                                 title="Export as PDF"
                                                 onClick={() => exportToPDF(prevUserMsg, msg.content, msg.citations ?? [], orgName)}
                                             >
                                                 ↓ PDF
                                             </button>
                                             <button
-                                                className={styles.exportBtn}
+                                                className={EXPORT_BTN}
                                                 title="Export as Word document"
                                                 disabled={exportingIdx === i}
                                                 onClick={() => {
@@ -327,10 +419,10 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
 
                         {/* Streaming in-progress */}
                         {(loading || streamText) && (
-                            <div className={`${styles.msgRow} ${styles.msgRowAssistant}`}>
-                                <div className={`${styles.msgBubble} ${styles.msgBubbleAssistant}`}>
+                            <div className={`${MSG_ROW} ${MSG_ROW_ASSISTANT}`}>
+                                <div className={`${MSG_BUBBLE} ${MSG_BUBBLE_ASSISTANT}`}>
                                     {streamText || <span style={{ color: "var(--text-3)" }}>Searching your documents…</span>}
-                                    {(loading || streamText) && <span className={styles.streamingDot} />}
+                                    {(loading || streamText) && <span className={STREAMING_DOT} />}
                                 </div>
                             </div>
                         )}
@@ -342,30 +434,30 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                         )}
                     </>
                 )}
-                <div ref={anchorRef} className={styles.chatScrollAnchor} />
+                <div ref={anchorRef} className={CHAT_SCROLL_ANCHOR} />
             </div>
 
-            <div className={styles.chatInputBar}>
+            <div className={CHAT_INPUT_BAR}>
                 {/* Language toggle */}
-                <div className={styles.langToggleRow}>
-                    <span className={styles.langToggleLabel}>Language:</span>
+                <div className={LANG_TOGGLE_ROW}>
+                    <span className={LANG_TOGGLE_LABEL}>Language:</span>
                     <button
-                        className={lang === "en" ? styles.langBtnActive : styles.langBtn}
+                        className={lang === "en" ? LANG_BTN_ACTIVE : LANG_BTN}
                         onClick={() => setLang("en")}
                     >EN</button>
                     <button
-                        className={lang === "ur" ? styles.langBtnActive : styles.langBtn}
+                        className={lang === "ur" ? LANG_BTN_ACTIVE : LANG_BTN}
                         onClick={() => setLang("ur")}
                         title="اردو میں جواب حاصل کریں"
                     >اردو</button>
                     {lang === "ur" && (
-                        <span className={styles.urduHint}>AI اردو میں جواب دے گا</span>
+                        <span className={URDU_HINT}>AI اردو میں جواب دے گا</span>
                     )}
                 </div>
 
-                <div className={styles.chatInputRow}>
+                <div className={CHAT_INPUT_ROW}>
                     <textarea
-                        className={`${styles.chatInput}${lang === "ur" ? " urduInput" : ""}`}
+                        className={`${CHAT_INPUT}${lang === "ur" ? " urduInput" : ""}`}
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={onKey}
@@ -375,15 +467,15 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
                         disabled={loading && !streamText}
                     />
                     {loading || streamText ? (
-                        <button className={styles.sendBtn} onClick={stop}>Stop</button>
+                        <button className={SEND_BTN} onClick={stop}>Stop</button>
                     ) : (
-                        <button className={styles.sendBtn} onClick={() => send(input)} disabled={!input.trim()}>
+                        <button className={SEND_BTN} onClick={() => send(input)} disabled={!input.trim()}>
                             {lang === "ur" ? "پوچھیں" : "Ask"}
                         </button>
                     )}
                 </div>
                 {messages.length > 0 && (
-                    <div className={styles.chatHint}>
+                    <div className={CHAT_HINT}>
                         Press Enter to send · Shift+Enter for new line ·{" "}
                         <button
                             onClick={clear}
@@ -401,7 +493,7 @@ const ChatPanel = ({ orgName, categories }: { orgName: string; categories: Permi
 // ── Documents Panel ───────────────────────────────────────────────────────────
 
 const DocumentsPanel = ({ docs }: { docs: DocFile[] }) => (
-    <div className={styles.panelContent}>
+    <div className={PANEL_CONTENT}>
         <Table empty={docs.length === 0}
             emptyMessage="No documents are accessible to you yet. Ask your manager to assign category permissions.">
             <thead>
@@ -416,18 +508,18 @@ const DocumentsPanel = ({ docs }: { docs: DocFile[] }) => (
             <tbody>
                 {docs.map(doc => (
                     <tr key={doc.doc_id}>
-                        <td><span className={styles.docName}>{doc.filename}</span></td>
+                        <td><span className={DOC_NAME}>{doc.filename}</span></td>
                         <td>
                             {doc.category_name
-                                ? <span className={styles.catBadge}>{doc.category_name}</span>
+                                ? <span className={CAT_BADGE}>{doc.category_name}</span>
                                 : <span style={{ color: "var(--text-3)" }}>—</span>}
                         </td>
                         <td style={{ color: "var(--text-3)" }}>{fmtBytes(doc.size_bytes ?? 0)}</td>
                         <td style={{ color: "var(--text-3)" }}>{fmtDate(doc.uploaded_at ?? "")}</td>
                         <td>
-                            {doc.status === "ready"      && <span className={styles.statusReady}>Ready</span>}
-                            {doc.status === "processing" && <span className={styles.statusProc}>Processing…</span>}
-                            {doc.status === "error"      && <span className={styles.statusError}>Error</span>}
+                            {doc.status === "ready"      && <span className={STATUS_READY}>Ready</span>}
+                            {doc.status === "processing" && <span className={STATUS_PROC}>Processing…</span>}
+                            {doc.status === "error"      && <span className={STATUS_ERROR}>Error</span>}
                         </td>
                     </tr>
                 ))}
@@ -462,32 +554,32 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
     };
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.profileGrid}>
-                <div className={styles.profileCard}>
-                    <div className={styles.profileCardTitle}>Your Account</div>
-                    <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>Full Name</span>
-                        <span className={styles.profileValue}>{profile.name}</span>
+        <div className={PANEL_CONTENT}>
+            <div className={PROFILE_GRID}>
+                <div className={PROFILE_CARD}>
+                    <div className={PROFILE_CARD_TITLE}>Your Account</div>
+                    <div className={PROFILE_ROW}>
+                        <span className={PROFILE_LABEL}>Full Name</span>
+                        <span className={PROFILE_VALUE}>{profile.name}</span>
                     </div>
-                    <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>Email</span>
-                        <span className={styles.profileValue}>{profile.email}</span>
+                    <div className={PROFILE_ROW}>
+                        <span className={PROFILE_LABEL}>Email</span>
+                        <span className={PROFILE_VALUE}>{profile.email}</span>
                     </div>
-                    <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>Role</span>
-                        <span className={styles.profileValue}>Employee</span>
+                    <div className={PROFILE_ROW}>
+                        <span className={PROFILE_LABEL}>Role</span>
+                        <span className={PROFILE_VALUE}>Employee</span>
                     </div>
-                    <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>Organization</span>
-                        <span className={styles.profileValue}>{profile.org_name}</span>
+                    <div className={PROFILE_ROW}>
+                        <span className={PROFILE_LABEL}>Organization</span>
+                        <span className={PROFILE_VALUE}>{profile.org_name}</span>
                     </div>
                 </div>
 
-                <div className={styles.profileCard}>
-                    <div className={styles.profileCardTitle}>Document Access</div>
+                <div className={PROFILE_CARD}>
+                    <div className={PROFILE_CARD_TITLE}>Document Access</div>
                     {profile.permitted_categories.length === 0 ? (
-                        <p className={styles.noCats}>
+                        <p className={NO_CATS}>
                             No categories assigned yet. Contact your manager to get access.
                         </p>
                     ) : (
@@ -497,27 +589,27 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
                             </p>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
                                 {profile.permitted_categories.map(c => (
-                                    <span key={c.category_id} className={styles.catChip}>{c.name}</span>
+                                    <span key={c.category_id} className={CAT_CHIP}>{c.name}</span>
                                 ))}
                             </div>
                         </>
                     )}
                 </div>
 
-                <div className={styles.profileCard}>
-                    <div className={styles.profileCardTitle}>Change Password</div>
+                <div className={PROFILE_CARD}>
+                    <div className={PROFILE_CARD_TITLE}>Change Password</div>
 
                     {pwSuccess && (
-                        <div className={styles.pwSuccess}>Password updated successfully.</div>
+                        <div className={PW_SUCCESS}>Password updated successfully.</div>
                     )}
                     {pwError && (
-                        <div className={styles.pwError}>{pwError}</div>
+                        <div className={PW_ERROR}>{pwError}</div>
                     )}
 
-                    <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>Current Password</span>
+                    <div className={PROFILE_ROW}>
+                        <span className={PROFILE_LABEL}>Current Password</span>
                         <input
-                            className={styles.pwInput}
+                            className={PW_INPUT}
                             type="password"
                             placeholder="••••••••"
                             value={currentPw}
@@ -525,10 +617,10 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
                             autoComplete="current-password"
                         />
                     </div>
-                    <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>New Password</span>
+                    <div className={PROFILE_ROW}>
+                        <span className={PROFILE_LABEL}>New Password</span>
                         <input
-                            className={styles.pwInput}
+                            className={PW_INPUT}
                             type="password"
                             placeholder="At least 8 characters"
                             value={newPw}
@@ -536,10 +628,10 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
                             autoComplete="new-password"
                         />
                     </div>
-                    <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>Confirm New Password</span>
+                    <div className={PROFILE_ROW}>
+                        <span className={PROFILE_LABEL}>Confirm New Password</span>
                         <input
-                            className={styles.pwInput}
+                            className={PW_INPUT}
                             type="password"
                             placeholder="Repeat new password"
                             value={confirmPw}
@@ -548,7 +640,7 @@ const ProfilePanel = ({ profile }: { profile: MyProfile }) => {
                         />
                     </div>
                     <button
-                        className={styles.pwBtn}
+                        className={PW_BTN}
                         onClick={changePassword}
                         disabled={changePw.isPending}
                     >
@@ -589,12 +681,12 @@ const AssignmentsPanel = ({ userId }: { userId: string }) => {
         });
     };
 
-    if (isLoading) return <div className={styles.panelContent}><div className={styles.loadingWrap}>Loading…</div></div>;
+    if (isLoading) return <div className={PANEL_CONTENT}><div className={LOADING_WRAP}>Loading…</div></div>;
 
     if (hearings.length === 0) {
         return (
-            <div className={styles.panelContent}>
-                <div className={styles.emptyDocs}>
+            <div className={PANEL_CONTENT}>
+                <div className={EMPTY_DOCS}>
                     No court hearings assigned to you right now. When your firm owner dispatches you to a hearing, it'll show up here.
                 </div>
             </div>
@@ -602,7 +694,7 @@ const AssignmentsPanel = ({ userId }: { userId: string }) => {
     }
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                 {hearings.map(h => (
                     <div key={h.hearing_id} style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1rem" }}>
@@ -617,28 +709,28 @@ const AssignmentsPanel = ({ userId }: { userId: string }) => {
                                 </div>
                             </div>
                             {h.hearing_outcome ? (
-                                <span className={styles.statusReady}>{h.hearing_outcome}</span>
+                                <span className={STATUS_READY}>{h.hearing_outcome}</span>
                             ) : editingId !== h.hearing_id ? (
-                                <button className={styles.sendBtn} style={{ padding: "0.4rem 0.9rem", fontSize: "0.82rem" }} onClick={() => startMarking(h)}>Mark Outcome</button>
+                                <button className={SEND_BTN} style={{ padding: "0.4rem 0.9rem", fontSize: "0.82rem" }} onClick={() => startMarking(h)}>Mark Outcome</button>
                             ) : null}
                         </div>
 
                         {editingId === h.hearing_id && (
                             <div style={{ marginTop: "0.85rem", paddingTop: "0.85rem", borderTop: "1px solid var(--border)" }}>
-                                <select className={styles.pwInput} style={{ width: "100%", marginBottom: "0.6rem" }} value={outcome} onChange={e => setOutcome(e.target.value)}>
+                                <select className={PW_INPUT} style={{ width: "100%", marginBottom: "0.6rem" }} value={outcome} onChange={e => setOutcome(e.target.value)}>
                                     <option value="">— Select outcome —</option>
                                     {HEARING_OUTCOMES.map(o => <option key={o}>{o}</option>)}
                                 </select>
                                 {outcome === "Adjourned" && (
-                                    <input className={styles.pwInput} style={{ width: "100%", marginBottom: "0.6rem" }}
+                                    <input className={PW_INPUT} style={{ width: "100%", marginBottom: "0.6rem" }}
                                         placeholder="Adjournment reason (optional)" value={adjReason} onChange={e => setAdjReason(e.target.value)} />
                                 )}
-                                {saveErr && <div className={styles.pwError} style={{ marginBottom: "0.5rem" }}>{saveErr}</div>}
+                                {saveErr && <div className={PW_ERROR} style={{ marginBottom: "0.5rem" }}>{saveErr}</div>}
                                 <div style={{ display: "flex", gap: "0.5rem" }}>
-                                    <button className={styles.sendBtn} disabled={updateOutcome.isPending} onClick={() => saveOutcome(h.hearing_id)}>
+                                    <button className={SEND_BTN} disabled={updateOutcome.isPending} onClick={() => saveOutcome(h.hearing_id)}>
                                         {updateOutcome.isPending ? "Saving…" : "✓ Save — notifies owner & client"}
                                     </button>
-                                    <button className={styles.pwBtn} style={{ background: "transparent" }} onClick={() => setEditingId(null)} disabled={updateOutcome.isPending}>Cancel</button>
+                                    <button className={PW_BTN} style={{ background: "transparent" }} onClick={() => setEditingId(null)} disabled={updateOutcome.isPending}>Cancel</button>
                                 </div>
                             </div>
                         )}
@@ -685,7 +777,7 @@ const EmployeePortal = () => {
     };
 
     if (profileLoading || docsLoading) {
-        return <div className={styles.loadingWrap}>Loading…</div>;
+        return <div className={LOADING_WRAP}>Loading…</div>;
     }
 
     const orgName    = profile?.org_name ?? "Your Organization";
@@ -693,54 +785,54 @@ const EmployeePortal = () => {
     const categories = profile?.permitted_categories ?? [];
 
     return (
-        <div className={styles.shell}>
+        <div className={SHELL}>
             {/* Sidebar */}
-            <aside className={styles.sidebar}>
-                <div className={styles.sidebarLogo}>
-                    Project<span className={styles.logoAccent}> Ease</span>
+            <aside className={SIDEBAR}>
+                <div className={SIDEBAR_LOGO}>
+                    Project<span className={LOGO_ACCENT}> Ease</span>
                 </div>
 
-                <div className={styles.orgBadge}>
-                    <div className={styles.orgBadgeName}>{orgName}</div>
-                    <div className={styles.orgBadgeRole}>Employee</div>
+                <div className={ORG_BADGE}>
+                    <div className={ORG_BADGE_NAME}>{orgName}</div>
+                    <div className={ORG_BADGE_ROLE}>Employee</div>
                 </div>
 
                 {categories.length > 0 && (
-                    <div className={styles.catList}>
-                        <div className={styles.catListLabel}>My Access</div>
+                    <div className={CAT_LIST}>
+                        <div className={CAT_LIST_LABEL}>My Access</div>
                         {categories.map(c => (
-                            <span key={c.category_id} className={styles.catChip}>{c.name}</span>
+                            <span key={c.category_id} className={CAT_CHIP}>{c.name}</span>
                         ))}
                     </div>
                 )}
 
-                <nav className={styles.nav}>
-                    <div className={styles.navDivider} />
+                <nav className={NAV_WRAP}>
+                    <div className={NAV_DIVIDER} />
                     {NAV.map(({ id, icon, label }) => (
                         <button
                             key={id}
-                            className={`${styles.navItem} ${panel === id ? styles.navItemActive : ""}`}
+                            className={`${NAV_ITEM} ${panel === id ? NAV_ITEM_ACTIVE : ""}`}
                             onClick={() => setPanel(id)}
                         >
-                            <span className={styles.navIconBox}>{icon}</span>
+                            <span className={NAV_ICON_BOX}>{icon}</span>
                             {label}
                         </button>
                     ))}
                 </nav>
 
-                <div className={styles.sidebarFooter}>
-                    <div className={styles.sidebarUserName}>{userName}</div>
-                    <div className={styles.sidebarUserRole}>Employee</div>
-                    <button className={styles.signOutBtn} onClick={signOut}>Sign Out</button>
+                <div className={SIDEBAR_FOOTER}>
+                    <div className={SIDEBAR_USER_NAME}>{userName}</div>
+                    <div className={SIDEBAR_USER_ROLE}>Employee</div>
+                    <button className={SIGN_OUT_BTN} onClick={signOut}>Sign Out</button>
                 </div>
             </aside>
 
             {/* Main */}
-            <div className={styles.main}>
-                <header className={styles.header}>
+            <div className={MAIN}>
+                <header className={HEADER}>
                     <div>
-                        <h1 className={styles.headerTitle}>{PANEL_TITLES[panel]}</h1>
-                        <p className={styles.headerSub}>{PANEL_SUBS[panel]}</p>
+                        <h1 className={HEADER_TITLE}>{PANEL_TITLES[panel]}</h1>
+                        <p className={HEADER_SUB}>{PANEL_SUBS[panel]}</p>
                     </div>
                     <ThemeToggle />
                 </header>
