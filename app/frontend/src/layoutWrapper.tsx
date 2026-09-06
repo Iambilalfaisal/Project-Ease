@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { useMsal } from "@azure/msal-react";
 import { EventType } from "@azure/msal-browser";
 import { useLogin, checkLoggedIn } from "./authConfig";
@@ -54,9 +53,9 @@ const LayoutWrapper = () => {
 
         return (
             <LoginContext.Provider value={{ loggedIn, setLoggedIn }}>
-                <FluentProvider theme={webLightTheme} style={{ height: "100%", backgroundColor: "transparent" }}>
+                <div style={{ height: "100%", backgroundColor: "transparent" }}>
                     <Layout />
-                </FluentProvider>
+                </div>
             </LoginContext.Provider>
         );
     } else {
@@ -67,9 +66,9 @@ const LayoutWrapper = () => {
                     setLoggedIn
                 }}
             >
-                <FluentProvider theme={webLightTheme} style={{ height: "100%", backgroundColor: "transparent" }}>
+                <div style={{ height: "100%", backgroundColor: "transparent" }}>
                     <Layout />
-                </FluentProvider>
+                </div>
             </LoginContext.Provider>
         );
     }

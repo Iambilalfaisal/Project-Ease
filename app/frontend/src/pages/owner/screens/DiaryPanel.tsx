@@ -1,5 +1,5 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import { PANEL_CONTENT, SECTION_TITLE, FORM_INPUT, LIM_ALERT_BANNER, EMPTY_HINT, FORM_GROUP, FORM_LABEL } from "../ownerStyles";
 import { Modal, Button } from "../../../components/ui";
 import { useDiary, useSendDiaryBrief } from "../../../hooks/useDiary";
 import type { DiaryHearing, DiaryDeadline } from "../../../services/diary";
@@ -90,17 +90,17 @@ export const DiaryPanel = () => {
     };
 
     return (
-        <div className={styles.panelContent} id="diary-print-area">
+        <div className={PANEL_CONTENT} id="diary-print-area">
             {/* Header row */}
             <div id="diary-header-row" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <h2 className={styles.sectionTitle} style={{ margin: 0 }}>📅 Daily Diary</h2>
+                <h2 className={SECTION_TITLE} style={{ margin: 0 }}>📅 Daily Diary</h2>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
                     <Button variant="ghost" onClick={prev}>◀</Button>
                     <input
                         type="date"
                         value={date}
                         onChange={e => setDate(e.target.value)}
-                        className={styles.formInput}
+                        className={FORM_INPUT}
                         style={{ width: 160 }}
                     />
                     <Button variant="ghost" onClick={next}>▶</Button>
@@ -119,13 +119,13 @@ export const DiaryPanel = () => {
                 </span>}
             </div>
             {showingCached && (
-                <div className={styles.limAlertBanner} style={{ background: "var(--bg-1)", borderColor: "#c97c2a", marginBottom: "0.75rem", fontSize: "0.82rem" }}>
+                <div className={LIM_ALERT_BANNER} style={{ background: "var(--bg-1)", borderColor: "#c97c2a", marginBottom: "0.75rem", fontSize: "0.82rem" }}>
                     📴 Showing offline copy from {showingCached} — reconnect to refresh.
                 </div>
             )}
             {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.85rem", marginBottom: "0.75rem" }}>{err}</div>}
 
-            {loading && <p className={styles.emptyHint}>Loading…</p>}
+            {loading && <p className={EMPTY_HINT}>Loading…</p>}
             {err    && <p style={{ color: "#e53e3e", padding: 12 }}>{err}</p>}
 
             {!loading && !err && (
@@ -137,7 +137,7 @@ export const DiaryPanel = () => {
                             ⚖️ Court Hearings ({hearings.length})
                         </h3>
                         {hearings.length === 0 && (
-                            <div className={styles.emptyHint} style={{ fontSize: 13, padding: "20px 0" }}>No hearings scheduled</div>
+                            <div className={EMPTY_HINT} style={{ fontSize: 13, padding: "20px 0" }}>No hearings scheduled</div>
                         )}
                         {hearings.map(h => (
                             <div key={h.hearing_id} style={{
@@ -172,7 +172,7 @@ export const DiaryPanel = () => {
                             ⏰ Deadlines ({deadlines.length})
                         </h3>
                         {deadlines.length === 0 && (
-                            <div className={styles.emptyHint} style={{ fontSize: 13, padding: "20px 0" }}>No deadlines due</div>
+                            <div className={EMPTY_HINT} style={{ fontSize: 13, padding: "20px 0" }}>No deadlines due</div>
                         )}
                         {deadlines.map(d => (
                             <div key={d.deadline_id} style={{
@@ -213,10 +213,10 @@ export const DiaryPanel = () => {
                 <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: "1rem" }}>
                     Send today's diary ({fmtDate(date)}) as a WhatsApp message to a number.
                 </p>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>WhatsApp Number *</label>
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>WhatsApp Number *</label>
                     <input
-                        className={styles.formInput}
+                        className={FORM_INPUT}
                         value={briefNumber}
                         onChange={e => setBriefNumber(e.target.value)}
                         placeholder="+923001234567"
@@ -224,10 +224,10 @@ export const DiaryPanel = () => {
                     />
                     <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>Include country code, e.g. +92 for Pakistan</div>
                 </div>
-                <div className={styles.formGroup} style={{ marginTop: "0.75rem" }}>
-                    <label className={styles.formLabel}>Date</label>
+                <div className={FORM_GROUP} style={{ marginTop: "0.75rem" }}>
+                    <label className={FORM_LABEL}>Date</label>
                     <input
-                        className={styles.formInput}
+                        className={FORM_INPUT}
                         type="date"
                         value={date}
                         disabled

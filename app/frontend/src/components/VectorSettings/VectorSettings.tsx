@@ -1,11 +1,9 @@
-import { useEffect, useId, useState } from "react";
-import { Dropdown, Option, Checkbox } from "@fluentui/react-components";
-import type { OptionOnSelectData, CheckboxOnChangeData } from "@fluentui/react-components";
+import { useEffect, useId, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import styles from "./VectorSettings.module.css";
 import { HelpCallout } from "../../components/HelpCallout";
 import { RetrievalMode } from "../../api";
+import { SETTINGS_CHECKBOX_INPUT, SETTINGS_FIELD, SETTINGS_FIELDSET, SETTINGS_LEGEND, SETTINGS_SELECT } from "../Settings/settingsStyles";
 
 interface Props {
     showImageOptions?: boolean;
@@ -30,20 +28,20 @@ export const VectorSettings = ({
     const [searchTextEmbeddings, setSearchTextEmbeddings] = useState<boolean>(defaultSearchTextEmbeddings);
     const [searchImageEmbeddings, setSearchImageEmbeddings] = useState<boolean>(defaultSearchImageEmbeddings);
 
-    const onRetrievalModeChange = (_ev: any, data: OptionOnSelectData) => {
-        const mode = (data.optionValue as RetrievalMode) || RetrievalMode.Hybrid;
+    const onRetrievalModeChange = (ev: ChangeEvent<HTMLSelectElement>) => {
+        const mode = (ev.target.value as RetrievalMode) || RetrievalMode.Hybrid;
         setRetrievalMode(mode);
         updateRetrievalMode(mode);
     };
 
-    const onSearchTextEmbeddingsChange = (_ev: any, data: CheckboxOnChangeData) => {
-        setSearchTextEmbeddings(!!data.checked);
-        updateSearchTextEmbeddings(!!data.checked);
+    const onSearchTextEmbeddingsChange = (ev: ChangeEvent<HTMLInputElement>) => {
+        setSearchTextEmbeddings(ev.target.checked);
+        updateSearchTextEmbeddings(ev.target.checked);
     };
 
-    const onSearchImageEmbeddingsChange = (_ev: any, data: CheckboxOnChangeData) => {
-        setSearchImageEmbeddings(!!data.checked);
-        updateSearchImageEmbeddings(!!data.checked);
+    const onSearchImageEmbeddingsChange = (ev: ChangeEvent<HTMLInputElement>) => {
+        setSearchImageEmbeddings(ev.target.checked);
+        updateSearchImageEmbeddings(ev.target.checked);
     };
 
     // Only run if showImageOptions changes from true to false or false to true
@@ -66,39 +64,29 @@ export const VectorSettings = ({
     const { t } = useTranslation();
 
     return (
-        <div className={styles.container} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <div className={styles.settingsField}>
+        <div className="mt-2.5" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div className={SETTINGS_FIELD}>
                 <HelpCallout
                     labelId={retrievalModeId}
                     fieldId={retrievalModeFieldId}
                     helpText={t("helpTexts.retrievalMode")}
                     label={t("labels.retrievalMode.label")}
                 />
-                <Dropdown
-                    id={retrievalModeFieldId}
-                    selectedOptions={[retrievalMode.toString()]}
-                    value={
-                        retrievalMode === RetrievalMode.Hybrid
-                            ? t("labels.retrievalMode.options.hybrid")
-                            : retrievalMode === RetrievalMode.Vectors
-                              ? t("labels.retrievalMode.options.vectors")
-                              : t("labels.retrievalMode.options.texts")
-                    }
-                    onOptionSelect={onRetrievalModeChange}
-                    aria-labelledby={retrievalModeId}
-                >
-                    <Option value="hybrid">{t("labels.retrievalMode.options.hybrid")}</Option>
-                    <Option value="vectors">{t("labels.retrievalMode.options.vectors")}</Option>
-                    <Option value="text">{t("labels.retrievalMode.options.texts")}</Option>
-                </Dropdown>
+                <select id={retrievalModeFieldId} className={SETTINGS_SELECT} value={retrievalMode} onChange={onRetrievalModeChange} aria-labelledby={retrievalModeId}>
+                    <option value="hybrid">{t("labels.retrievalMode.options.hybrid")}</option>
+                    <option value="vectors">{t("labels.retrievalMode.options.vectors")}</option>
+                    <option value="text">{t("labels.retrievalMode.options.texts")}</option>
+                </select>
             </div>
 
             {showImageOptions && [RetrievalMode.Vectors, RetrievalMode.Hybrid].includes(retrievalMode) && (
-                <fieldset className={styles.fieldset}>
-                    <legend className={styles.legend}>{t("labels.vector.label")}</legend>
+                <fieldset className={SETTINGS_FIELDSET}>
+                    <legend className={SETTINGS_LEGEND}>{t("labels.vector.label")}</legend>
                     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         <div style={{ display: "flex", alignItems: "center" }}>
-                            <Checkbox
+                            <input
+                                type="checkbox"
+                                className={SETTINGS_CHECKBOX_INPUT}
                                 id={vectorFieldsFieldId + "-text"}
                                 checked={searchTextEmbeddings}
                                 onChange={onSearchTextEmbeddingsChange}
@@ -112,7 +100,9 @@ export const VectorSettings = ({
                             />
                         </div>
                         <div style={{ display: "flex", alignItems: "center" }}>
-                            <Checkbox
+                            <input
+                                type="checkbox"
+                                className={SETTINGS_CHECKBOX_INPUT}
                                 id={vectorFieldsFieldId + "-image"}
                                 checked={searchImageEmbeddings}
                                 onChange={onSearchImageEmbeddingsChange}

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Button } from "@fluentui/react-components";
 import { Copy24Regular, Checkmark24Regular, LightbulbFilament24Regular, ClipboardTextLtr24Regular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import DOMPurify from "dompurify";
@@ -7,7 +6,19 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 
-import styles from "./Answer.module.css";
+import { Button } from "@/components/ui";
+import { cn } from "@/lib/utils";
+import {
+    ANSWER_CONTAINER,
+    ANSWER_CONTAINER_SELECTED,
+    ANSWER_TEXT,
+    CITATION,
+    CITATION_ENTRY,
+    CITATION_LEARN_MORE,
+    FOLLOWUP_QUESTION,
+    FOLLOWUP_QUESTION_LEARN_MORE,
+    FOLLOWUP_QUESTIONS_LIST
+} from "./answerStyles";
 import { ChatAppResponse, getCitationFilePath, SpeechConfig } from "../../api";
 import { parseAnswerToHtml } from "./AnswerParser";
 import { AnswerIcon } from "./AnswerIcon";
@@ -67,7 +78,7 @@ export const Answer = ({
 
     return (
         <div
-            className={`${styles.answerContainer} ${isSelected ? styles.selected : ""}`}
+            className={cn(ANSWER_CONTAINER, isSelected && ANSWER_CONTAINER_SELECTED)}
             style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}
         >
             <div>
@@ -75,31 +86,37 @@ export const Answer = ({
                     <AnswerIcon />
                     <div>
                         <Button
-                            appearance="transparent"
-                            style={{ color: "black" }}
-                            icon={copied ? <Checkmark24Regular /> : <Copy24Regular />}
+                            variant="ghost"
+                            size="sm"
+                            className="border-none text-ink-2 hover:text-gold"
                             title={copied ? t("tooltips.copied") : t("tooltips.copy")}
                             aria-label={copied ? t("tooltips.copied") : t("tooltips.copy")}
                             onClick={handleCopy}
-                        />
+                        >
+                            {copied ? <Checkmark24Regular /> : <Copy24Regular />}
+                        </Button>
                         <Button
-                            appearance="transparent"
-                            style={{ color: "black" }}
-                            icon={<LightbulbFilament24Regular />}
+                            variant="ghost"
+                            size="sm"
+                            className="border-none text-ink-2 hover:text-gold"
                             title={t("tooltips.showThoughtProcess")}
                             aria-label={t("tooltips.showThoughtProcess")}
                             onClick={() => onThoughtProcessClicked()}
                             disabled={!answer.context.thoughts?.length || isStreaming}
-                        />
+                        >
+                            <LightbulbFilament24Regular />
+                        </Button>
                         <Button
-                            appearance="transparent"
-                            style={{ color: "black" }}
-                            icon={<ClipboardTextLtr24Regular />}
+                            variant="ghost"
+                            size="sm"
+                            className="border-none text-ink-2 hover:text-gold"
                             title={t("tooltips.showSupportingContent")}
                             aria-label={t("tooltips.showSupportingContent")}
                             onClick={() => onSupportingContentClicked()}
                             disabled={!answer.context.data_points || isStreaming}
-                        />
+                        >
+                            <ClipboardTextLtr24Regular />
+                        </Button>
                         {showSpeechOutputAzure && (
                             <SpeechOutputAzure answer={sanitizedAnswerHtml} index={index} speechConfig={speechConfig} isStreaming={isStreaming} />
                         )}
@@ -109,7 +126,7 @@ export const Answer = ({
             </div>
 
             <div style={{ flexGrow: 1 }}>
-                <div className={styles.answerText}>
+                <div className={ANSWER_TEXT}>
                     <ReactMarkdown children={sanitizedAnswerHtml} rehypePlugins={[rehypeRaw]} remarkPlugins={[remarkGfm]} />
                 </div>
             </div>
@@ -117,7 +134,7 @@ export const Answer = ({
             {!!parsedAnswer.citations.length && (
                 <div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                        <span className={styles.citationLearnMore}>{t("citationWithColon")}</span>
+                        <span className={CITATION_LEARN_MORE}>{t("citationWithColon")}</span>
                         {parsedAnswer.citations.map(citation => {
                             const isWeb = citation.isWeb;
                             const displayIndex = citation.index;
@@ -127,8 +144,8 @@ export const Answer = ({
                                 const webEntry = answer.context.data_points.external_results_metadata?.find(w => w.url === reference);
                                 const titleOrUrl = webEntry?.title?.trim() ? webEntry.title : reference;
                                 return (
-                                    <span key={`${reference}-${displayIndex}`} className={styles.citationEntry}>
-                                        <a className={styles.citation} title={reference} href={reference} target="_blank" rel="noopener noreferrer">
+                                    <span key={`${reference}-${displayIndex}`} className={CITATION_ENTRY}>
+                                        <a className={CITATION} title={reference} href={reference} target="_blank" rel="noopener noreferrer">
                                             {`${displayIndex}. ${titleOrUrl}`}
                                         </a>
                                     </span>
@@ -136,9 +153,9 @@ export const Answer = ({
                             } else {
                                 const path = getCitationFilePath(reference);
                                 return (
-                                    <span key={`${reference}-${displayIndex}`} className={styles.citationEntry}>
+                                    <span key={`${reference}-${displayIndex}`} className={CITATION_ENTRY}>
                                         <a
-                                            className={styles.citation}
+                                            className={CITATION}
                                             title={reference}
                                             onClick={e => {
                                                 e.preventDefault();
@@ -159,12 +176,12 @@ export const Answer = ({
                 <div>
                     <div
                         style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}
-                        className={`${!!parsedAnswer.citations.length ? styles.followupQuestionsList : ""}`}
+                        className={parsedAnswer.citations.length ? FOLLOWUP_QUESTIONS_LIST : ""}
                     >
-                        <span className={styles.followupQuestionLearnMore}>{t("followupQuestions")}</span>
+                        <span className={FOLLOWUP_QUESTION_LEARN_MORE}>{t("followupQuestions")}</span>
                         {followupQuestions.map((x, i) => {
                             return (
-                                <a key={i} className={styles.followupQuestion} title={x} onClick={() => onFollowupQuestionClicked(x)}>
+                                <a key={i} className={FOLLOWUP_QUESTION} title={x} onClick={() => onFollowupQuestionClicked(x)}>
                                     {`${x}`}
                                 </a>
                             );

@@ -1,13 +1,11 @@
 import { useMsal } from "@azure/msal-react";
 import { getToken, useLogin } from "../../authConfig";
-import { OverlayDrawer, DrawerHeader, DrawerHeaderTitle, DrawerBody, Spinner, Button } from "@fluentui/react-components";
-import { Dismiss24Regular } from "@fluentui/react-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { HistoryData, HistoryItem } from "../HistoryItem";
 import { Answers, HistoryProviderOptions } from "../HistoryProviders/IProvider";
 import { useHistoryManager, HistoryMetaData } from "../HistoryProviders";
 import { useTranslation } from "react-i18next";
-import styles from "./HistoryPanel.module.css";
+import { Drawer, Spinner } from "@/components/ui";
 
 const HISTORY_COUNT_PER_LOAD = 20;
 
@@ -77,38 +75,19 @@ export const HistoryPanel = ({
     };
 
     return (
-        <OverlayDrawer
-            position="start"
-            style={{ width: "300px" }}
-            modalType="non-modal"
-            open={isOpen}
-            onOpenChange={(_ev: any, { open }: { open: boolean }) => {
-                if (!open) {
-                    handleClose();
-                }
-            }}
-        >
-            <DrawerHeader>
-                <DrawerHeaderTitle
-                    action={<Button appearance="subtle" aria-label={t("labels.closeButton")} icon={<Dismiss24Regular />} onClick={handleClose} />}
-                >
-                    {t("history.chatHistory")}
-                </DrawerHeaderTitle>
-            </DrawerHeader>
-            <DrawerBody style={{ padding: "0px" }}>
-                {Object.entries(groupedHistory).map(([group, items]) => (
-                    <div key={group} className={styles.group}>
-                        <p className={styles.groupLabel}>{t(group)}</p>
-                        {items.map(item => (
-                            <HistoryItem key={item.id} item={item} onSelect={handleSelect} onDelete={handleDelete} />
-                        ))}
-                    </div>
-                ))}
-                {isLoading && <Spinner style={{ marginTop: "10px" }} />}
-                {history.length === 0 && !isLoading && <p>{t("history.noHistory")}</p>}
-                {hasMoreHistory && !isLoading && <InfiniteLoadingButton func={loadMoreHistory} />}
-            </DrawerBody>
-        </OverlayDrawer>
+        <Drawer open={isOpen} onClose={handleClose} side="start" width={300} title={t("history.chatHistory")}>
+            {Object.entries(groupedHistory).map(([group, items]) => (
+                <div key={group} className="mt-4 px-4">
+                    <p className="mb-1 mt-2 text-sm font-weight-bold text-ink-2">{t(group)}</p>
+                    {items.map(item => (
+                        <HistoryItem key={item.id} item={item} onSelect={handleSelect} onDelete={handleDelete} />
+                    ))}
+                </div>
+            ))}
+            {isLoading && <Spinner className="mt-2.5 px-4" />}
+            {history.length === 0 && !isLoading && <p className="px-4 text-sm text-ink-3">{t("history.noHistory")}</p>}
+            {hasMoreHistory && !isLoading && <InfiniteLoadingButton func={loadMoreHistory} />}
+        </Drawer>
     );
 };
 

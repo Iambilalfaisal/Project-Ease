@@ -1,5 +1,5 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import { PANEL_CONTENT, PANEL_TOOLBAR, MUTED, LINK_BTN, ACTION_BTN } from "../ownerStyles";
 import type { Invoice } from "../types";
 import { Table, Modal, Badge, Button, type BadgeTone } from "../../../components/ui";
 import { useInvoicesQuery, useInvoiceDetailQuery, useUpdateInvoiceStatusMutation } from "../../../hooks/useInvoices";
@@ -160,8 +160,8 @@ ${inv.notes ? `<div class="section" style="margin-top:20px"><div class="section-
     const filtered = statusFilter === "all" ? invoices : invoices.filter(i => i.status === statusFilter);
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.panelToolbar}>
+        <div className={PANEL_CONTENT}>
+            <div className={PANEL_TOOLBAR}>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                     {(["all","draft","sent","paid","cancelled"] as const).map(s => (
                         <button key={s} onClick={() => setStatusFilter(s)}
@@ -173,7 +173,7 @@ ${inv.notes ? `<div class="section" style="margin-top:20px"><div class="section-
                                 color: statusFilter === s ? "#1a1200" : "var(--text-2)",
                             }}>{s}</button>
                     ))}
-                    <span className={styles.muted} style={{ fontSize: "0.8rem", marginLeft: "0.5rem" }}>{filtered.length} invoice{filtered.length !== 1 ? "s" : ""}</span>
+                    <span className={MUTED} style={{ fontSize: "0.8rem", marginLeft: "0.5rem" }}>{filtered.length} invoice{filtered.length !== 1 ? "s" : ""}</span>
                 </div>
             </div>
 
@@ -190,23 +190,23 @@ ${inv.notes ? `<div class="section" style="margin-top:20px"><div class="section-
                 <tbody>
                     {filtered.map(inv => (
                         <tr key={inv.invoice_id}>
-                            <td><button className={styles.linkBtn} onClick={() => openInvoice(inv)}>{inv.invoice_number}</button></td>
+                            <td><button className={LINK_BTN} onClick={() => openInvoice(inv)}>{inv.invoice_number}</button></td>
                             <td>{inv.title}</td>
-                            <td className={styles.muted}>{inv.matter_title ?? "—"}</td>
-                            <td className={styles.muted}>{inv.client_name ?? "—"}</td>
+                            <td className={MUTED}>{inv.matter_title ?? "—"}</td>
+                            <td className={MUTED}>{inv.client_name ?? "—"}</td>
                             <td style={{ textAlign: "right", fontWeight: 600 }}>{inv.total_amount.toLocaleString("en-PK")}</td>
-                            <td className={styles.muted}>{inv.issued_date}</td>
+                            <td className={MUTED}>{inv.issued_date}</td>
                             <td><Badge tone={badgeClassToTone(INVOICE_STATUS_BADGE[inv.status])}>{inv.status}</Badge></td>
                             <td style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                                <button className={styles.actionBtn} onClick={() => openInvoice(inv)}>View</button>
-                                <button className={styles.actionBtn} onClick={() => printInvoice(inv)}>Print</button>
-                                {inv.status === "paid" && <button className={styles.actionBtn} onClick={() => printReceipt(inv)} title="Print cash receipt / raseed">🧾 Raseed</button>}
+                                <button className={ACTION_BTN} onClick={() => openInvoice(inv)}>View</button>
+                                <button className={ACTION_BTN} onClick={() => printInvoice(inv)}>Print</button>
+                                {inv.status === "paid" && <button className={ACTION_BTN} onClick={() => printReceipt(inv)} title="Print cash receipt / raseed">🧾 Raseed</button>}
                                 {inv.status === "draft" && (
-                                    <button className={styles.actionBtn} disabled={isUpdating(inv.invoice_id)}
+                                    <button className={ACTION_BTN} disabled={isUpdating(inv.invoice_id)}
                                         onClick={() => updateStatus(inv, "sent")}>Mark Sent</button>
                                 )}
                                 {inv.status === "sent" && (
-                                    <button className={styles.actionBtn} disabled={isUpdating(inv.invoice_id)}
+                                    <button className={ACTION_BTN} disabled={isUpdating(inv.invoice_id)}
                                         onClick={() => updateStatus(inv, "paid")}>Mark Paid</button>
                                 )}
                             </td>
@@ -229,15 +229,15 @@ ${inv.notes ? `<div class="section" style="margin-top:20px"><div class="section-
             >
                 {viewInvoice && <>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                        <div className={styles.muted} style={{ fontSize: "0.82rem" }}>{viewInvoice.title}</div>
+                        <div className={MUTED} style={{ fontSize: "0.82rem" }}>{viewInvoice.title}</div>
                         <Badge tone={badgeClassToTone(INVOICE_STATUS_BADGE[viewInvoice.status])}>{viewInvoice.status}</Badge>
                     </div>
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem", fontSize: "0.83rem" }}>
-                        <div><span className={styles.muted}>Client: </span>{viewInvoice.client_name ?? "—"}</div>
-                        <div><span className={styles.muted}>Matter: </span>{viewInvoice.matter_title ?? "—"}</div>
-                        <div><span className={styles.muted}>Issued: </span>{viewInvoice.issued_date}</div>
-                        {viewInvoice.due_date && <div><span className={styles.muted}>Due: </span>{viewInvoice.due_date}</div>}
+                        <div><span className={MUTED}>Client: </span>{viewInvoice.client_name ?? "—"}</div>
+                        <div><span className={MUTED}>Matter: </span>{viewInvoice.matter_title ?? "—"}</div>
+                        <div><span className={MUTED}>Issued: </span>{viewInvoice.issued_date}</div>
+                        {viewInvoice.due_date && <div><span className={MUTED}>Due: </span>{viewInvoice.due_date}</div>}
                     </div>
 
                     <Table>
@@ -246,8 +246,8 @@ ${inv.notes ? `<div class="section" style="margin-top:20px"><div class="section-
                             {(viewInvoice.fees ?? []).map(f => (
                                 <tr key={f.fee_id}>
                                     <td>{f.description}</td>
-                                    <td className={styles.muted}>{f.fee_type}</td>
-                                    <td className={styles.muted}>{f.fee_date}</td>
+                                    <td className={MUTED}>{f.fee_type}</td>
+                                    <td className={MUTED}>{f.fee_date}</td>
                                     <td style={{ textAlign: "right", fontWeight: 600 }}>{f.amount.toLocaleString("en-PK")}</td>
                                 </tr>
                             ))}

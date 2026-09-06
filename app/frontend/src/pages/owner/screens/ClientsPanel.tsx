@@ -3,7 +3,13 @@
 // Query) rather than inline fetch/useState/useEffect.
 
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import {
+    PANEL_CONTENT, PANEL_TOOLBAR, RESULT_COUNT, BACK_BTN, MATTER_DETAIL_HEADER, DETAIL_TITLE,
+    BADGE_GOLD, BADGE_GRAY, DETAIL_INFO_GRID, DETAIL_INFO_ITEM, DETAIL_INFO_LABEL, SECTION_TITLE,
+    MUTED, LINK_BTN, ACTION_BTN_PORTAL, ERROR_BANNER, FORM_GROUP, FORM_LABEL, FORM_INPUT, FORM_SELECT,
+    PORTAL_FORM, PORTAL_FORM_TITLE, PORTAL_NEW_LINK, PORTAL_LINK_ROW, PORTAL_LINK_CODE, PORTAL_COPY_BTN,
+    PORTAL_TOKEN_LIST, PORTAL_TOKEN_ROW, PORTAL_TOKEN_INFO, PORTAL_TOKEN_LABEL, PORTAL_TOKEN_META,
+} from "../ownerStyles";
 import { Table, Modal, Badge, Button, BadgeTone } from "../../../components/ui";
 import type { Client, ClientToken, Matter } from "../types";
 import { ApiError } from "../../../services/apiRequest";
@@ -225,21 +231,21 @@ export const ClientsPanel = () => {
             </p>
 
             {/* Generate new link form */}
-            <div className={styles.portalForm}>
-                <h4 className={styles.portalFormTitle}>Generate New Link</h4>
+            <div className={PORTAL_FORM}>
+                <h4 className={PORTAL_FORM_TITLE}>Generate New Link</h4>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Matter (optional)</label>
-                        <select className={styles.formSelect} value={portalForm.matter_id} onChange={e => setPortalForm({ ...portalForm, matter_id: e.target.value })}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Matter (optional)</label>
+                        <select className={FORM_SELECT} value={portalForm.matter_id} onChange={e => setPortalForm({ ...portalForm, matter_id: e.target.value })}>
                             <option value="">— All matters —</option>
                             {portalMatters.map(m => (
                                 <option key={m.matter_id} value={m.matter_id}>{m.title}</option>
                             ))}
                         </select>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Expires in (days)</label>
-                        <select className={styles.formSelect} value={portalForm.expires_days} onChange={e => setPortalForm({ ...portalForm, expires_days: e.target.value })}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Expires in (days)</label>
+                        <select className={FORM_SELECT} value={portalForm.expires_days} onChange={e => setPortalForm({ ...portalForm, expires_days: e.target.value })}>
                             <option value="7">7 days</option>
                             <option value="30">30 days</option>
                             <option value="90">90 days</option>
@@ -247,9 +253,9 @@ export const ClientsPanel = () => {
                             <option value="">Never expires</option>
                         </select>
                     </div>
-                    <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                        <label className={styles.formLabel}>Label (optional)</label>
-                        <input className={styles.formInput} value={portalForm.label} onChange={e => setPortalForm({ ...portalForm, label: e.target.value })} placeholder="e.g. Court documents — July 2026" />
+                    <div className={FORM_GROUP} style={{ gridColumn: "1/-1" }}>
+                        <label className={FORM_LABEL}>Label (optional)</label>
+                        <input className={FORM_INPUT} value={portalForm.label} onChange={e => setPortalForm({ ...portalForm, label: e.target.value })} placeholder="e.g. Court documents — July 2026" />
                     </div>
                 </div>
                 <Button style={{ marginTop: "0.75rem" }} onClick={createPortalLink} loading={portalCreating}>
@@ -259,13 +265,13 @@ export const ClientsPanel = () => {
 
             {/* Newly created link */}
             {newTokenUrl && (
-                <div className={styles.portalNewLink}>
+                <div className={PORTAL_NEW_LINK}>
                     <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: "0.4rem", fontWeight: 600 }}>
                         ✅ Link generated — copy and send to your client:
                     </div>
-                    <div className={styles.portalLinkRow}>
-                        <code className={styles.portalLinkCode}>{newTokenUrl}</code>
-                        <button className={styles.portalCopyBtn} onClick={() => copyToClipboard(newTokenUrl)}>
+                    <div className={PORTAL_LINK_ROW}>
+                        <code className={PORTAL_LINK_CODE}>{newTokenUrl}</code>
+                        <button className={PORTAL_COPY_BTN} onClick={() => copyToClipboard(newTokenUrl)}>
                             {copied ? "✓ Copied" : "Copy"}
                         </button>
                     </div>
@@ -274,28 +280,28 @@ export const ClientsPanel = () => {
 
             {/* Existing tokens */}
             <div style={{ marginTop: "1.25rem" }}>
-                <h4 className={styles.portalFormTitle}>Active Links</h4>
+                <h4 className={PORTAL_FORM_TITLE}>Active Links</h4>
                 {portalLoading ? (
                     <div style={{ fontSize: "0.82rem", color: "var(--text-3)" }}>Loading…</div>
                 ) : portalTokens.filter((t: ClientToken) => t.is_active).length === 0 ? (
                     <div style={{ fontSize: "0.82rem", color: "var(--text-3)" }}>No active portal links yet.</div>
                 ) : (
-                    <div className={styles.portalTokenList}>
+                    <div className={PORTAL_TOKEN_LIST}>
                         {portalTokens.filter((t: ClientToken) => t.is_active).map((t: ClientToken) => {
                             const tUrl = `${window.location.origin}${window.location.pathname}#/portal?token=${t.token}`;
                             const revoking = deleteClientTokenMutation.isPending && deleteClientTokenMutation.variables === t.token_id;
                             return (
-                                <div key={t.token_id} className={styles.portalTokenRow}>
-                                    <div className={styles.portalTokenInfo}>
-                                        <span className={styles.portalTokenLabel}>{t.label || "Portal Link"}</span>
-                                        <span className={styles.portalTokenMeta}>
+                                <div key={t.token_id} className={PORTAL_TOKEN_ROW}>
+                                    <div className={PORTAL_TOKEN_INFO}>
+                                        <span className={PORTAL_TOKEN_LABEL}>{t.label || "Portal Link"}</span>
+                                        <span className={PORTAL_TOKEN_META}>
                                             Created {t.created_at?.slice(0, 10)}
                                             {t.expires_at && ` · Expires ${t.expires_at.slice(0, 10)}`}
                                             {t.matter_id && " · Matter-scoped"}
                                         </span>
                                     </div>
                                     <div style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
-                                        <button className={styles.portalCopyBtn} onClick={() => copyToClipboard(tUrl)}>Copy</button>
+                                        <button className={PORTAL_COPY_BTN} onClick={() => copyToClipboard(tUrl)}>Copy</button>
                                         <Button variant="danger" size="sm" disabled={revoking} onClick={() => revokePortalToken(t.token_id)}>
                                             {revoking ? "…" : "Revoke"}
                                         </Button>
@@ -319,45 +325,45 @@ export const ClientsPanel = () => {
                 <Button onClick={saveClient} loading={saving}>Save</Button>
             </>}
         >
-            {formErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {formErr}</div>}
+            {formErr && <div className={ERROR_BANNER} style={{ marginBottom: "0.75rem" }}>⚠ {formErr}</div>}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                    <label className={styles.formLabel}>Name *</label>
-                    <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Client or firm name" autoFocus />
+                <div className={FORM_GROUP} style={{ gridColumn: "1/-1" }}>
+                    <label className={FORM_LABEL}>Name *</label>
+                    <input className={FORM_INPUT} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Client or firm name" autoFocus />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Type</label>
-                    <select className={styles.formSelect} value={form.client_type} onChange={e => setForm({ ...form, client_type: e.target.value as "Individual" | "Corporate" })}>
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Type</label>
+                    <select className={FORM_SELECT} value={form.client_type} onChange={e => setForm({ ...form, client_type: e.target.value as "Individual" | "Corporate" })}>
                         <option>Individual</option>
                         <option>Corporate</option>
                     </select>
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Phone</label>
-                    <input className={styles.formInput} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+92 300 0000000" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Phone</label>
+                    <input className={FORM_INPUT} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+92 300 0000000" />
                 </div>
-                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                    <label className={styles.formLabel}>Email</label>
-                    <input className={styles.formInput} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="client@example.com" />
+                <div className={FORM_GROUP} style={{ gridColumn: "1/-1" }}>
+                    <label className={FORM_LABEL}>Email</label>
+                    <input className={FORM_INPUT} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="client@example.com" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>CNIC / NTN</label>
-                    <input className={styles.formInput} value={form.cnic_ntn} onChange={e => setForm({ ...form, cnic_ntn: e.target.value })} placeholder="42201-0000000-0" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>CNIC / NTN</label>
+                    <input className={FORM_INPUT} value={form.cnic_ntn} onChange={e => setForm({ ...form, cnic_ntn: e.target.value })} placeholder="42201-0000000-0" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Address</label>
-                    <input className={styles.formInput} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="City, Province" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Address</label>
+                    <input className={FORM_INPUT} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="City, Province" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Referral Source</label>
-                    <select className={styles.formSelect} value={form.referral_source} onChange={e => setForm({ ...form, referral_source: e.target.value })}>
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Referral Source</label>
+                    <select className={FORM_SELECT} value={form.referral_source} onChange={e => setForm({ ...form, referral_source: e.target.value })}>
                         <option value="">Not specified</option>
                         {REFERRAL_SOURCES.map(s => <option key={s}>{s}</option>)}
                     </select>
                 </div>
-                <div className={styles.formGroup} style={{ gridColumn: "1/-1" }}>
-                    <label className={styles.formLabel}>Notes</label>
-                    <input className={styles.formInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional internal notes" />
+                <div className={FORM_GROUP} style={{ gridColumn: "1/-1" }}>
+                    <label className={FORM_LABEL}>Notes</label>
+                    <input className={FORM_INPUT} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional internal notes" />
                 </div>
             </div>
         </Modal>
@@ -366,12 +372,12 @@ export const ClientsPanel = () => {
     // ─ Detail view ─
     if (detail) {
         return (
-            <div className={styles.panelContent}>
-                <button className={styles.backBtn} onClick={() => setSelectedClientId(null)}>← Back to Clients</button>
-                <div className={styles.matterDetailHeader} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div className={PANEL_CONTENT}>
+                <button className={BACK_BTN} onClick={() => setSelectedClientId(null)}>← Back to Clients</button>
+                <div className={MATTER_DETAIL_HEADER} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
-                        <h2 className={styles.detailTitle}>{detail.name}</h2>
-                        <span className={detail.client_type === "Corporate" ? styles.badgeGold : styles.badgeGray} style={{ marginTop: "0.35rem", display: "inline-block" }}>
+                        <h2 className={DETAIL_TITLE}>{detail.name}</h2>
+                        <span className={detail.client_type === "Corporate" ? BADGE_GOLD : BADGE_GRAY} style={{ marginTop: "0.35rem", display: "inline-block" }}>
                             {detail.client_type}
                         </span>
                     </div>
@@ -381,16 +387,16 @@ export const ClientsPanel = () => {
                     </div>
                 </div>
 
-                <div className={styles.detailInfoGrid}>
-                    {detail.email    && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Email</span><span>{detail.email}</span></div>}
-                    {detail.phone    && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Phone</span><span>{detail.phone}</span></div>}
-                    {detail.cnic_ntn        && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>CNIC / NTN</span><span>{detail.cnic_ntn}</span></div>}
-                    {detail.address         && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Address</span><span>{detail.address}</span></div>}
-                    {detail.referral_source && <div className={styles.detailInfoItem}><span className={styles.detailInfoLabel}>Referral Source</span><span className={styles.badgeGray} style={{ fontSize: "0.78rem" }}>{detail.referral_source}</span></div>}
-                    {detail.notes           && <div className={styles.detailInfoItem} style={{ gridColumn: "1/-1" }}><span className={styles.detailInfoLabel}>Notes</span><span>{detail.notes}</span></div>}
+                <div className={DETAIL_INFO_GRID}>
+                    {detail.email    && <div className={DETAIL_INFO_ITEM}><span className={DETAIL_INFO_LABEL}>Email</span><span>{detail.email}</span></div>}
+                    {detail.phone    && <div className={DETAIL_INFO_ITEM}><span className={DETAIL_INFO_LABEL}>Phone</span><span>{detail.phone}</span></div>}
+                    {detail.cnic_ntn        && <div className={DETAIL_INFO_ITEM}><span className={DETAIL_INFO_LABEL}>CNIC / NTN</span><span>{detail.cnic_ntn}</span></div>}
+                    {detail.address         && <div className={DETAIL_INFO_ITEM}><span className={DETAIL_INFO_LABEL}>Address</span><span>{detail.address}</span></div>}
+                    {detail.referral_source && <div className={DETAIL_INFO_ITEM}><span className={DETAIL_INFO_LABEL}>Referral Source</span><span className={BADGE_GRAY} style={{ fontSize: "0.78rem" }}>{detail.referral_source}</span></div>}
+                    {detail.notes           && <div className={DETAIL_INFO_ITEM} style={{ gridColumn: "1/-1" }}><span className={DETAIL_INFO_LABEL}>Notes</span><span>{detail.notes}</span></div>}
                 </div>
 
-                <div className={styles.sectionTitle} style={{ marginTop: "1.75rem" }}>
+                <div className={SECTION_TITLE} style={{ marginTop: "1.75rem" }}>
                     Matters ({detail.matters.length})
                 </div>
                 <Table empty={detail.matters.length === 0} emptyMessage="No matters yet for this client.">
@@ -401,11 +407,11 @@ export const ClientsPanel = () => {
                         {detail.matters.map((m: Matter) => (
                             <tr key={m.matter_id}>
                                 <td><strong>{m.title}</strong></td>
-                                <td className={styles.muted}>{m.matter_type}</td>
+                                <td className={MUTED}>{m.matter_type}</td>
                                 <td><Badge tone={badgeClassToTone(STATUS_BADGE[m.status])}>{m.status}</Badge></td>
-                                <td className={styles.muted}>{m.court_name ?? "—"}</td>
-                                <td className={styles.muted}>{m.case_number ?? "—"}</td>
-                                <td className={styles.muted}>{m.filing_date ?? "—"}</td>
+                                <td className={MUTED}>{m.court_name ?? "—"}</td>
+                                <td className={MUTED}>{m.case_number ?? "—"}</td>
+                                <td className={MUTED}>{m.filing_date ?? "—"}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -417,9 +423,9 @@ export const ClientsPanel = () => {
 
     // ─ List view ─
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.panelToolbar}>
-                <span className={styles.resultCount}>{clients.length} client{clients.length !== 1 ? "s" : ""}</span>
+        <div className={PANEL_CONTENT}>
+            <div className={PANEL_TOOLBAR}>
+                <span className={RESULT_COUNT}>{clients.length} client{clients.length !== 1 ? "s" : ""}</span>
                 <Button onClick={openAdd}>+ Add Client</Button>
             </div>
             <Table
@@ -436,17 +442,17 @@ export const ClientsPanel = () => {
                         return (
                             <tr key={c.client_id}>
                                 <td>
-                                    <button className={styles.linkBtn} onClick={() => openDetail(c)}>{c.name}</button>
+                                    <button className={LINK_BTN} onClick={() => openDetail(c)}>{c.name}</button>
                                 </td>
                                 <td><Badge tone={c.client_type === "Corporate" ? "gold" : "gray"}>{c.client_type}</Badge></td>
-                                <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{c.referral_source ?? <span style={{ color: "var(--text-3)" }}>—</span>}</td>
-                                <td className={styles.muted}>{c.email ?? "—"}</td>
-                                <td className={styles.muted}>{c.phone ?? "—"}</td>
-                                <td className={styles.muted}>{c.matter_count ?? 0}</td>
+                                <td className={MUTED} style={{ fontSize: "0.8rem" }}>{c.referral_source ?? <span style={{ color: "var(--text-3)" }}>—</span>}</td>
+                                <td className={MUTED}>{c.email ?? "—"}</td>
+                                <td className={MUTED}>{c.phone ?? "—"}</td>
+                                <td className={MUTED}>{c.matter_count ?? 0}</td>
                                 <td style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
                                     <Button variant="ghost" size="sm" onClick={() => openDetail(c)}>View</Button>
                                     <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>Edit</Button>
-                                    <button className={styles.actionBtnPortal} onClick={() => openPortal(c)}>Share Portal</button>
+                                    <button className={ACTION_BTN_PORTAL} onClick={() => openPortal(c)}>Share Portal</button>
                                     <Button variant="ghost" size="sm" onClick={() => openTrustLedger(c)}>Trust A/C</Button>
                                     <Button variant="danger" size="sm" disabled={removing} onClick={() => removeClient(c)}>
                                         {removing ? "…" : "Delete"}
@@ -469,7 +475,7 @@ export const ClientsPanel = () => {
             >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
                     <div>
-                        <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Running Balance: </span>
+                        <span className={MUTED} style={{ fontSize: "0.82rem" }}>Running Balance: </span>
                         <strong style={{ fontSize: "1.1rem", color: trustBalance >= 0 ? "var(--success)" : "var(--danger)" }}>
                             PKR {trustBalance.toLocaleString()}
                         </strong>
@@ -491,7 +497,7 @@ export const ClientsPanel = () => {
                     <tbody>
                         {trustEntries.map(e => (
                             <tr key={e.ledger_id}>
-                                <td className={styles.muted}>{e.txn_date}</td>
+                                <td className={MUTED}>{e.txn_date}</td>
                                 <td><Badge tone={e.txn_type === "Credit" ? "green" : "red"}>{e.txn_type}</Badge></td>
                                 <td>{e.description}</td>
                                 <td style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -502,7 +508,7 @@ export const ClientsPanel = () => {
                                 <td style={{ fontVariantNumeric: "tabular-nums", color: e.balance_pkr < 0 ? "var(--danger)" : "var(--text-1)" }}>
                                     PKR {e.balance_pkr.toLocaleString()}
                                 </td>
-                                <td className={styles.muted} style={{ fontSize: "0.78rem" }}>{e.reference_no || "—"}</td>
+                                <td className={MUTED} style={{ fontSize: "0.78rem" }}>{e.reference_no || "—"}</td>
                                 <td>
                                     <Button variant="danger" size="sm" onClick={() => deleteTLEntry(e.ledger_id)}>Del</Button>
                                 </td>
@@ -515,28 +521,28 @@ export const ClientsPanel = () => {
                     <div style={{ marginTop: "1.25rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
                         <h4 style={{ marginBottom: "0.75rem", fontSize: "0.9rem" }}>New Entry</h4>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Type</label>
-                                <select className={styles.formInput} value={tlForm.txn_type} onChange={e => setTlForm(f => ({ ...f, txn_type: e.target.value }))}>
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Type</label>
+                                <select className={FORM_INPUT} value={tlForm.txn_type} onChange={e => setTlForm(f => ({ ...f, txn_type: e.target.value }))}>
                                     <option>Credit</option>
                                     <option>Debit</option>
                                 </select>
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Date *</label>
-                                <input type="date" className={styles.formInput} value={tlForm.txn_date} onChange={e => setTlForm(f => ({ ...f, txn_date: e.target.value }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Date *</label>
+                                <input type="date" className={FORM_INPUT} value={tlForm.txn_date} onChange={e => setTlForm(f => ({ ...f, txn_date: e.target.value }))} />
                             </div>
-                            <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
-                                <label className={styles.formLabel}>Description *</label>
-                                <input className={styles.formInput} value={tlForm.description} onChange={e => setTlForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Advance received for Supreme Court appeal" />
+                            <div className={FORM_GROUP} style={{ gridColumn: "1 / -1" }}>
+                                <label className={FORM_LABEL}>Description *</label>
+                                <input className={FORM_INPUT} value={tlForm.description} onChange={e => setTlForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Advance received for Supreme Court appeal" />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Amount (PKR) *</label>
-                                <input type="number" className={styles.formInput} min={0} value={tlForm.amount_pkr} onChange={e => setTlForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Amount (PKR) *</label>
+                                <input type="number" className={FORM_INPUT} min={0} value={tlForm.amount_pkr} onChange={e => setTlForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Reference No.</label>
-                                <input className={styles.formInput} value={tlForm.reference_no} onChange={e => setTlForm(f => ({ ...f, reference_no: e.target.value }))} placeholder="Cheque / receipt no." />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Reference No.</label>
+                                <input className={FORM_INPUT} value={tlForm.reference_no} onChange={e => setTlForm(f => ({ ...f, reference_no: e.target.value }))} placeholder="Cheque / receipt no." />
                             </div>
                         </div>
                         {tlErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{tlErr}</div>}

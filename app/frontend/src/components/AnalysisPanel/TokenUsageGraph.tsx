@@ -1,5 +1,21 @@
 import React from "react";
-import styles from "./AnalysisPanel.module.css";
+import { cn } from "@/lib/utils";
+import {
+    GROUPED_TOTAL_BAR,
+    OUTPUT_BAR,
+    PRIMARY_BAR_CONTAINER,
+    PROMPT_BAR,
+    REASONING_BAR,
+    SECONDARY_TOTAL_BAR,
+    SECTION_HEADER,
+    SEGMENT_WRAPPER,
+    SEGMENT_WRAPPER_FIRST,
+    STANDALONE_TOTAL_BAR,
+    TOKEN_BAR,
+    TOKEN_LABEL,
+    TOKEN_USAGE_GRAPH,
+    TOTAL_BAR
+} from "./analysisPanelStyles";
 
 export interface TokenUsage {
     prompt_tokens: number;
@@ -62,21 +78,21 @@ export const TokenUsageStackedBar: React.FC<TokenUsageStackedBarProps> = ({ toke
     const outputFlex = safeOutputValue > 0 ? safeOutputValue : minimumFlex;
 
     return (
-        <div className={styles.primaryBarContainer}>
-            <div className={`${styles.tokenBar} ${styles.promptBar}`} style={{ flexGrow: promptFlex, flexBasis: promptPercent, minWidth: 0 }}>
-                <span className={styles.tokenLabel}>
+        <div className={PRIMARY_BAR_CONTAINER}>
+            <div className={cn(TOKEN_BAR, PROMPT_BAR)} style={{ flexGrow: promptFlex, flexBasis: promptPercent, minWidth: 0 }}>
+                <span className={TOKEN_LABEL}>
                     {labels.prompt}: {tokenUsage.prompt_tokens}
                 </span>
             </div>
             {includeReasoning && (
-                <div className={`${styles.tokenBar} ${styles.reasoningBar}`} style={{ flexGrow: reasoningFlex, flexBasis: reasoningPercent, minWidth: 0 }}>
-                    <span className={styles.tokenLabel}>
+                <div className={cn(TOKEN_BAR, REASONING_BAR)} style={{ flexGrow: reasoningFlex, flexBasis: reasoningPercent, minWidth: 0 }}>
+                    <span className={TOKEN_LABEL}>
                         {labels.reasoning ?? "Reasoning"}: {reasoningValue}
                     </span>
                 </div>
             )}
-            <div className={`${styles.tokenBar} ${styles.outputBar}`} style={{ flexGrow: outputFlex, flexBasis: outputPercent }}>
-                <span className={styles.tokenLabel}>
+            <div className={cn(TOKEN_BAR, OUTPUT_BAR)} style={{ flexGrow: outputFlex, flexBasis: outputPercent }}>
+                <span className={TOKEN_LABEL}>
                     {labels.output}: {safeOutputValue}
                 </span>
             </div>
@@ -96,8 +112,8 @@ interface TokenUsageValueBarProps {
 }
 
 export const TokenUsageValueBar: React.FC<TokenUsageValueBarProps> = ({ label, value, base, tone = "primary", grouping = "standalone" }) => {
-    const toneClass = tone === "primary" ? styles.totalBar : styles.secondaryTotalBar;
-    const groupingClass = grouping === "grouped" ? styles.groupedTotalBar : styles.standaloneTotalBar;
+    const toneClass = tone === "primary" ? TOTAL_BAR : SECONDARY_TOTAL_BAR;
+    const groupingClass = grouping === "grouped" ? GROUPED_TOTAL_BAR : STANDALONE_TOTAL_BAR;
     const resolvedBase = base ?? (value || 1);
     const percent = calcPercent(value, resolvedBase);
     const flexGrow = value > 0 ? value : 0.5;
@@ -106,8 +122,8 @@ export const TokenUsageValueBar: React.FC<TokenUsageValueBarProps> = ({ label, v
     const barStyle = grouping === "standalone" ? { width: "100%" } : { width: percent, flexGrow, flexBasis: percent, minWidth: 0 };
 
     return (
-        <div className={`${styles.tokenBar} ${toneClass} ${groupingClass}`} style={barStyle}>
-            <span className={styles.tokenLabel}>
+        <div className={cn(TOKEN_BAR, toneClass, groupingClass)} style={barStyle}>
+            <span className={TOKEN_LABEL}>
                 {label}: {value}
             </span>
         </div>
@@ -145,10 +161,10 @@ export const TokenUsageGraph: React.FC<TokenUsageGraphProps> = ({
     const includeReasoning = showPrimaryBars && Boolean(reasoningEffort) && tokenUsage.reasoning_tokens > 0;
 
     return (
-        <div className={styles.tokenUsageGraph}>
-            {title && <div className={styles.header}>{title}</div>}
+        <div className={TOKEN_USAGE_GRAPH}>
+            {title && <div className={SECTION_HEADER}>{title}</div>}
             {showPrimaryBars ? (
-                <div className={`${styles.segmentWrapper} ${styles.segmentWrapperFirst}`}>
+                <div className={cn(SEGMENT_WRAPPER, SEGMENT_WRAPPER_FIRST)}>
                     <TokenUsageStackedBar
                         tokenUsage={tokenUsage}
                         labels={{ prompt: promptLabel, output: outputLabel, reasoning: reasoningLabel }}
@@ -170,7 +186,7 @@ export const TokenUsageGraph: React.FC<TokenUsageGraphProps> = ({
                 />
             ))}
             {supplementary.map((segment, index) => (
-                <div key={`${segment.totalLabel ?? "supplementary"}-${index}`} className={styles.segmentWrapper}>
+                <div key={`${segment.totalLabel ?? "supplementary"}-${index}`} className={SEGMENT_WRAPPER}>
                     {showPrimaryBars && (
                         <TokenUsageStackedBar
                             tokenUsage={segment.tokenUsage}

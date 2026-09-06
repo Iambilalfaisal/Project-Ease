@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@fluentui/react-components";
 import { ArrowSync24Regular, Speaker224Regular } from "@fluentui/react-icons";
+import { Button } from "@/components/ui";
 import { getSpeechApi, SpeechConfig } from "../../api";
 
 interface Props {
@@ -61,30 +61,30 @@ export const SpeechOutputAzure = ({ answer, speechConfig, index, isStreaming }: 
         });
     };
 
-    const color = localPlayingState ? "red" : "black";
+    const color = localPlayingState ? "var(--danger)" : "var(--text-2)";
 
     // We always preload the Sync icon in hidden mode so that there's no visual glitch when icon changes
     return isLoading ? (
-        <Button
-            appearance="transparent"
-            style={{ color: color }}
-            icon={<ArrowSync24Regular />}
-            title="Loading speech"
-            aria-label="Loading speech"
-            disabled={true}
-        />
+        <Button variant="ghost" size="sm" className="border-none" style={{ color }} title="Loading speech" aria-label="Loading speech" disabled={true}>
+            <ArrowSync24Regular />
+        </Button>
     ) : (
         <>
-            <Button appearance="transparent" icon={<ArrowSync24Regular />} aria-hidden={true} disabled={true} style={{ display: "none" }} />
+            <Button variant="ghost" size="sm" className="hidden border-none" aria-hidden={true} disabled={true}>
+                <ArrowSync24Regular />
+            </Button>
             <Button
-                appearance="transparent"
-                style={{ color: color }}
-                icon={<Speaker224Regular />}
+                variant="ghost"
+                size="sm"
+                className="border-none"
+                style={{ color }}
                 title={t("tooltips.speakAnswer")}
                 aria-label={t("tooltips.speakAnswer")}
                 onClick={() => startOrStopSpeech(answer)}
                 disabled={isStreaming}
-            />
+            >
+                <Speaker224Regular />
+            </Button>
         </>
     );
 };

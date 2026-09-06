@@ -1,8 +1,8 @@
 import { Delete24Regular } from "@fluentui/react-icons";
-import { Button } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 
-import styles from "./ClearChatButton.module.css";
+import { Button } from "@/components/ui";
+import { cn } from "@/lib/utils";
 
 interface Props {
     className?: string;
@@ -11,11 +11,13 @@ interface Props {
 }
 
 export const ClearChatButton = ({ className, disabled, onClick }: Props) => {
-    const { t, i18n } = useTranslation();
+    const { t } = useTranslation();
     return (
-        <div className={`${styles.container} ${className ?? ""}`}>
-            <Button icon={<Delete24Regular />} disabled={disabled} onClick={onClick}>
-                {t("clearChat")}
+        <div className={cn("flex items-center gap-1.5", className)}>
+            <Button variant="ghost" size="sm" disabled={disabled} onClick={onClick}>
+                <span className="inline-flex items-center gap-1.5">
+                    <Delete24Regular className="h-4 w-4" /> {t("clearChat")}
+                </span>
             </Button>
         </div>
     );

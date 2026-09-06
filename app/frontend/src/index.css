@@ -166,7 +166,7 @@
 
 html {
     height: 100%;
-    background: #f2f2f2;
+    background: var(--bg-0);
     font-size: 12px; /* Root font size for 320px width screens */
     font-family:
         "Segoe UI",
@@ -279,4 +279,42 @@ input.urduInput {
 @keyframes scaleIn {
     from { opacity: 0; transform: scale(0.94); }
     to   { opacity: 1; transform: scale(1);    }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+
+@keyframes loadingDots {
+    0%   { content: ""; }
+    25%  { content: "."; }
+    50%  { content: ".."; }
+    75%  { content: "..."; }
+    100% { content: ""; }
+}
+
+/* ── Answer citation badges ───────────────────────────────────────────────────
+   Chat answers are rendered from a raw HTML string (AnswerParser.tsx uses
+   renderToStaticMarkup + rehypeRaw), so citation markers are literal <sup>
+   tags, not React elements a Tailwind class can target directly. Kept global
+   (not a *.module.css rule, which Vite would scope/hash and break the match). */
+sup {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.625em;
+    font-weight: 600;
+    vertical-align: top;
+    top: -1px;
+    margin: 0 0.125em;
+    min-width: 0.875em;
+    height: 0.875em;
+    border-radius: 0.1875em;
+    background: #d1dbfa;
+    color: #123bb6;
+    text-decoration-color: transparent;
+    outline: transparent solid 0.0625em;
+    cursor: pointer;
 }

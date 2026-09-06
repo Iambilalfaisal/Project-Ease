@@ -1,10 +1,10 @@
 import { useState, useEffect, useContext, useCallback, useRef } from "react";
-import { Button, Textarea, Tooltip } from "@fluentui/react-components";
 import { Send28Filled } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 
-import styles from "./QuestionInput.module.css";
+import { Button, Tooltip } from "@/components/ui";
 import { SpeechInput } from "./SpeechInput";
+import { QUESTION_INPUT_BUTTONS_CONTAINER, QUESTION_INPUT_CONTAINER, QUESTION_INPUT_TEXTAREA } from "./questionInputStyles";
 import { LoginContext } from "../../loginContext";
 import { requireLogin } from "../../authConfig";
 
@@ -82,8 +82,8 @@ export const QuestionInput = ({ onSend, onStop, disabled, placeholder, clearOnSe
         setIsComposing(false);
     };
 
-    const onQuestionChange = (_ev: React.ChangeEvent<HTMLTextAreaElement>, data: { value: string }) => {
-        setQuestion(data.value);
+    const onQuestionChange = (ev: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setQuestion(ev.target.value);
     };
 
     const disableRequiredAccessControl = requireLogin && !loggedIn;
@@ -94,32 +94,30 @@ export const QuestionInput = ({ onSend, onStop, disabled, placeholder, clearOnSe
     }
 
     return (
-        <div className={styles.questionInputContainer} style={{ display: "flex", gap: "0.25rem" }}>
-            <Textarea
-                textarea={{ ref: textareaRef }}
-                className={styles.questionInputTextArea}
+        <div className={QUESTION_INPUT_CONTAINER} style={{ display: "flex", gap: "0.25rem" }}>
+            <textarea
+                ref={textareaRef}
+                className={QUESTION_INPUT_TEXTAREA}
                 disabled={disableRequiredAccessControl}
                 placeholder={placeholder}
-                resize="none"
                 value={question}
                 onChange={onQuestionChange}
                 onKeyDown={onEnterPress}
                 onCompositionStart={handleCompositionStart}
                 onCompositionEnd={handleCompositionEnd}
             />
-            <div className={styles.questionInputButtonsContainer}>
+            <div className={QUESTION_INPUT_BUTTONS_CONTAINER}>
                 {isStreaming || isLoading ? (
-                    <Tooltip content={t("tooltips.stopStreaming")} relationship="label">
-                        <Button size="large" icon={<StopCircleIcon />} onClick={onStop} />
+                    <Tooltip content={t("tooltips.stopStreaming")}>
+                        <Button variant="ghost" size="sm" className="border-none" onClick={onStop}>
+                            <StopCircleIcon />
+                        </Button>
                     </Tooltip>
                 ) : (
-                    <Tooltip content={t("tooltips.submitQuestion")} relationship="label">
-                        <Button
-                            size="large"
-                            icon={<Send28Filled primaryFill="rgba(115, 118, 225, 1)" />}
-                            disabled={sendQuestionDisabled}
-                            onClick={sendQuestion}
-                        />
+                    <Tooltip content={t("tooltips.submitQuestion")}>
+                        <Button variant="ghost" size="sm" className="border-none" disabled={sendQuestionDisabled} onClick={sendQuestion}>
+                            <Send28Filled primaryFill="rgba(115, 118, 225, 1)" />
+                        </Button>
                     </Tooltip>
                 )}
             </div>

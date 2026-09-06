@@ -1,5 +1,13 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import {
+    PANEL_CONTENT, CAL_LAYOUT, CAL_MAIN, CAL_MONTH_NAV, CAL_NAV_BTN, CAL_MONTH_LABEL,
+    CAL_GRID, CAL_DOW_CELL, CAL_EMPTY_CELL, CAL_DAY_CELL, CAL_SELECTED, CAL_DAY_NUM, CAL_DAY_NUM_TODAY,
+    CAL_DOTS, CAL_DOT_HEARING, CAL_DOT_DEADLINE, CAL_DOT_MORE, CAL_LEGEND,
+    CAL_SIDEBAR, CAL_SIDEBAR_HEADER, CAL_SIDEBAR_TITLE, CAL_EVENT_LIST, EMPTY_HINT,
+    CAL_EVENT_CARD, CAL_EVENT_HEARING, CAL_EVENT_DEADLINE, CAL_EVENT_COMPLETED, CAL_EVENT_TOP,
+    CAL_EVENT_TITLE, CAL_EVENT_ACTIONS, CAL_CHECK_BTN, CAL_EDIT_BTN, CAL_DEL_BTN, CAL_EVENT_META, CAL_WA_BADGE,
+    FORM_GROUP, FORM_LABEL, FORM_INPUT, FORM_SELECT, MUTED, LIM_ALERT_BANNER,
+} from "../ownerStyles";
 import { Modal, Button } from "../../../components/ui";
 import {
     useCalendarData, useSaveHearing, useSaveDeadline, useDeleteHearing, useDeleteDeadline,
@@ -222,16 +230,16 @@ export const CalendarPanel = () => {
     const isHearing = (ev: CalEvent): ev is { kind: "hearing" } & Hearing => ev.kind === "hearing";
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.calLayout}>
+        <div className={PANEL_CONTENT}>
+            <div className={CAL_LAYOUT}>
 
                 {/* ── Left: Month grid ── */}
-                <div className={styles.calMain}>
+                <div className={CAL_MAIN}>
                     {/* Month nav */}
-                    <div className={styles.calMonthNav}>
-                        <button className={styles.calNavBtn} onClick={prevMonth}>‹</button>
-                        <span className={styles.calMonthLabel}>{MONTHS[viewMonth]} {viewYear}</span>
-                        <button className={styles.calNavBtn} onClick={nextMonth}>›</button>
+                    <div className={CAL_MONTH_NAV}>
+                        <button className={CAL_NAV_BTN} onClick={prevMonth}>‹</button>
+                        <span className={CAL_MONTH_LABEL}>{MONTHS[viewMonth]} {viewYear}</span>
+                        <button className={CAL_NAV_BTN} onClick={nextMonth}>›</button>
                         <Button variant="ghost" style={{ marginLeft: "auto", fontSize: "0.8rem", padding: "0.3rem 0.75rem" }}
                             onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelected(todayStr); }}>
                             Today
@@ -243,15 +251,15 @@ export const CalendarPanel = () => {
                     </div>
 
                     {/* Day-of-week header */}
-                    <div className={styles.calGrid}>
+                    <div className={CAL_GRID}>
                         {DOW.map(d => (
-                            <div key={d} className={styles.calDowCell}>{d}</div>
+                            <div key={d} className={CAL_DOW_CELL}>{d}</div>
                         ))}
 
                         {loading ? (
                             <div style={{ gridColumn: "1/-1", padding: "2rem", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
                         ) : cells.map((day, idx) => {
-                            if (day === null) return <div key={`e${idx}`} className={styles.calEmptyCell} />;
+                            if (day === null) return <div key={`e${idx}`} className={CAL_EMPTY_CELL} />;
                             const dateStr = isoDate(viewYear, viewMonth, day);
                             const evs     = eventsByDate[dateStr] ?? [];
                             const isToday = dateStr === todayStr;
@@ -259,24 +267,20 @@ export const CalendarPanel = () => {
                             return (
                                 <div
                                     key={dateStr}
-                                    className={[
-                                        styles.calDayCell,
-                                        isToday ? styles.calToday : "",
-                                        isSel   ? styles.calSelected : "",
-                                    ].filter(Boolean).join(" ")}
+                                    className={`${CAL_DAY_CELL}${isSel ? ` ${CAL_SELECTED}` : ""}`}
                                     onClick={() => setSelected(isSel ? null : dateStr)}
                                 >
-                                    <span className={styles.calDayNum}>{day}</span>
+                                    <span className={`${CAL_DAY_NUM}${isToday ? ` ${CAL_DAY_NUM_TODAY}` : ""}`}>{day}</span>
                                     {evs.length > 0 && (
-                                        <div className={styles.calDots}>
+                                        <div className={CAL_DOTS}>
                                             {evs.slice(0, 3).map((ev, i) => (
                                                 <span
                                                     key={i}
-                                                    className={isHearing(ev) ? styles.calDotHearing : styles.calDotDeadline}
+                                                    className={isHearing(ev) ? CAL_DOT_HEARING : CAL_DOT_DEADLINE}
                                                     style={isHearing(ev) ? {} : { opacity: ev.is_completed ? 0.35 : 1 }}
                                                 />
                                             ))}
-                                            {evs.length > 3 && <span className={styles.calDotMore}>+{evs.length-3}</span>}
+                                            {evs.length > 3 && <span className={CAL_DOT_MORE}>+{evs.length-3}</span>}
                                         </div>
                                     )}
                                 </div>
@@ -285,16 +289,16 @@ export const CalendarPanel = () => {
                     </div>
 
                     {/* Legend */}
-                    <div className={styles.calLegend}>
-                        <span className={styles.calDotHearing} /> Hearing
-                        <span className={styles.calDotDeadline} style={{ marginLeft: "0.75rem" }} /> Deadline
+                    <div className={CAL_LEGEND}>
+                        <span className={CAL_DOT_HEARING} /> Hearing
+                        <span className={CAL_DOT_DEADLINE} style={{ marginLeft: "0.75rem" }} /> Deadline
                     </div>
                 </div>
 
                 {/* ── Right: Sidebar ── */}
-                <div className={styles.calSidebar}>
-                    <div className={styles.calSidebarHeader}>
-                        <span className={styles.calSidebarTitle}>
+                <div className={CAL_SIDEBAR}>
+                    <div className={CAL_SIDEBAR_HEADER}>
+                        <span className={CAL_SIDEBAR_TITLE}>
                             {selected
                                 ? new Date(selected + "T00:00:00").toLocaleDateString("en-PK", { weekday: "long", day: "numeric", month: "long" })
                                 : "Upcoming This Month"}
@@ -311,9 +315,9 @@ export const CalendarPanel = () => {
                         </div>
                     </div>
 
-                    <div className={styles.calEventList}>
+                    <div className={CAL_EVENT_LIST}>
                         {(selected ? selectedEvents : allEvents).length === 0 ? (
-                            <div className={styles.emptyHint}>
+                            <div className={EMPTY_HINT}>
                                 {selected ? "No events on this day." : "No events this month."}
                             </div>
                         ) : (
@@ -325,32 +329,32 @@ export const CalendarPanel = () => {
                                     : `${ev.deadline_type}${ev.matter_title ? " · " + ev.matter_title : ""}`;
                                 return (
                                     <div key={i} className={[
-                                        styles.calEventCard,
-                                        isHearing(ev) ? styles.calEventHearing : styles.calEventDeadline,
-                                        !isHearing(ev) && ev.is_completed ? styles.calEventCompleted : "",
+                                        CAL_EVENT_CARD,
+                                        isHearing(ev) ? CAL_EVENT_HEARING : CAL_EVENT_DEADLINE,
+                                        !isHearing(ev) && ev.is_completed ? CAL_EVENT_COMPLETED : "",
                                     ].filter(Boolean).join(" ")}>
-                                        <div className={styles.calEventTop}>
-                                            <div className={styles.calEventTitle}>
+                                        <div className={CAL_EVENT_TOP}>
+                                            <div className={CAL_EVENT_TITLE}>
                                                 {!isHearing(ev) && ev.is_completed && <span style={{ textDecoration: "line-through", opacity: 0.5 }}>{ev.title}</span>}
                                                 {(isHearing(ev) || !ev.is_completed) && ev.title}
                                             </div>
-                                            <div className={styles.calEventActions}>
+                                            <div className={CAL_EVENT_ACTIONS}>
                                                 {!isHearing(ev) && (
-                                                    <button className={styles.calCheckBtn}
+                                                    <button className={CAL_CHECK_BTN}
                                                         title={ev.is_completed ? "Mark incomplete" : "Mark complete"}
                                                         onClick={() => toggleComplete(ev as Deadline)}>
                                                         {ev.is_completed ? "↩" : "✓"}
                                                     </button>
                                                 )}
-                                                <button className={styles.calEditBtn} onClick={() => openEdit(ev)}>✎</button>
-                                                <button className={styles.calDelBtn} onClick={() => deleteEvent(ev)}>✕</button>
+                                                <button className={CAL_EDIT_BTN} onClick={() => openEdit(ev)}>✎</button>
+                                                <button className={CAL_DEL_BTN} onClick={() => deleteEvent(ev)}>✕</button>
                                             </div>
                                         </div>
-                                        <div className={styles.calEventMeta}>
+                                        <div className={CAL_EVENT_META}>
                                             {!selected && <span>{dateLabel}{timeLabel}</span>}
                                             {selected && isHearing(ev) && ev.hearing_time && <span>{ev.hearing_time}</span>}
                                             {subLabel && <span>{subLabel}</span>}
-                                            {ev.wa_reminder === 1 && <span className={styles.calWABadge}>📲 WA</span>}
+                                            {ev.wa_reminder === 1 && <span className={CAL_WA_BADGE}>📲 WA</span>}
                                         </div>
                                     </div>
                                 );
@@ -378,27 +382,27 @@ export const CalendarPanel = () => {
                 </>}
             >
                         {/* Title */}
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Title *</label>
-                            <input className={styles.formInput} value={fTitle} onChange={e => setFTitle(e.target.value)}
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Title *</label>
+                            <input className={FORM_INPUT} value={fTitle} onChange={e => setFTitle(e.target.value)}
                                 placeholder={modal?.includes("hearing") ? "e.g. First Hearing — ABC v XYZ" : "e.g. File written statement"} />
                         </div>
 
                         {/* Date + Time / Deadline type */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>{modal?.includes("hearing") ? "Hearing Date *" : "Due Date *"}</label>
-                                <input type="date" className={styles.formInput} value={fDate} onChange={e => setFDate(e.target.value)} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>{modal?.includes("hearing") ? "Hearing Date *" : "Due Date *"}</label>
+                                <input type="date" className={FORM_INPUT} value={fDate} onChange={e => setFDate(e.target.value)} />
                             </div>
                             {modal?.includes("hearing") ? (
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Time</label>
-                                    <input type="time" className={styles.formInput} value={fTime} onChange={e => setFTime(e.target.value)} />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Time</label>
+                                    <input type="time" className={FORM_INPUT} value={fTime} onChange={e => setFTime(e.target.value)} />
                                 </div>
                             ) : (
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Type</label>
-                                    <select className={styles.formSelect} value={fDLType} onChange={e => setFDLType(e.target.value)}>
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Type</label>
+                                    <select className={FORM_SELECT} value={fDLType} onChange={e => setFDLType(e.target.value)}>
                                         {DEADLINE_TYPES.map(t => <option key={t}>{t}</option>)}
                                     </select>
                                 </div>
@@ -408,13 +412,13 @@ export const CalendarPanel = () => {
                         {/* Court + Judge (hearing only) */}
                         {modal?.includes("hearing") && (
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Court</label>
-                                    <input className={styles.formInput} value={fCourt} onChange={e => setFCourt(e.target.value)} placeholder="e.g. Lahore High Court" />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Court</label>
+                                    <input className={FORM_INPUT} value={fCourt} onChange={e => setFCourt(e.target.value)} placeholder="e.g. Lahore High Court" />
                                 </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Judge</label>
-                                    <input className={styles.formInput} value={fJudge} onChange={e => setFJudge(e.target.value)} placeholder="Justice Name" />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Judge</label>
+                                    <input className={FORM_INPUT} value={fJudge} onChange={e => setFJudge(e.target.value)} placeholder="Justice Name" />
                                 </div>
                             </div>
                         )}
@@ -422,16 +426,16 @@ export const CalendarPanel = () => {
                         {/* Outcome fields — Task #163/#164 (hearing only) */}
                         {modal?.includes("hearing") && (
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Hearing Outcome</label>
-                                    <select className={styles.formSelect} value={fOutcome} onChange={e => setFOutcome(e.target.value)}>
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Hearing Outcome</label>
+                                    <select className={FORM_SELECT} value={fOutcome} onChange={e => setFOutcome(e.target.value)}>
                                         <option value="">— Not yet held —</option>
                                         {["Heard", "Adjourned", "Partially Heard", "Reserved for Judgment", "Dismissed", "Withdrawn", "ex-parte"].map(o => <option key={o}>{o}</option>)}
                                     </select>
                                 </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Next Date Fixed By</label>
-                                    <select className={styles.formSelect} value={fNextBy} onChange={e => setFNextBy(e.target.value)}>
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Next Date Fixed By</label>
+                                    <select className={FORM_SELECT} value={fNextBy} onChange={e => setFNextBy(e.target.value)}>
                                         <option value="">— N/A —</option>
                                         {["Court (suo motu)", "Mutual Consent", "Plaintiff Application", "Defendant Application", "ex-parte Order"].map(o => <option key={o}>{o}</option>)}
                                     </select>
@@ -439,37 +443,37 @@ export const CalendarPanel = () => {
                             </div>
                         )}
                         {modal?.includes("hearing") && fOutcome === "Adjourned" && (
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Adjournment Reason</label>
-                                <input className={styles.formInput} value={fAdjReason} onChange={e => setFAdjReason(e.target.value)} placeholder="e.g. Counsel not available, court summoned, on application of plaintiff…" />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Adjournment Reason</label>
+                                <input className={FORM_INPUT} value={fAdjReason} onChange={e => setFAdjReason(e.target.value)} placeholder="e.g. Counsel not available, court summoned, on application of plaintiff…" />
                             </div>
                         )}
                         {modal?.includes("hearing") && (
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Assign to (associate dispatch)</label>
-                                <select className={styles.formSelect} value={fAssignedTo} onChange={e => setFAssignedTo(e.target.value)}>
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Assign to (associate dispatch)</label>
+                                <select className={FORM_SELECT} value={fAssignedTo} onChange={e => setFAssignedTo(e.target.value)}>
                                     <option value="">— Not assigned —</option>
                                     {teamMembers.map(m => <option key={m.user_id} value={m.user_id}>{m.name}</option>)}
                                 </select>
-                                <p className={styles.muted} style={{ fontSize: "0.76rem", marginTop: "0.25rem" }}>
+                                <p className={MUTED} style={{ fontSize: "0.76rem", marginTop: "0.25rem" }}>
                                     The assigned team member will see this in "My Court Assignments" and can mark the outcome from their portal — you'll get a WhatsApp when they do.
                                 </p>
                             </div>
                         )}
 
                         {/* Linked matter */}
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Linked Matter</label>
-                            <select className={styles.formSelect} value={fMatter} onChange={e => setFMatter(e.target.value)}>
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Linked Matter</label>
+                            <select className={FORM_SELECT} value={fMatter} onChange={e => setFMatter(e.target.value)}>
                                 <option value="">— None —</option>
                                 {matters.map(m => <option key={m.matter_id} value={m.matter_id}>{m.title}</option>)}
                             </select>
                         </div>
 
                         {/* Notes */}
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Notes</label>
-                            <textarea className={styles.formInput} value={fNotes} onChange={e => setFNotes(e.target.value)}
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Notes</label>
+                            <textarea className={FORM_INPUT} value={fNotes} onChange={e => setFNotes(e.target.value)}
                                 placeholder="Optional notes for this event" rows={2} />
                         </div>
 
@@ -497,22 +501,22 @@ export const CalendarPanel = () => {
                     )}
                 </>}
             >
-                        <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.85rem" }}>
+                        <p className={MUTED} style={{ fontSize: "0.82rem", marginBottom: "0.85rem" }}>
                             Every client with a hearing or deadline in this date range gets a WhatsApp notice that court is closed — one click instead of messaging each client by hand.
                         </p>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>From</label>
-                                <input type="date" className={styles.formInput} value={holidayFrom} onChange={e => { setHolidayFrom(e.target.value); holidayPreviewMutation.reset(); }} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>From</label>
+                                <input type="date" className={FORM_INPUT} value={holidayFrom} onChange={e => { setHolidayFrom(e.target.value); holidayPreviewMutation.reset(); }} />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>To</label>
-                                <input type="date" className={styles.formInput} value={holidayTo} onChange={e => { setHolidayTo(e.target.value); holidayPreviewMutation.reset(); }} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>To</label>
+                                <input type="date" className={FORM_INPUT} value={holidayTo} onChange={e => { setHolidayTo(e.target.value); holidayPreviewMutation.reset(); }} />
                             </div>
                         </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Message (optional — default holiday notice used if blank)</label>
-                            <textarea className={styles.formInput} rows={3} style={{ resize: "vertical" }} value={holidayMsg} onChange={e => setHolidayMsg(e.target.value)}
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Message (optional — default holiday notice used if blank)</label>
+                            <textarea className={FORM_INPUT} rows={3} style={{ resize: "vertical" }} value={holidayMsg} onChange={e => setHolidayMsg(e.target.value)}
                                 placeholder="e.g. Court will remain closed on 14 August (Independence Day). Hearings will be rescheduled." />
                         </div>
 
@@ -521,7 +525,7 @@ export const CalendarPanel = () => {
                                 {holidayLoading ? "Loading…" : "Preview affected clients"}
                             </Button>
                         ) : holidayResult ? (
-                            <div className={styles.limAlertBanner} style={{ background: "var(--bg-1)", borderColor: "#2d8a4e" }}>
+                            <div className={LIM_ALERT_BANNER} style={{ background: "var(--bg-1)", borderColor: "#2d8a4e" }}>
                                 ✅ Sent to {holidayResult.notified} client{holidayResult.notified === 1 ? "" : "s"}.
                                 {holidayResult.failed > 0 && ` ${holidayResult.failed} failed.`}
                                 {holidayResult.skipped_no_phone > 0 && ` ${holidayResult.skipped_no_phone} had no phone on file.`}
@@ -529,7 +533,7 @@ export const CalendarPanel = () => {
                         ) : (
                             <div style={{ marginBottom: "0.75rem" }}>
                                 {holidayPreview.length === 0 ? (
-                                    <div className={styles.emptyHint}>No clients have a hearing or deadline in this range — nothing to send.</div>
+                                    <div className={EMPTY_HINT}>No clients have a hearing or deadline in this range — nothing to send.</div>
                                 ) : (
                                     <>
                                         <div style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.4rem" }}>
@@ -538,7 +542,7 @@ export const CalendarPanel = () => {
                                         <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
                                             {holidayPreview.map(c => (
                                                 <div key={c.client_id} style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>
-                                                    • {c.client_name} <span className={styles.muted}>({c.matter_titles})</span>
+                                                    • {c.client_name} <span className={MUTED}>({c.matter_titles})</span>
                                                 </div>
                                             ))}
                                         </div>

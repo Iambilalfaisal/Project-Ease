@@ -1,7 +1,10 @@
 // Criminal-matter tabs: FIR / police station record, charge & section
 // tracking, challan (charge sheet) tracker, and bail bonds.
 import { useState } from "react";
-import styles from "../../OwnerPortal.module.css";
+import {
+    MUTED, EMPTY_HINT, SETTINGS_CARD, ORDER_ACTIONS, ACTION_BTN, ACTION_BTN_DANGER,
+    FORM_GROUP, FORM_LABEL, FORM_INPUT, FORM_SELECT, BADGE_GRAY, BADGE_GOLD,
+} from "../../ownerStyles";
 import { Badge, Button, Modal } from "../../../../components/ui";
 import type { Matter, MatterFir, MatterCharge, MatterChallan, BailBond } from "../../types";
 import {
@@ -46,25 +49,25 @@ export function MatterFirTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{records.length} FIR record{records.length !== 1 ? "s" : ""}</span>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>{records.length} FIR record{records.length !== 1 ? "s" : ""}</span>
                 <Button size="sm" onClick={() => openModal()}>+ Add FIR</Button>
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : records.length === 0 ? (
-                <div className={styles.emptyHint}>No FIR recorded yet.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : records.length === 0 ? (
+                <div className={EMPTY_HINT}>No FIR recorded yet.</div>
             ) : records.map(r => (
-                <div key={r.fir_id} className={styles.settingsCard} style={{ marginBottom: "0.75rem" }}>
+                <div key={r.fir_id} className={SETTINGS_CARD} style={{ marginBottom: "0.75rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <div>
-                            <strong>{r.fir_number}</strong> <span className={styles.muted}>· {r.police_station}</span>
-                            {r.district && <span className={styles.muted}> · {r.district}</span>}
+                            <strong>{r.fir_number}</strong> <span className={MUTED}>· {r.police_station}</span>
+                            {r.district && <span className={MUTED}> · {r.district}</span>}
                         </div>
-                        <div className={styles.orderActions}>
-                            <button className={styles.actionBtn} onClick={() => openModal(r)}>Edit</button>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm("Delete this FIR record?") && deleteFir.mutate(r.fir_id)}>Delete</button>
+                        <div className={ORDER_ACTIONS}>
+                            <button className={ACTION_BTN} onClick={() => openModal(r)}>Edit</button>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm("Delete this FIR record?") && deleteFir.mutate(r.fir_id)}>Delete</button>
                         </div>
                     </div>
-                    {r.sections_at_fir && <div className={styles.muted} style={{ marginTop: "0.3rem", fontSize: "0.82rem" }}>Sections: {r.sections_at_fir}{r.sections_after_challan && ` → ${r.sections_after_challan}`}</div>}
-                    {r.io_name && <div className={styles.muted} style={{ fontSize: "0.82rem" }}>IO: {r.io_name}</div>}
+                    {r.sections_at_fir && <div className={MUTED} style={{ marginTop: "0.3rem", fontSize: "0.82rem" }}>Sections: {r.sections_at_fir}{r.sections_after_challan && ` → ${r.sections_after_challan}`}</div>}
+                    {r.io_name && <div className={MUTED} style={{ fontSize: "0.82rem" }}>IO: {r.io_name}</div>}
                     {r.notes && <div style={{ marginTop: "0.3rem", fontSize: "0.85rem" }}>{r.notes}</div>}
                 </div>
             ))}
@@ -72,17 +75,17 @@ export function MatterFirTab({ matter }: { matter: Matter }) {
             <Modal open={showModal} onClose={() => setShowModal(false)} maxWidth={520} title={editing ? "Edit FIR" : "Add FIR"}
                 footer={<><Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button></>}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>FIR Number *</label><input className={styles.formInput} value={form.fir_number} onChange={e => setForm(f => ({ ...f, fir_number: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Police Station *</label><input className={styles.formInput} value={form.police_station} onChange={e => setForm(f => ({ ...f, police_station: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>District</label><input className={styles.formInput} value={form.district} onChange={e => setForm(f => ({ ...f, district: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>FIR Date</label><input type="date" className={styles.formInput} value={form.fir_date} onChange={e => setForm(f => ({ ...f, fir_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Investigating Officer</label><input className={styles.formInput} value={form.io_name} onChange={e => setForm(f => ({ ...f, io_name: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Arrest Date</label><input type="date" className={styles.formInput} value={form.arrest_date} onChange={e => setForm(f => ({ ...f, arrest_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Complainant</label><input className={styles.formInput} value={form.complainant} onChange={e => setForm(f => ({ ...f, complainant: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Sections at FIR</label><input className={styles.formInput} value={form.sections_at_fir} onChange={e => setForm(f => ({ ...f, sections_at_fir: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Sections after Challan</label><input className={styles.formInput} value={form.sections_after_challan} onChange={e => setForm(f => ({ ...f, sections_after_challan: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>FIR Number *</label><input className={FORM_INPUT} value={form.fir_number} onChange={e => setForm(f => ({ ...f, fir_number: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Police Station *</label><input className={FORM_INPUT} value={form.police_station} onChange={e => setForm(f => ({ ...f, police_station: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>District</label><input className={FORM_INPUT} value={form.district} onChange={e => setForm(f => ({ ...f, district: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>FIR Date</label><input type="date" className={FORM_INPUT} value={form.fir_date} onChange={e => setForm(f => ({ ...f, fir_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Investigating Officer</label><input className={FORM_INPUT} value={form.io_name} onChange={e => setForm(f => ({ ...f, io_name: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Arrest Date</label><input type="date" className={FORM_INPUT} value={form.arrest_date} onChange={e => setForm(f => ({ ...f, arrest_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Complainant</label><input className={FORM_INPUT} value={form.complainant} onChange={e => setForm(f => ({ ...f, complainant: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Sections at FIR</label><input className={FORM_INPUT} value={form.sections_at_fir} onChange={e => setForm(f => ({ ...f, sections_at_fir: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Sections after Challan</label><input className={FORM_INPUT} value={form.sections_after_challan} onChange={e => setForm(f => ({ ...f, sections_after_challan: e.target.value }))} /></div>
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={3} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={3} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>
         </>
@@ -124,22 +127,22 @@ export function MatterChargesTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{charges.length} charge{charges.length !== 1 ? "s" : ""}</span>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>{charges.length} charge{charges.length !== 1 ? "s" : ""}</span>
                 <Button size="sm" onClick={() => openModal()}>+ Add Charge</Button>
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : charges.length === 0 ? (
-                <div className={styles.emptyHint}>No charges/sections recorded yet.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : charges.length === 0 ? (
+                <div className={EMPTY_HINT}>No charges/sections recorded yet.</div>
             ) : charges.map(c => (
-                <div key={c.charge_id} className={styles.settingsCard} style={{ marginBottom: "0.75rem" }}>
+                <div key={c.charge_id} className={SETTINGS_CARD} style={{ marginBottom: "0.75rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <div>
                             <strong>{c.section_no}</strong>
                             <Badge tone={c.charge_framed ? "green" : "amber"}>{c.charge_framed ? "Framed" : "Not Framed"}</Badge>
-                            <span className={styles.muted}> · {c.plea}</span>
+                            <span className={MUTED}> · {c.plea}</span>
                         </div>
-                        <div className={styles.orderActions}>
-                            <button className={styles.actionBtn} onClick={() => openModal(c)}>Edit</button>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm("Delete this charge?") && deleteCharge.mutate(c.charge_id)}>Delete</button>
+                        <div className={ORDER_ACTIONS}>
+                            <button className={ACTION_BTN} onClick={() => openModal(c)}>Edit</button>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm("Delete this charge?") && deleteCharge.mutate(c.charge_id)}>Delete</button>
                         </div>
                     </div>
                     {c.description && <div style={{ marginTop: "0.3rem", fontSize: "0.85rem" }}>{c.description}</div>}
@@ -148,18 +151,18 @@ export function MatterChargesTab({ matter }: { matter: Matter }) {
 
             <Modal open={showModal} onClose={() => setShowModal(false)} maxWidth={480} title={editing ? "Edit Charge" : "Add Charge"}
                 footer={<><Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button></>}>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Section No. *</label><input className={styles.formInput} value={form.section_no} onChange={e => setForm(f => ({ ...f, section_no: e.target.value }))} placeholder="e.g. 302 PPC" /></div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Description</label><textarea className={styles.formInput} rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Section No. *</label><input className={FORM_INPUT} value={form.section_no} onChange={e => setForm(f => ({ ...f, section_no: e.target.value }))} placeholder="e.g. 302 PPC" /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Description</label><textarea className={FORM_INPUT} rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Plea</label><select className={styles.formSelect} value={form.plea} onChange={e => setForm(f => ({ ...f, plea: e.target.value }))}>{PLEA_OPTIONS_UI.map(p => <option key={p}>{p}</option>)}</select></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Court</label><input className={styles.formInput} value={form.court} onChange={e => setForm(f => ({ ...f, court: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Plea</label><select className={FORM_SELECT} value={form.plea} onChange={e => setForm(f => ({ ...f, plea: e.target.value }))}>{PLEA_OPTIONS_UI.map(p => <option key={p}>{p}</option>)}</select></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Court</label><input className={FORM_INPUT} value={form.court} onChange={e => setForm(f => ({ ...f, court: e.target.value }))} /></div>
                 </div>
-                <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <div className={FORM_GROUP} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <input type="checkbox" id="chargeFramed" checked={form.charge_framed} onChange={e => setForm(f => ({ ...f, charge_framed: e.target.checked }))} />
                     <label htmlFor="chargeFramed">Charge framed</label>
-                    {form.charge_framed && <input type="date" className={styles.formInput} style={{ width: "auto" }} value={form.charge_framed_date} onChange={e => setForm(f => ({ ...f, charge_framed_date: e.target.value }))} />}
+                    {form.charge_framed && <input type="date" className={FORM_INPUT} style={{ width: "auto" }} value={form.charge_framed_date} onChange={e => setForm(f => ({ ...f, charge_framed_date: e.target.value }))} />}
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>
         </>
@@ -200,24 +203,24 @@ export function MatterChallanTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{challans.length} challan{challans.length !== 1 ? "s" : ""}</span>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>{challans.length} challan{challans.length !== 1 ? "s" : ""}</span>
                 <Button size="sm" onClick={() => openModal()}>+ Add Challan</Button>
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : challans.length === 0 ? (
-                <div className={styles.emptyHint}>No challan recorded yet.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : challans.length === 0 ? (
+                <div className={EMPTY_HINT}>No challan recorded yet.</div>
             ) : challans.map(c => (
-                <div key={c.challan_id} className={styles.settingsCard} style={{ marginBottom: "0.75rem" }}>
+                <div key={c.challan_id} className={SETTINGS_CARD} style={{ marginBottom: "0.75rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <div>
-                            <strong>{c.challan_type}</strong> <span className={styles.badgeGray}>{c.status}</span>
-                            {c.challan_date && <span className={styles.muted}> · {c.challan_date}</span>}
+                            <strong>{c.challan_type}</strong> <span className={BADGE_GRAY}>{c.status}</span>
+                            {c.challan_date && <span className={MUTED}> · {c.challan_date}</span>}
                         </div>
-                        <div className={styles.orderActions}>
-                            <button className={styles.actionBtn} onClick={() => openModal(c)}>Edit</button>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm("Delete this challan?") && deleteChallan.mutate(c.challan_id)}>Delete</button>
+                        <div className={ORDER_ACTIONS}>
+                            <button className={ACTION_BTN} onClick={() => openModal(c)}>Edit</button>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm("Delete this challan?") && deleteChallan.mutate(c.challan_id)}>Delete</button>
                         </div>
                     </div>
-                    <div className={styles.muted} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>
+                    <div className={MUTED} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>
                         {c.submitted_in_time ? "Submitted in time" : "Late submission"} · {c.witnesses_count} witness{c.witnesses_count !== 1 ? "es" : ""}{c.challan_court && ` · ${c.challan_court}`}
                     </div>
                 </div>
@@ -226,17 +229,17 @@ export function MatterChallanTab({ matter }: { matter: Matter }) {
             <Modal open={showModal} onClose={() => setShowModal(false)} maxWidth={480} title={editing ? "Edit Challan" : "Add Challan"}
                 footer={<><Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button></>}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Type</label><select className={styles.formSelect} value={form.challan_type} onChange={e => setForm(f => ({ ...f, challan_type: e.target.value }))}>{CHALLAN_TYPES_UI.map(t => <option key={t}>{t}</option>)}</select></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Status</label><select className={styles.formSelect} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>{CHALLAN_STATUSES_UI.map(s => <option key={s}>{s}</option>)}</select></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Challan Date</label><input type="date" className={styles.formInput} value={form.challan_date} onChange={e => setForm(f => ({ ...f, challan_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Witnesses Count</label><input type="number" min={0} className={styles.formInput} value={form.witnesses_count} onChange={e => setForm(f => ({ ...f, witnesses_count: Number(e.target.value) }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Type</label><select className={FORM_SELECT} value={form.challan_type} onChange={e => setForm(f => ({ ...f, challan_type: e.target.value }))}>{CHALLAN_TYPES_UI.map(t => <option key={t}>{t}</option>)}</select></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Status</label><select className={FORM_SELECT} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>{CHALLAN_STATUSES_UI.map(s => <option key={s}>{s}</option>)}</select></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Challan Date</label><input type="date" className={FORM_INPUT} value={form.challan_date} onChange={e => setForm(f => ({ ...f, challan_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Witnesses Count</label><input type="number" min={0} className={FORM_INPUT} value={form.witnesses_count} onChange={e => setForm(f => ({ ...f, witnesses_count: Number(e.target.value) }))} /></div>
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Court</label><input className={styles.formInput} value={form.challan_court} onChange={e => setForm(f => ({ ...f, challan_court: e.target.value }))} /></div>
-                <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Court</label><input className={FORM_INPUT} value={form.challan_court} onChange={e => setForm(f => ({ ...f, challan_court: e.target.value }))} /></div>
+                <div className={FORM_GROUP} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <input type="checkbox" id="submittedInTime" checked={form.submitted_in_time} onChange={e => setForm(f => ({ ...f, submitted_in_time: e.target.checked }))} />
                     <label htmlFor="submittedInTime">Submitted within statutory time</label>
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>
         </>
@@ -277,24 +280,24 @@ export function MatterBailBondsTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{bonds.length} bail bond{bonds.length !== 1 ? "s" : ""}</span>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>{bonds.length} bail bond{bonds.length !== 1 ? "s" : ""}</span>
                 <Button size="sm" onClick={() => openModal()}>+ Add Bail Bond</Button>
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : bonds.length === 0 ? (
-                <div className={styles.emptyHint}>No bail bonds recorded yet.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : bonds.length === 0 ? (
+                <div className={EMPTY_HINT}>No bail bonds recorded yet.</div>
             ) : bonds.map(b => (
-                <div key={b.bond_id} className={styles.settingsCard} style={{ marginBottom: "0.75rem" }}>
+                <div key={b.bond_id} className={SETTINGS_CARD} style={{ marginBottom: "0.75rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <div>
-                            <strong>{b.accused_name}</strong> <span className={styles.badgeGold}>{b.bail_type}</span>
-                            <span className={styles.muted}> · PKR {b.bail_amount_pkr.toLocaleString("en-PK")}</span>
+                            <strong>{b.accused_name}</strong> <span className={BADGE_GOLD}>{b.bail_type}</span>
+                            <span className={MUTED}> · PKR {b.bail_amount_pkr.toLocaleString("en-PK")}</span>
                         </div>
-                        <div className={styles.orderActions}>
-                            <button className={styles.actionBtn} onClick={() => openModal(b)}>Edit</button>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm("Delete this bail bond?") && deleteBond.mutate(b.bond_id)}>Delete</button>
+                        <div className={ORDER_ACTIONS}>
+                            <button className={ACTION_BTN} onClick={() => openModal(b)}>Edit</button>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm("Delete this bail bond?") && deleteBond.mutate(b.bond_id)}>Delete</button>
                         </div>
                     </div>
-                    <div className={styles.muted} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>
+                    <div className={MUTED} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>
                         {b.status}{b.surety_name && ` · Surety: ${b.surety_name}`}{b.court && ` · ${b.court}`}
                     </div>
                 </div>
@@ -303,28 +306,28 @@ export function MatterBailBondsTab({ matter }: { matter: Matter }) {
             <Modal open={showModal} onClose={() => setShowModal(false)} maxWidth={560} title={editing ? "Edit Bail Bond" : "Add Bail Bond"}
                 footer={<><Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button></>}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Accused Name *</label><input className={styles.formInput} value={form.accused_name} onChange={e => setForm(f => ({ ...f, accused_name: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Bail Type</label>
-                        <select className={styles.formSelect} value={form.bail_type} onChange={e => setForm(f => ({ ...f, bail_type: e.target.value }))}>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Accused Name *</label><input className={FORM_INPUT} value={form.accused_name} onChange={e => setForm(f => ({ ...f, accused_name: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Bail Type</label>
+                        <select className={FORM_SELECT} value={form.bail_type} onChange={e => setForm(f => ({ ...f, bail_type: e.target.value }))}>
                             {["Pre-Arrest", "Post-Arrest", "Anticipatory", "Interim", "Regular", "Transit"].map(t => <option key={t}>{t}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Bail Amount (PKR)</label><input type="number" className={styles.formInput} value={form.bail_amount_pkr} onChange={e => setForm(f => ({ ...f, bail_amount_pkr: Number(e.target.value) }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Status</label>
-                        <select className={styles.formSelect} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Bail Amount (PKR)</label><input type="number" className={FORM_INPUT} value={form.bail_amount_pkr} onChange={e => setForm(f => ({ ...f, bail_amount_pkr: Number(e.target.value) }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Status</label>
+                        <select className={FORM_SELECT} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
                             {["Active", "Cancelled", "Forfeited", "Expired"].map(s => <option key={s}>{s}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Court</label><input className={styles.formInput} value={form.court} onChange={e => setForm(f => ({ ...f, court: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Judge</label><input className={styles.formInput} value={form.judge} onChange={e => setForm(f => ({ ...f, judge: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Granted Date</label><input type="date" className={styles.formInput} value={form.granted_date} onChange={e => setForm(f => ({ ...f, granted_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Expiry Date</label><input type="date" className={styles.formInput} value={form.expiry_date} onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Surety Name</label><input className={styles.formInput} value={form.surety_name} onChange={e => setForm(f => ({ ...f, surety_name: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Surety CNIC</label><input className={styles.formInput} value={form.surety_cnic} onChange={e => setForm(f => ({ ...f, surety_cnic: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Court</label><input className={FORM_INPUT} value={form.court} onChange={e => setForm(f => ({ ...f, court: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Judge</label><input className={FORM_INPUT} value={form.judge} onChange={e => setForm(f => ({ ...f, judge: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Granted Date</label><input type="date" className={FORM_INPUT} value={form.granted_date} onChange={e => setForm(f => ({ ...f, granted_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Expiry Date</label><input type="date" className={FORM_INPUT} value={form.expiry_date} onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Surety Name</label><input className={FORM_INPUT} value={form.surety_name} onChange={e => setForm(f => ({ ...f, surety_name: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Surety CNIC</label><input className={FORM_INPUT} value={form.surety_cnic} onChange={e => setForm(f => ({ ...f, surety_cnic: e.target.value }))} /></div>
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Surety Address</label><textarea className={styles.formInput} rows={2} value={form.surety_address} onChange={e => setForm(f => ({ ...f, surety_address: e.target.value }))} /></div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Order Reference</label><input className={styles.formInput} value={form.bail_order_ref} onChange={e => setForm(f => ({ ...f, bail_order_ref: e.target.value }))} /></div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Surety Address</label><textarea className={FORM_INPUT} rows={2} value={form.surety_address} onChange={e => setForm(f => ({ ...f, surety_address: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Order Reference</label><input className={FORM_INPUT} value={form.bail_order_ref} onChange={e => setForm(f => ({ ...f, bail_order_ref: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>
         </>

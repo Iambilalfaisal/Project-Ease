@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import {
+    THEME_TOGGLE, PANEL_CONTENT, SETTINGS_GRID, SETTINGS_CARD, SETTINGS_CARD_TITLE,
+    ERROR_BANNER, SUCCESS_BANNER, ERROR_DISMISS, FORM_GROUP, FORM_LABEL, FORM_INPUT, FORM_SELECT,
+    COMPLETION_BAR_WRAP, COMPLETION_BAR_FILL, COMPLETION_LABEL,
+    PRACTICE_AREA_GRID, PRACTICE_AREA_CHIP, CHIP_ACTIVE, CHIP_INACTIVE,
+    EMPTY_HINT, TEAMS_LIST, TEAMS_ITEM, TEAMS_ITEM_HEADER, TEAMS_EXPAND_BTN, TEAMS_EXPAND_ARROW,
+    TEAMS_ITEM_NAME, MUTED, ACTION_BTN_DANGER, TEAMS_MEMBER_LIST, TEAMS_MEMBER_ROW, TEAMS_MEMBER_NAME,
+    QUEUE_REMOVE, TEAMS_ADD_MEMBER_ROW, PREF_ROW, PREF_LABEL, PREF_SUB, DANGER_TEXT, BTN_DANGER,
+} from "../ownerStyles";
 import { Modal, Button } from "../../../components/ui";
 import { TeamMember } from "../types";
 import { toggleTheme, getTheme, Theme } from "../../../theme";
@@ -31,7 +39,7 @@ const TEAM_SIZES = ["1–5", "6–15", "16–30", "31–60", "60+"];
 const ThemeToggle = () => {
     const [theme, setTheme] = useState<Theme>(getTheme());
     const handle = () => { const next = toggleTheme(); setTheme(next); };
-    return <button className={styles.themeToggle} onClick={handle}>{theme === "dark" ? "Light Mode" : "Dark Mode"}</button>;
+    return <button className={THEME_TOGGLE} onClick={handle}>{theme === "dark" ? "Light Mode" : "Dark Mode"}</button>;
 };
 
 export const SettingsPanel = ({
@@ -231,23 +239,23 @@ export const SettingsPanel = ({
     };
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.settingsGrid}>
-                <div className={styles.settingsCard}>
-                    <div className={styles.settingsCardTitle}>Organization Profile</div>
+        <div className={PANEL_CONTENT}>
+            <div className={SETTINGS_GRID}>
+                <div className={SETTINGS_CARD}>
+                    <div className={SETTINGS_CARD_TITLE}>Organization Profile</div>
                     {orgMsg && (
-                        <div className={`${styles.errorBanner}${orgMsg.ok ? " " + styles.successBanner : ""}`}>
+                        <div className={`${ERROR_BANNER}${orgMsg.ok ? " " + SUCCESS_BANNER : ""}`}>
                             {orgMsg.text}
-                            <button className={styles.errorDismiss} onClick={() => setOrgMsg(null)}>✕</button>
+                            <button className={ERROR_DISMISS} onClick={() => setOrgMsg(null)}>✕</button>
                         </div>
                     )}
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Firm Name</label>
-                        <input className={styles.formInput} value={name} onChange={e => setName(e.target.value)} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Firm Name</label>
+                        <input className={FORM_INPUT} value={name} onChange={e => setName(e.target.value)} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Industry</label>
-                        <select className={styles.formSelect} value={industry} onChange={e => setIndustry(e.target.value)}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Industry</label>
+                        <select className={FORM_SELECT} value={industry} onChange={e => setIndustry(e.target.value)}>
                             {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
                         </select>
                     </div>
@@ -257,67 +265,67 @@ export const SettingsPanel = ({
                 </div>
 
                 {/* ── Profile Completion ── */}
-                <div className={styles.settingsCard}>
-                    <div className={styles.settingsCardTitle}>Firm Profile Completion</div>
-                    <div className={styles.completionBarWrap}>
-                        <div className={styles.completionBarFill} style={{ width: `${completionPct}%` }} />
+                <div className={SETTINGS_CARD}>
+                    <div className={SETTINGS_CARD_TITLE}>Firm Profile Completion</div>
+                    <div className={COMPLETION_BAR_WRAP}>
+                        <div className={COMPLETION_BAR_FILL} style={{ width: `${completionPct}%` }} />
                     </div>
-                    <div className={styles.completionLabel}>
+                    <div className={COMPLETION_LABEL}>
                         {completionPct}% complete — {optionalFilled}/6 optional fields filled
                     </div>
 
                     {profMsg && (
-                        <div className={`${styles.errorBanner}${profMsg.ok ? " " + styles.successBanner : ""}`}>
+                        <div className={`${ERROR_BANNER}${profMsg.ok ? " " + SUCCESS_BANNER : ""}`}>
                             {profMsg.text}
-                            <button className={styles.errorDismiss} onClick={() => setProfMsg(null)}>✕</button>
+                            <button className={ERROR_DISMISS} onClick={() => setProfMsg(null)}>✕</button>
                         </div>
                     )}
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginTop: "1rem" }}>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Phone</label>
-                            <input className={styles.formInput} type="tel" placeholder="+92 300 0000000"
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Phone</label>
+                            <input className={FORM_INPUT} type="tel" placeholder="+92 300 0000000"
                                 value={phone} onChange={e => setPhone(e.target.value)} />
                         </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>City</label>
-                            <select className={styles.formSelect} value={city} onChange={e => setCity(e.target.value)}>
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>City</label>
+                            <select className={FORM_SELECT} value={city} onChange={e => setCity(e.target.value)}>
                                 <option value="">Select city</option>
                                 {PK_CITIES.map(c => <option key={c}>{c}</option>)}
                             </select>
                         </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Bar Council No.</label>
-                            <input className={styles.formInput} type="text" placeholder="e.g. LHC-2019-1234"
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Bar Council No.</label>
+                            <input className={FORM_INPUT} type="text" placeholder="e.g. LHC-2019-1234"
                                 value={barCouncilNo} onChange={e => setBarCouncilNo(e.target.value)} />
                         </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Team Size</label>
-                            <select className={styles.formSelect} value={teamSize} onChange={e => setTeamSize(e.target.value)}>
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Team Size</label>
+                            <select className={FORM_SELECT} value={teamSize} onChange={e => setTeamSize(e.target.value)}>
                                 <option value="">Select size</option>
                                 {TEAM_SIZES.map(s => <option key={s}>{s}</option>)}
                             </select>
                         </div>
                     </div>
 
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Website (optional)</label>
-                        <input className={styles.formInput} type="url" placeholder="https://yourfirm.com"
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Website (optional)</label>
+                        <input className={FORM_INPUT} type="url" placeholder="https://yourfirm.com"
                             value={website} onChange={e => setWebsite(e.target.value)} />
                     </div>
 
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Practice Areas</label>
-                        <div className={styles.practiceAreaGrid}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Practice Areas</label>
+                        <div className={PRACTICE_AREA_GRID}>
                             {PRACTICE_AREAS.map(area => (
-                                <label key={area} className={styles.practiceAreaChip}>
+                                <label key={area} className={PRACTICE_AREA_CHIP}>
                                     <input
                                         type="checkbox"
                                         checked={practiceAreas.includes(area)}
                                         onChange={() => togglePracticeArea(area)}
                                         style={{ display: "none" }}
                                     />
-                                    <span className={practiceAreas.includes(area) ? styles.chipActive : styles.chipInactive}>
+                                    <span className={practiceAreas.includes(area) ? CHIP_ACTIVE : CHIP_INACTIVE}>
                                         {area}
                                     </span>
                                 </label>
@@ -330,35 +338,35 @@ export const SettingsPanel = ({
                     </Button>
                 </div>
 
-                <div className={styles.settingsCard}>
-                    <div className={styles.settingsCardTitle}>Your Account</div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Full Name</label>
-                        <input className={styles.formInput} defaultValue={user.name} readOnly />
+                <div className={SETTINGS_CARD}>
+                    <div className={SETTINGS_CARD_TITLE}>Your Account</div>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Full Name</label>
+                        <input className={FORM_INPUT} defaultValue={user.name} readOnly />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Email</label>
-                        <input className={styles.formInput} defaultValue={user.email} readOnly />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Email</label>
+                        <input className={FORM_INPUT} defaultValue={user.email} readOnly />
                     </div>
                     {pwMsg && (
-                        <div className={`${styles.errorBanner}${pwMsg.ok ? " " + styles.successBanner : ""}`}>
+                        <div className={`${ERROR_BANNER}${pwMsg.ok ? " " + SUCCESS_BANNER : ""}`}>
                             {pwMsg.text}
-                            <button className={styles.errorDismiss} onClick={() => setPwMsg(null)}>✕</button>
+                            <button className={ERROR_DISMISS} onClick={() => setPwMsg(null)}>✕</button>
                         </div>
                     )}
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Current Password</label>
-                        <input className={styles.formInput} type="password" value={currentPw}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Current Password</label>
+                        <input className={FORM_INPUT} type="password" value={currentPw}
                             onChange={e => setCurrentPw(e.target.value)} placeholder="Enter current password" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>New Password</label>
-                        <input className={styles.formInput} type="password" value={newPw}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>New Password</label>
+                        <input className={FORM_INPUT} type="password" value={newPw}
                             onChange={e => setNewPw(e.target.value)} placeholder="At least 8 characters" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Confirm New Password</label>
-                        <input className={styles.formInput} type="password" value={confirmPw}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Confirm New Password</label>
+                        <input className={FORM_INPUT} type="password" value={confirmPw}
                             onChange={e => setConfirmPw(e.target.value)} placeholder="Repeat new password" />
                     </div>
                     <Button variant="ghost" onClick={changePassword} disabled={changePasswordMutation.isPending}>
@@ -366,63 +374,63 @@ export const SettingsPanel = ({
                     </Button>
                 </div>
 
-                <div className={styles.settingsCard}>
-                    <div className={styles.settingsCardTitle}>Preferences</div>
-                    <div className={styles.prefRow}>
+                <div className={SETTINGS_CARD}>
+                    <div className={SETTINGS_CARD_TITLE}>Preferences</div>
+                    <div className={PREF_ROW}>
                         <div>
-                            <div className={styles.prefLabel}>Theme</div>
-                            <div className={styles.prefSub}>Switch between dark and light mode</div>
+                            <div className={PREF_LABEL}>Theme</div>
+                            <div className={PREF_SUB}>Switch between dark and light mode</div>
                         </div>
                         <ThemeToggle />
                     </div>
                 </div>
 
                 {/* ── Practice Teams ── */}
-                <div className={styles.settingsCard} style={{ gridColumn: "1 / -1" }}>
+                <div className={SETTINGS_CARD} style={{ gridColumn: "1 / -1" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-                        <div className={styles.settingsCardTitle} style={{ marginBottom: 0 }}>Practice Teams</div>
+                        <div className={SETTINGS_CARD_TITLE} style={{ marginBottom: 0 }}>Practice Teams</div>
                         <Button style={{ fontSize: "0.8rem" }} onClick={() => { setNewTeamName(""); setTeamErr(null); setShowTeamModal(true); }}>
                             + Create Team
                         </Button>
                     </div>
 
                     {matterTeams.length === 0 ? (
-                        <div className={styles.emptyHint}>No practice teams yet. Create teams to assign staff groups to matters.</div>
+                        <div className={EMPTY_HINT}>No practice teams yet. Create teams to assign staff groups to matters.</div>
                     ) : (
-                        <div className={styles.teamsList}>
+                        <div className={TEAMS_LIST}>
                             {matterTeams.map(team => {
                                 const isOpen = expandedTeams.has(team.team_id);
                                 const nonMembers = orgMembers.filter(m => !team.members.some(tm => tm.user_id === m.user_id));
                                 return (
-                                    <div key={team.team_id} className={styles.teamsItem}>
-                                        <div className={styles.teamsItemHeader}>
-                                            <button className={styles.teamsExpandBtn} onClick={() => toggleExpand(team.team_id)}>
-                                                <span className={styles.teamsExpandArrow}>{isOpen ? "▾" : "▸"}</span>
-                                                <span className={styles.teamsItemName}>{team.name}</span>
-                                                <span className={styles.muted} style={{ fontSize: "0.78rem" }}>
+                                    <div key={team.team_id} className={TEAMS_ITEM}>
+                                        <div className={TEAMS_ITEM_HEADER}>
+                                            <button className={TEAMS_EXPAND_BTN} onClick={() => toggleExpand(team.team_id)}>
+                                                <span className={TEAMS_EXPAND_ARROW}>{isOpen ? "▾" : "▸"}</span>
+                                                <span className={TEAMS_ITEM_NAME}>{team.name}</span>
+                                                <span className={MUTED} style={{ fontSize: "0.78rem" }}>
                                                     {team.members.length} member{team.members.length !== 1 ? "s" : ""}
                                                 </span>
                                             </button>
-                                            <button className={styles.actionBtnDanger} style={{ fontSize: "0.75rem" }} onClick={() => deleteTeam(team.team_id)}>
+                                            <button className={ACTION_BTN_DANGER} style={{ fontSize: "0.75rem" }} onClick={() => deleteTeam(team.team_id)}>
                                                 Delete
                                             </button>
                                         </div>
                                         {isOpen && (
-                                            <div className={styles.teamsMemberList}>
+                                            <div className={TEAMS_MEMBER_LIST}>
                                                 {team.members.length === 0 ? (
-                                                    <div className={styles.muted} style={{ fontSize: "0.8rem", padding: "0.4rem 0" }}>No members yet.</div>
+                                                    <div className={MUTED} style={{ fontSize: "0.8rem", padding: "0.4rem 0" }}>No members yet.</div>
                                                 ) : (
                                                     team.members.map(m => (
-                                                        <div key={m.user_id} className={styles.teamsMemberRow}>
-                                                            <span className={styles.teamsMemberName}>{m.name}</span>
-                                                            <button className={styles.queueRemove} title="Remove from team" onClick={() => removeMember(team.team_id, m.user_id)}>✕</button>
+                                                        <div key={m.user_id} className={TEAMS_MEMBER_ROW}>
+                                                            <span className={TEAMS_MEMBER_NAME}>{m.name}</span>
+                                                            <button className={QUEUE_REMOVE} title="Remove from team" onClick={() => removeMember(team.team_id, m.user_id)}>✕</button>
                                                         </div>
                                                     ))
                                                 )}
                                                 {nonMembers.length > 0 && (
-                                                    <div className={styles.teamsAddMemberRow}>
+                                                    <div className={TEAMS_ADD_MEMBER_ROW}>
                                                         <select
-                                                            className={styles.formSelect}
+                                                            className={FORM_SELECT}
                                                             style={{ flex: 1, fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
                                                             value={addMemberSelects[team.team_id] ?? ""}
                                                             onChange={e => setAddMemberSelects(prev => ({ ...prev, [team.team_id]: e.target.value }))}
@@ -447,16 +455,16 @@ export const SettingsPanel = ({
                 </div>
 
                 {/* ── Bail Checklist Stages ── */}
-                <div className={styles.settingsCard} style={{ gridColumn: "1 / -1" }}>
-                    <div className={styles.settingsCardTitle}>Bail Checklist Stages</div>
-                    <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "0.85rem" }}>
+                <div className={SETTINGS_CARD} style={{ gridColumn: "1 / -1" }}>
+                    <div className={SETTINGS_CARD_TITLE}>Bail Checklist Stages</div>
+                    <p className={MUTED} style={{ fontSize: "0.82rem", marginBottom: "0.85rem" }}>
                         The step-by-step tracker shown on every bail bond. Defaults to Surety Identification → CNIC Verification → Property Valuation → Surety Appearance → Court Filing → Result — rename or add stages to match how your firm actually works; existing bonds keep their progress.
                     </p>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginBottom: "0.85rem" }}>
                         {bailStages.map(s => (
                             <div key={s.stage_key} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                                 <span style={{ color: "var(--text-3)", fontSize: "0.78rem", width: 20 }}>{s.sort_order + 1}.</span>
-                                <input className={styles.formInput} style={{ flex: 1, fontSize: "0.85rem", padding: "0.3rem 0.6rem", opacity: s.is_active ? 1 : 0.5 }}
+                                <input className={FORM_INPUT} style={{ flex: 1, fontSize: "0.85rem", padding: "0.3rem 0.6rem", opacity: s.is_active ? 1 : 0.5 }}
                                     defaultValue={s.label}
                                     onBlur={e => { if (e.target.value.trim() && e.target.value !== s.label) renameBailStage(s.stage_key, e.target.value.trim()); }} />
                                 <Button variant="ghost" style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }} onClick={() => toggleBailStageActive(s)}>
@@ -466,7 +474,7 @@ export const SettingsPanel = ({
                         ))}
                     </div>
                     <div style={{ display: "flex", gap: "0.5rem" }}>
-                        <input className={styles.formInput} style={{ flex: 1 }} value={newStageLabel} onChange={e => setNewStageLabel(e.target.value)}
+                        <input className={FORM_INPUT} style={{ flex: 1 }} value={newStageLabel} onChange={e => setNewStageLabel(e.target.value)}
                             onKeyDown={e => e.key === "Enter" && addBailStage()} placeholder="Add a custom stage…" />
                         <Button style={{ fontSize: "0.8rem" }} disabled={addBailStageMutation.isPending || !newStageLabel.trim()} onClick={addBailStage}>
                             + Add
@@ -474,9 +482,9 @@ export const SettingsPanel = ({
                     </div>
                 </div>
 
-                <div className={styles.settingsCard}>
-                    <div className={styles.settingsCardTitle}>Danger Zone</div>
-                    <p className={styles.dangerText}>
+                <div className={SETTINGS_CARD}>
+                    <div className={SETTINGS_CARD_TITLE}>Danger Zone</div>
+                    <p className={DANGER_TEXT}>
                         Deleting your organization will permanently remove all documents and team access. This cannot be undone.
                     </p>
                     <Button variant="danger" onClick={() => setShowDeleteModal(true)}>
@@ -498,10 +506,10 @@ export const SettingsPanel = ({
                     </Button>
                 </>}
             >
-                {teamErr && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {teamErr}</div>}
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Team Name</label>
-                    <input className={styles.formInput} value={newTeamName} autoFocus
+                {teamErr && <div className={ERROR_BANNER} style={{ marginBottom: "0.75rem" }}>⚠ {teamErr}</div>}
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Team Name</label>
+                    <input className={FORM_INPUT} value={newTeamName} autoFocus
                         onChange={e => setNewTeamName(e.target.value)}
                         onKeyDown={e => e.key === "Enter" && createTeam()}
                         placeholder="e.g. Litigation Team, Corporate Group" />
@@ -517,14 +525,14 @@ export const SettingsPanel = ({
                     <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>Close</Button>
                     <a
                         href="mailto:support@projectease.ai?subject=Delete%20Organization%20Request"
-                        className={styles.btnDanger}
+                        className={BTN_DANGER}
                         style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
                     >
                         Email Support
                     </a>
                 </>}
             >
-                <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.875rem", lineHeight: 1.6 }}>
+                <p className={MUTED} style={{ marginBottom: "1rem", fontSize: "0.875rem", lineHeight: 1.6 }}>
                     For security and compliance, organization deletion must be requested through our support team. We'll verify your identity and ensure all data is properly handled before removing your account.
                 </p>
                 <p style={{ fontSize: "0.875rem", color: "var(--text-2)" }}>

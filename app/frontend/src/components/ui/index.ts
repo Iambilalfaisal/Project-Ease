@@ -5,3 +5,7 @@ export type { BadgeTone } from "./Badge";
 export { Button } from "./Button";
 export { EmptyState } from "./EmptyState";
 export { ToastProvider, useToast } from "./Toast";
+export { Spinner } from "./Spinner";
+export { Drawer } from "./Drawer";
+export { Tooltip } from "./Tooltip";
+export { Popover } from "./Popover";

@@ -1,20 +1,26 @@
 import { useRef, useState, useEffect, useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { Helmet } from "react-helmet-async";
-import {
-    OverlayDrawer,
-    DrawerHeader,
-    DrawerHeaderTitle,
-    DrawerBody,
-    Button,
-    type DialogOpenChangeEvent,
-    type DialogOpenChangeData
-} from "@fluentui/react-components";
-import { Dismiss24Regular } from "@fluentui/react-icons";
 import readNDJSONStream from "ndjson-readablestream";
 
 import appLogo from "../../assets/applogo.svg";
-import styles from "./Chat.module.css";
+import { Button, Drawer } from "@/components/ui";
+import {
+    CHAT_ANALYSIS_PANEL,
+    CHAT_CONTAINER,
+    CHAT_EMPTY_STATE,
+    CHAT_EMPTY_STATE_SUBTITLE,
+    CHAT_EMPTY_STATE_TITLE,
+    CHAT_INPUT,
+    CHAT_MESSAGE_GPT,
+    CHAT_MESSAGE_GPT_MIN_WIDTH,
+    CHAT_MESSAGE_STREAM,
+    CHAT_ROOT,
+    COMMAND_BUTTON,
+    COMMANDS_CONTAINER,
+    COMMANDS_SPLIT_CONTAINER,
+    CONTAINER
+} from "./chatStyles";
 
 import { chatApi, configApi, RetrievalMode, ChatAppResponse, ChatAppResponseOrError, ChatAppRequest, ResponseMessage, SpeechConfig } from "../../api";
 import { Answer, AnswerError, AnswerLoading } from "../../components/Answer";
@@ -539,42 +545,42 @@ const Chat = () => {
     const { t, i18n } = useTranslation();
 
     return (
-        <div className={styles.container}>
+        <div className={CONTAINER}>
             {/* Setting the page title using react-helmet-async */}
             <Helmet>
                 <title>{t("pageTitle")}</title>
             </Helmet>
-            <div className={styles.commandsSplitContainer}>
-                <div className={styles.commandsContainer}>
+            <div className={COMMANDS_SPLIT_CONTAINER}>
+                <div className={COMMANDS_CONTAINER}>
                     {((useLogin && showChatHistoryCosmos) || showChatHistoryBrowser) && (
-                        <HistoryButton className={styles.commandButton} onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)} />
+                        <HistoryButton className={COMMAND_BUTTON} onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)} />
                     )}
                 </div>
-                <div className={styles.commandsContainer}>
-                    <ClearChatButton className={styles.commandButton} onClick={clearChat} disabled={!lastQuestionRef.current || isLoading} />
-                    {showUserUpload && <UploadFile className={styles.commandButton} disabled={!loggedIn} />}
-                    <SettingsButton className={styles.commandButton} onClick={() => setIsConfigPanelOpen(!isConfigPanelOpen)} />
+                <div className={COMMANDS_CONTAINER}>
+                    <ClearChatButton className={COMMAND_BUTTON} onClick={clearChat} disabled={!lastQuestionRef.current || isLoading} />
+                    {showUserUpload && <UploadFile className={COMMAND_BUTTON} disabled={!loggedIn} />}
+                    <SettingsButton className={COMMAND_BUTTON} onClick={() => setIsConfigPanelOpen(!isConfigPanelOpen)} />
                 </div>
             </div>
-            <div className={styles.chatRoot} style={{ marginLeft: isHistoryPanelOpen ? "300px" : "0" }}>
-                <div className={styles.chatContainer}>
+            <div className={CHAT_ROOT} style={{ marginLeft: isHistoryPanelOpen ? "300px" : "0" }}>
+                <div className={CHAT_CONTAINER}>
                     {!lastQuestionRef.current ? (
-                        <div className={styles.chatEmptyState}>
+                        <div className={CHAT_EMPTY_STATE}>
                             <img src={appLogo} alt="App logo" width="120" height="120" />
 
-                            <h1 className={styles.chatEmptyStateTitle}>{t("chatEmptyStateTitle")}</h1>
-                            <h2 className={styles.chatEmptyStateSubtitle}>{t("chatEmptyStateSubtitle")}</h2>
+                            <h1 className={CHAT_EMPTY_STATE_TITLE}>{t("chatEmptyStateTitle")}</h1>
+                            <h2 className={CHAT_EMPTY_STATE_SUBTITLE}>{t("chatEmptyStateSubtitle")}</h2>
                             {showLanguagePicker && <LanguagePicker onLanguageChange={newLang => i18n.changeLanguage(newLang)} />}
 
                             <ExampleList onExampleClicked={onExampleClicked} useMultimodalAnswering={showMultimodalOptions} />
                         </div>
                     ) : (
-                        <div className={styles.chatMessageStream}>
+                        <div className={CHAT_MESSAGE_STREAM}>
                             {isStreaming &&
                                 streamedAnswers.map((streamedAnswer, index) => (
                                     <div key={index}>
                                         <UserChatMessage message={streamedAnswer[0]} />
-                                        <div className={styles.chatMessageGpt}>
+                                        <div className={CHAT_MESSAGE_GPT}>
                                             <Answer
                                                 isStreaming={true}
                                                 key={index}
@@ -597,7 +603,7 @@ const Chat = () => {
                                 answers.map((answer, index) => (
                                     <div key={index}>
                                         <UserChatMessage message={answer[0]} />
-                                        <div className={styles.chatMessageGpt}>
+                                        <div className={CHAT_MESSAGE_GPT}>
                                             <Answer
                                                 isStreaming={false}
                                                 key={index}
@@ -619,7 +625,7 @@ const Chat = () => {
                             {isLoading && (
                                 <>
                                     <UserChatMessage message={lastQuestionRef.current} />
-                                    <div className={styles.chatMessageGptMinWidth}>
+                                    <div className={CHAT_MESSAGE_GPT_MIN_WIDTH}>
                                         <AnswerLoading />
                                     </div>
                                 </>
@@ -627,7 +633,7 @@ const Chat = () => {
                             {error ? (
                                 <>
                                     <UserChatMessage message={lastQuestionRef.current} />
-                                    <div className={styles.chatMessageGptMinWidth}>
+                                    <div className={CHAT_MESSAGE_GPT_MIN_WIDTH}>
                                         <AnswerError error={error.toString()} onRetry={() => makeApiRequest(lastQuestionRef.current)} />
                                     </div>
                                 </>
@@ -636,7 +642,7 @@ const Chat = () => {
                         </div>
                     )}
 
-                    <div className={styles.chatInput}>
+                    <div className={CHAT_INPUT}>
                         <QuestionInput
                             clearOnSend
                             placeholder={t("defaultExamples.placeholder")}
@@ -653,7 +659,7 @@ const Chat = () => {
 
                 {answers.length > 0 && activeAnalysisPanelTab && selectedAnswer < answers.length && answers[selectedAnswer]?.[1] && (
                     <AnalysisPanel
-                        className={styles.chatAnalysisPanel}
+                        className={CHAT_ANALYSIS_PANEL}
                         activeCitation={activeCitation}
                         onActiveTabChanged={x => onToggleTab(x, selectedAnswer)}
                         citationHeight="810px"
@@ -677,30 +683,8 @@ const Chat = () => {
                     />
                 )}
 
-                <OverlayDrawer
-                    position="end"
-                    open={isConfigPanelOpen}
-                    modalType="non-modal"
-                    style={{ width: "400px" }}
-                    onOpenChange={(_ev: DialogOpenChangeEvent, { open }: DialogOpenChangeData) => {
-                        if (!open) setIsConfigPanelOpen(false);
-                    }}
-                >
-                    <DrawerHeader>
-                        <DrawerHeaderTitle
-                            action={
-                                <Button
-                                    appearance="subtle"
-                                    aria-label={t("labels.closeButton")}
-                                    icon={<Dismiss24Regular />}
-                                    onClick={() => setIsConfigPanelOpen(false)}
-                                />
-                            }
-                        >
-                            {t("labels.headerText")}
-                        </DrawerHeaderTitle>
-                    </DrawerHeader>
-                    <DrawerBody>
+                <Drawer open={isConfigPanelOpen} onClose={() => setIsConfigPanelOpen(false)} side="end" width={400} title={t("labels.headerText")}>
+                    <div className="flex h-full flex-col p-5">
                         <Settings
                             promptTemplate={promptTemplate}
                             temperature={temperature}
@@ -742,10 +726,12 @@ const Chat = () => {
                         />
                         {useLogin && <TokenClaimsDisplay />}
                         <div style={{ marginTop: "auto", padding: "16px 0" }}>
-                            <Button onClick={() => setIsConfigPanelOpen(false)}>{t("labels.closeButton")}</Button>
+                            <Button variant="ghost" size="sm" onClick={() => setIsConfigPanelOpen(false)}>
+                                {t("labels.closeButton")}
+                            </Button>
                         </div>
-                    </DrawerBody>
-                </OverlayDrawer>
+                    </div>
+                </Drawer>
             </div>
         </div>
     );

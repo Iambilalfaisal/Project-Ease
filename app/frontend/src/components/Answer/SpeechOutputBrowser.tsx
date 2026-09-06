@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Button } from "@fluentui/react-components";
 import { Speaker224Regular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui";
 import { supportedLngs } from "../../i18n/config";
 
 interface Props {
@@ -71,17 +71,20 @@ export const SpeechOutputBrowser = ({ answer }: Props) => {
             };
         }
     };
-    const color = isPlaying ? "red" : "black";
+    const color = isPlaying ? "var(--danger)" : "var(--text-2)";
 
     return (
         <Button
-            appearance="transparent"
-            style={{ color: color }}
-            icon={<Speaker224Regular />}
+            variant="ghost"
+            size="sm"
+            className="border-none"
+            style={{ color }}
             title={t("tooltips.speakAnswer")}
             aria-label={t("tooltips.speakAnswer")}
             onClick={() => startOrStopSpeech(answer)}
             disabled={!synth}
-        />
+        >
+            <Speaker224Regular />
+        </Button>
     );
 };

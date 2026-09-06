@@ -3,7 +3,7 @@
 // its own data fetching via its domain hook — this shell only tracks which
 // tab is active and passes the loaded `matter` down.
 import { useState } from "react";
-import styles from "../../OwnerPortal.module.css";
+import { PANEL_CONTENT, EMPTY_HINT, DETAIL_TAB_BAR, DETAIL_TAB_BTN, DETAIL_TAB_BTN_ACTIVE } from "../../ownerStyles";
 import { useMatterDetail, useMatters } from "../../../../hooks/useMatters";
 import { MatterOverviewHeader, MatterDocumentsTab } from "./MatterOverviewTab";
 import { MatterOrdersTab } from "./MatterHearingsTab";
@@ -53,18 +53,18 @@ export function MatterDetail({ matterId, onBack }: { matterId: string; onBack: (
     const [editDetail, setEditDetail] = useState(false);
 
     if (isLoading || !matter) {
-        return <div className={styles.panelContent}><div className={styles.emptyHint}>Loading matter…</div></div>;
+        return <div className={PANEL_CONTENT}><div className={EMPTY_HINT}>Loading matter…</div></div>;
     }
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             <MatterOverviewHeader matter={matter} onBack={onBack} onDeleted={onBack} editDetail={editDetail} setEditDetail={setEditDetail} allMatters={allMatters} />
 
             {!editDetail && (
                 <>
-                    <div className={styles.detailTabBar}>
+                    <div className={DETAIL_TAB_BAR}>
                         {TABS.map(t => (
-                            <button key={t.id} className={`${styles.detailTabBtn} ${tab === t.id ? styles.detailTabBtnActive : ""}`} onClick={() => setTab(t.id)}>
+                            <button key={t.id} className={`${DETAIL_TAB_BTN} ${tab === t.id ? DETAIL_TAB_BTN_ACTIVE : ""}`} onClick={() => setTab(t.id)}>
                                 {t.label}
                             </button>
                         ))}

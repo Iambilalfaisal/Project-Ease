@@ -1,5 +1,5 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import { PANEL_CONTENT, SECTION_TITLE, FORM_SELECT, MUTED, FORM_GROUP, FORM_LABEL, FORM_INPUT } from "../ownerStyles";
 import { Button, Modal, Badge, EmptyState } from "../../../components/ui";
 import type { BadgeTone } from "../../../components/ui";
 import type { LegalNotice } from "../types";
@@ -47,17 +47,17 @@ export const LegalNoticesPanel = () => {
     const viaOptions = ["Courier", "Registered Post", "Email", "WhatsApp", "Hand Delivery", "Process Server"];
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-                <h2 className={styles.sectionTitle} style={{ margin: 0 }}>📨 Legal Notices</h2>
+                <h2 className={SECTION_TITLE} style={{ margin: 0 }}>📨 Legal Notices</h2>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-                    <select className={styles.formSelect} value={filter} onChange={e => setFilter(e.target.value)} style={{ width: "auto" }}>
+                    <select className={FORM_SELECT} value={filter} onChange={e => setFilter(e.target.value)} style={{ width: "auto" }}>
                         {statuses.map(s => <option key={s}>{s}</option>)}
                     </select>
                     <Button onClick={() => open()}>+ New Notice</Button>
                 </div>
             </div>
-            <p className={styles.muted} style={{ margin: "0.35rem 0 1rem" }}>Track legal notices sent and received — demand notices, eviction notices, reply notices, and more.</p>
+            <p className={MUTED} style={{ margin: "0.35rem 0 1rem" }}>Track legal notices sent and received — demand notices, eviction notices, reply notices, and more.</p>
 
             {loading ? <EmptyState message="Loading…" /> : visible.length === 0 ? (
                 <EmptyState message="No notice records found. Add your first legal notice to start tracking." />
@@ -101,50 +101,50 @@ export const LegalNoticesPanel = () => {
                 </>}
             >
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Notice Type</label>
-                        <select className={styles.formInput} value={form.notice_type} onChange={e => setForm(f => ({ ...f, notice_type: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Notice Type</label>
+                        <select className={FORM_INPUT} value={form.notice_type} onChange={e => setForm(f => ({ ...f, notice_type: e.target.value }))}>
                             {noticeTypes.map(t => <option key={t}>{t}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Status</label>
-                        <select className={styles.formInput} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Status</label>
+                        <select className={FORM_INPUT} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
                             {["Draft","Sent","Acknowledged","No Response","Replied","Withdrawn"].map(s => <option key={s}>{s}</option>)}
                         </select>
                     </div>
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Subject</label>
-                    <input className={styles.formInput} value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="e.g. Legal Notice for Recovery of PKR 5,00,000" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Subject</label>
+                    <input className={FORM_INPUT} value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="e.g. Legal Notice for Recovery of PKR 5,00,000" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Sent To (Recipient) *</label>
-                    <input className={styles.formInput} value={form.sent_to} onChange={e => setForm(f => ({ ...f, sent_to: e.target.value }))} placeholder="Name and address of recipient" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Sent To (Recipient) *</label>
+                    <input className={FORM_INPUT} value={form.sent_to} onChange={e => setForm(f => ({ ...f, sent_to: e.target.value }))} placeholder="Name and address of recipient" />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Sent Via</label>
-                        <select className={styles.formInput} value={form.sent_via} onChange={e => setForm(f => ({ ...f, sent_via: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Sent Via</label>
+                        <select className={FORM_INPUT} value={form.sent_via} onChange={e => setForm(f => ({ ...f, sent_via: e.target.value }))}>
                             {viaOptions.map(v => <option key={v}>{v}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Sent Date</label>
-                        <input type="date" className={styles.formInput} value={form.sent_date} onChange={e => setForm(f => ({ ...f, sent_date: e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Sent Date</label>
+                        <input type="date" className={FORM_INPUT} value={form.sent_date} onChange={e => setForm(f => ({ ...f, sent_date: e.target.value }))} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Tracking No.</label>
-                        <input className={styles.formInput} value={form.tracking_no} onChange={e => setForm(f => ({ ...f, tracking_no: e.target.value }))} placeholder="Courier/postal ref" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Tracking No.</label>
+                        <input className={FORM_INPUT} value={form.tracking_no} onChange={e => setForm(f => ({ ...f, tracking_no: e.target.value }))} placeholder="Courier/postal ref" />
                     </div>
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Notice Content (summary)</label>
-                    <textarea className={styles.formInput} rows={3} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} placeholder="Brief summary of notice content…" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Notice Content (summary)</label>
+                    <textarea className={FORM_INPUT} rows={3} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} placeholder="Brief summary of notice content…" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Notes</label>
-                    <textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional follow-up notes…" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Notes</label>
+                    <textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional follow-up notes…" />
                 </div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>

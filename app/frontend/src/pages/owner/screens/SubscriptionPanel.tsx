@@ -1,5 +1,16 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import {
+    PANEL_CONTENT, TRIAL_BANNER, TRIAL_BANNER_URGENT, TRIAL_BANNER_ICON, TRIAL_BANNER_TEXT,
+    UPGRADE_PENDING_BANNER, PENDING_BANNER_ICON, PENDING_BANNER_BODY, PENDING_BANNER_TITLE, PENDING_BANNER_SUB,
+    SUB_USAGE_CARD, SUB_USAGE_TITLE, SUB_USAGE_GRID, SUB_USAGE_ITEM, SUB_USAGE_LABEL, SUB_USAGE_VALUE,
+    SUB_UPGRADE_HINT, USAGE_BAR, USAGE_BAR_FILL, USAGE_BAR_WARN,
+    PLAN_TIER_GRID, PLAN_TIER_CARD, PLAN_TIER_CARD_CURRENT, PLAN_TIER_CARD_POPULAR,
+    PLAN_TIER_CURRENT_BADGE, PLAN_TIER_POPULAR_BADGE, PLAN_TIER_NAME, PLAN_TIER_PRICE, PLAN_TIER_PRICE_SUB,
+    PLAN_TIER_DIVIDER, PLAN_TIER_LIMITS, PLAN_TIER_FEATURE_LIST, PLAN_TIER_FEATURE_ITEM,
+    PLAN_TIER_BTN, PLAN_TIER_BTN_GHOST, UPGRADE_SUCCESS_BANNER, UPGRADE_SUCCESS_TITLE,
+    UPGRADE_MODAL_TITLE, UPGRADE_MODAL_SUB, BANK_CARD, BANK_CARD_TITLE, BANK_ROW, BANK_LABEL, BANK_VALUE,
+    UPGRADE_FORM_SECTION, UPGRADE_FORM_LABEL, UPGRADE_FORM_INPUT, UPGRADE_FORM_TEXTAREA,
+} from "../ownerStyles";
 import { Modal, Button } from "../../../components/ui";
 import { Usage, fmtBytes } from "../types";
 import { usePlanConfig, useOrgUpgradeStatus, useSubmitUpgradeRequest } from "../../../hooks/useSubscription";
@@ -77,13 +88,13 @@ export const SubscriptionPanel = ({
     };
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
 
             {/* Trial countdown banner */}
             {plan === "trial" && trialDaysLeft !== null && (
-                <div className={`${styles.trialBanner}${trialDaysLeft <= 3 ? " " + styles.trialBannerUrgent : ""}`}>
-                    <span className={styles.trialBannerIcon}>⏳</span>
-                    <span className={styles.trialBannerText}>
+                <div className={`${TRIAL_BANNER}${trialDaysLeft <= 3 ? " " + TRIAL_BANNER_URGENT : ""}`}>
+                    <span className={TRIAL_BANNER_ICON}>⏳</span>
+                    <span className={TRIAL_BANNER_TEXT}>
                         {trialDaysLeft === 0
                             ? <><strong>Your trial has ended.</strong> Upgrade now to continue using Project Ease.</>
                             : <><strong>{trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} left on your trial.</strong>{" "}
@@ -94,13 +105,13 @@ export const SubscriptionPanel = ({
 
             {/* Pending upgrade notice */}
             {pendingPlan && (
-                <div className={styles.upgradePendingBanner}>
-                    <span className={styles.pendingBannerIcon}>🕐</span>
-                    <div className={styles.pendingBannerBody}>
-                        <div className={styles.pendingBannerTitle}>
+                <div className={UPGRADE_PENDING_BANNER}>
+                    <span className={PENDING_BANNER_ICON}>🕐</span>
+                    <div className={PENDING_BANNER_BODY}>
+                        <div className={PENDING_BANNER_TITLE}>
                             Upgrade to {TIER_LABELS[pendingPlan] ?? pendingPlan} — Under Review
                         </div>
-                        <div className={styles.pendingBannerSub}>
+                        <div className={PENDING_BANNER_SUB}>
                             Your payment is being verified. We'll activate your new plan within 1–2 business hours
                             {pendingAt ? ` (submitted ${new Date(pendingAt).toLocaleDateString("en-PK", { day: "numeric", month: "short" })})` : ""}.
                             Questions? WhatsApp us at {config?.support_whatsapp ?? "our support number"}.
@@ -110,72 +121,72 @@ export const SubscriptionPanel = ({
             )}
 
             {/* ── Usage ── */}
-            <div className={styles.subUsageCard}>
-                <div className={styles.subUsageTitle}>Current Usage — {TIER_LABELS[plan] ?? plan} Plan</div>
-                <div className={styles.subUsageGrid}>
+            <div className={SUB_USAGE_CARD}>
+                <div className={SUB_USAGE_TITLE}>Current Usage — {TIER_LABELS[plan] ?? plan} Plan</div>
+                <div className={SUB_USAGE_GRID}>
 
                     {/* Documents */}
-                    <div className={styles.subUsageItem}>
-                        <div className={styles.subUsageLabel}>
+                    <div className={SUB_USAGE_ITEM}>
+                        <div className={SUB_USAGE_LABEL}>
                             <span>Documents</span>
-                            <span className={styles.subUsageValue}>
+                            <span className={SUB_USAGE_VALUE}>
                                 {unlimited ? `${usage.total_docs} / ∞` : `${usage.total_docs} / ${maxDocs}`}
                             </span>
                         </div>
                         {!unlimited && (
-                            <div className={styles.usageBar}>
+                            <div className={USAGE_BAR}>
                                 <div
-                                    className={`${styles.usageBarFill}${docPct >= 80 ? " " + styles.usageBarWarn : ""}`}
+                                    className={`${USAGE_BAR_FILL}${docPct >= 80 ? " " + USAGE_BAR_WARN : ""}`}
                                     style={{ width: `${docPct}%` }}
                                 />
                             </div>
                         )}
                         {docPct >= 80 && !unlimited && (
-                            <div className={styles.subUpgradeHint}>
+                            <div className={SUB_UPGRADE_HINT}>
                                 {docPct >= 100 ? "Limit reached — upgrade to upload more." : `${docPct}% used — consider upgrading.`}
                             </div>
                         )}
                     </div>
 
                     {/* Team */}
-                    <div className={styles.subUsageItem}>
-                        <div className={styles.subUsageLabel}>
+                    <div className={SUB_USAGE_ITEM}>
+                        <div className={SUB_USAGE_LABEL}>
                             <span>Team Members</span>
-                            <span className={styles.subUsageValue}>
+                            <span className={SUB_USAGE_VALUE}>
                                 {unlimited ? `${teamCount} / ∞` : `${teamCount} / ${maxUsers}`}
                             </span>
                         </div>
                         {!unlimited && (
-                            <div className={styles.usageBar}>
+                            <div className={USAGE_BAR}>
                                 <div
-                                    className={`${styles.usageBarFill}${userPct >= 80 ? " " + styles.usageBarWarn : ""}`}
+                                    className={`${USAGE_BAR_FILL}${userPct >= 80 ? " " + USAGE_BAR_WARN : ""}`}
                                     style={{ width: `${userPct}%` }}
                                 />
                             </div>
                         )}
                         {userPct >= 80 && !unlimited && (
-                            <div className={styles.subUpgradeHint}>
+                            <div className={SUB_UPGRADE_HINT}>
                                 {userPct >= 100 ? "Limit reached — upgrade to invite more." : `${userPct}% used — consider upgrading.`}
                             </div>
                         )}
                     </div>
 
                     {/* Storage */}
-                    <div className={styles.subUsageItem}>
-                        <div className={styles.subUsageLabel}>
+                    <div className={SUB_USAGE_ITEM}>
+                        <div className={SUB_USAGE_LABEL}>
                             <span>Storage</span>
-                            <span className={styles.subUsageValue}>{fmtBytes(usage.total_bytes)}</span>
+                            <span className={SUB_USAGE_VALUE}>{fmtBytes(usage.total_bytes)}</span>
                         </div>
                         {!unlimitedStorage && maxStorageBytes > 0 && (
-                            <div className={styles.usageBar}>
+                            <div className={USAGE_BAR}>
                                 <div
-                                    className={`${styles.usageBarFill}${stPct >= 80 ? " " + styles.usageBarWarn : ""}`}
+                                    className={`${USAGE_BAR_FILL}${stPct >= 80 ? " " + USAGE_BAR_WARN : ""}`}
                                     style={{ width: `${stPct}%` }}
                                 />
                             </div>
                         )}
                         {stPct >= 80 && !unlimitedStorage && (
-                            <div className={styles.subUpgradeHint}>
+                            <div className={SUB_UPGRADE_HINT}>
                                 {stPct >= 100 ? "Storage full — upgrade for more space." : `${stPct}% used.`}
                             </div>
                         )}
@@ -185,7 +196,7 @@ export const SubscriptionPanel = ({
             </div>
 
             {/* ── Plan comparison cards ── */}
-            <div className={styles.planTierGrid}>
+            <div className={PLAN_TIER_GRID}>
                 {TIER_ORDER.map(tier => {
                     const cfg         = config?.plans[tier];
                     const isCurrent   = tier === plan;
@@ -202,27 +213,27 @@ export const SubscriptionPanel = ({
                         <div
                             key={tier}
                             className={[
-                                styles.planTierCard,
-                                isCurrent ? styles.planTierCardCurrent : "",
-                                isPopular && !isCurrent ? styles.planTierCardPopular : "",
+                                PLAN_TIER_CARD,
+                                isCurrent ? PLAN_TIER_CARD_CURRENT : "",
+                                isPopular && !isCurrent ? PLAN_TIER_CARD_POPULAR : "",
                             ].filter(Boolean).join(" ")}
                         >
-                            {isCurrent && <div className={styles.planTierCurrentBadge}>Current Plan</div>}
-                            {isPopular && !isCurrent && <div className={styles.planTierPopularBadge}>Most Popular</div>}
+                            {isCurrent && <div className={PLAN_TIER_CURRENT_BADGE}>Current Plan</div>}
+                            {isPopular && !isCurrent && <div className={PLAN_TIER_POPULAR_BADGE}>Most Popular</div>}
 
-                            <div className={styles.planTierName}>{TIER_LABELS[tier]}</div>
+                            <div className={PLAN_TIER_NAME}>{TIER_LABELS[tier]}</div>
 
-                            <div className={styles.planTierPrice}>
+                            <div className={PLAN_TIER_PRICE}>
                                 {cfg ? fmtPKR(cfg.price_monthly) : "—"}
                             </div>
-                            <div className={styles.planTierPriceSub}>
+                            <div className={PLAN_TIER_PRICE_SUB}>
                                 {cfg && cfg.price_monthly > 0 ? "per month" : tier === "trial" ? "14-day trial" : ""}
                                 {cfg && cfg.price_annual > 0 ? ` · PKR ${cfg.price_annual.toLocaleString("en-PK")}/yr` : ""}
                             </div>
 
-                            <div className={styles.planTierDivider} />
+                            <div className={PLAN_TIER_DIVIDER} />
 
-                            <div className={styles.planTierLimits}>
+                            <div className={PLAN_TIER_LIMITS}>
                                 {isUnlimited
                                     ? "Unlimited docs · Unlimited users"
                                     : `${cfg?.max_docs ?? "—"} docs · ${cfg?.max_users ?? "—"} users`}
@@ -234,34 +245,34 @@ export const SubscriptionPanel = ({
                             </div>
 
                             {cfg?.features && cfg.features.length > 0 && (
-                                <ul className={styles.planTierFeatureList}>
+                                <ul className={PLAN_TIER_FEATURE_LIST}>
                                     {cfg.features.map((f, i) => (
-                                        <li key={i} className={styles.planTierFeatureItem}>{f}</li>
+                                        <li key={i} className={PLAN_TIER_FEATURE_ITEM}>{f}</li>
                                     ))}
                                 </ul>
                             )}
 
                             {tier === "enterprise" ? (
                                 <button
-                                    className={`${styles.planTierBtn} ${styles.planTierBtnGhost}`}
+                                    className={`${PLAN_TIER_BTN} ${PLAN_TIER_BTN_GHOST}`}
                                     onClick={() => window.open("mailto:support@projectease.ai?subject=Enterprise Plan Inquiry", "_blank")}
                                 >
                                     Contact Sales
                                 </button>
                             ) : isCurrent ? (
-                                <button className={styles.planTierBtn} disabled>
+                                <button className={PLAN_TIER_BTN} disabled>
                                     Active
                                 </button>
                             ) : canUpgrade ? (
-                                <button className={styles.planTierBtn} onClick={() => openUpgrade(tier)}>
+                                <button className={PLAN_TIER_BTN} onClick={() => openUpgrade(tier)}>
                                     Upgrade to {TIER_LABELS[tier]}
                                 </button>
                             ) : hasPending ? (
-                                <button className={styles.planTierBtn} disabled title="An upgrade request is already pending">
+                                <button className={PLAN_TIER_BTN} disabled title="An upgrade request is already pending">
                                     Request Pending
                                 </button>
                             ) : (
-                                <button className={styles.planTierBtn} disabled>
+                                <button className={PLAN_TIER_BTN} disabled>
                                     {tierIdx < currentIdx ? "Downgrade not available" : "Current"}
                                 </button>
                             )}
@@ -289,8 +300,8 @@ export const SubscriptionPanel = ({
                 )}
             >
                 {upgradeTarget && (submitDone ? (
-                    <div className={styles.upgradeSuccessBanner}>
-                        <div className={styles.upgradeSuccessTitle}>✓ Upgrade Request Submitted</div>
+                    <div className={UPGRADE_SUCCESS_BANNER}>
+                        <div className={UPGRADE_SUCCESS_TITLE}>✓ Upgrade Request Submitted</div>
                         Your request to upgrade to <strong>{TIER_LABELS[upgradeTarget]}</strong> has been received.
                         We will verify your payment and activate your plan within 1–2 business hours (Mon–Sat, 9 AM–6 PM PKT).
                         {config?.support_whatsapp && (
@@ -299,33 +310,33 @@ export const SubscriptionPanel = ({
                     </div>
                 ) : (
                     <>
-                        <div className={styles.upgradeModalTitle}>
+                        <div className={UPGRADE_MODAL_TITLE}>
                             Upgrade to {TIER_LABELS[upgradeTarget]} Plan
                         </div>
-                        <div className={styles.upgradeModalSub}>
+                        <div className={UPGRADE_MODAL_SUB}>
                             Transfer the subscription amount to our bank account, then enter your transaction
                             reference below. We'll verify and activate your plan within 1–2 business hours.
                         </div>
 
                         {/* Bank details */}
                         {config?.bank && (
-                            <div className={styles.bankCard}>
-                                <div className={styles.bankCardTitle}>Bank Transfer Details</div>
+                            <div className={BANK_CARD}>
+                                <div className={BANK_CARD_TITLE}>Bank Transfer Details</div>
                                 {[
                                     ["Bank",    config.bank.name],
                                     ["Account", config.bank.account],
                                     ["IBAN",    config.bank.iban],
                                     ["Title",   config.bank.title],
                                 ].map(([label, val]) => val && val !== "" && (
-                                    <div key={label} className={styles.bankRow}>
-                                        <span className={styles.bankLabel}>{label}</span>
-                                        <span className={styles.bankValue}>{val}</span>
+                                    <div key={label} className={BANK_ROW}>
+                                        <span className={BANK_LABEL}>{label}</span>
+                                        <span className={BANK_VALUE}>{val}</span>
                                     </div>
                                 ))}
                                 {config?.plans[upgradeTarget] && (
-                                    <div className={styles.bankRow} style={{ marginTop: "0.4rem", borderTop: "1px solid var(--border)", paddingTop: "0.4rem" }}>
-                                        <span className={styles.bankLabel}>Amount</span>
-                                        <span className={styles.bankValue} style={{ color: "var(--gold)" }}>
+                                    <div className={BANK_ROW} style={{ marginTop: "0.4rem", borderTop: "1px solid var(--border)", paddingTop: "0.4rem" }}>
+                                        <span className={BANK_LABEL}>Amount</span>
+                                        <span className={BANK_VALUE} style={{ color: "var(--gold)" }}>
                                             {fmtPKR(config.plans[upgradeTarget].price_monthly)}/month
                                             {config.plans[upgradeTarget].price_annual > 0 && (
                                                 <span style={{ fontWeight: 400, color: "var(--text-3)", fontSize: "0.75rem" }}>
@@ -353,12 +364,12 @@ export const SubscriptionPanel = ({
                         </div>
 
                         {/* Payment reference */}
-                        <div className={styles.upgradeFormSection}>
-                            <label className={styles.upgradeFormLabel}>
+                        <div className={UPGRADE_FORM_SECTION}>
+                            <label className={UPGRADE_FORM_LABEL}>
                                 Transaction / Payment Reference <span style={{ color: "var(--danger, #c94040)" }}>*</span>
                             </label>
                             <input
-                                className={styles.upgradeFormInput}
+                                className={UPGRADE_FORM_INPUT}
                                 placeholder="e.g. TRX-20240723-1234 or JazzCash/Easypaisa transaction ID"
                                 value={payRef}
                                 onChange={e => setPayRef(e.target.value)}
@@ -366,10 +377,10 @@ export const SubscriptionPanel = ({
                         </div>
 
                         {/* Notes */}
-                        <div className={styles.upgradeFormSection}>
-                            <label className={styles.upgradeFormLabel}>Notes (optional)</label>
+                        <div className={UPGRADE_FORM_SECTION}>
+                            <label className={UPGRADE_FORM_LABEL}>Notes (optional)</label>
                             <textarea
-                                className={`${styles.upgradeFormInput} ${styles.upgradeFormTextarea}`}
+                                className={`${UPGRADE_FORM_INPUT} ${UPGRADE_FORM_TEXTAREA}`}
                                 placeholder="Any additional info for our team"
                                 value={notes}
                                 onChange={e => setNotes(e.target.value)}

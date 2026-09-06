@@ -1,8 +1,6 @@
 import { Example } from "./Example";
 import { useTranslation } from "react-i18next";
 
-import styles from "./Example.module.css";
-
 interface Props {
     onExampleClicked: (value: string) => void;
     useMultimodalAnswering?: boolean;
@@ -15,9 +13,9 @@ export const ExampleList = ({ onExampleClicked, useMultimodalAnswering }: Props)
     const MULTIMODAL_EXAMPLES: string[] = [t("multimodalExamples.1"), t("multimodalExamples.2"), t("multimodalExamples.3")];
 
     return (
-        <ul className={styles.examplesNavList}>
+        <ul className="mx-auto flex w-full max-w-[64.25rem] flex-none list-none flex-col items-stretch justify-center gap-3 px-4 sm:flex-row sm:gap-4">
             {(useMultimodalAnswering ? MULTIMODAL_EXAMPLES : DEFAULT_EXAMPLES).map((question, i) => (
-                <li key={i}>
+                <li key={i} className="flex sm:min-w-0 sm:flex-1">
                     <Example text={question} value={question} onClick={onExampleClicked} />
                 </li>
             ))}

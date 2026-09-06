@@ -5,7 +5,18 @@ import { a11yLight } from "react-syntax-highlighter/dist/esm/styles/hljs";
 
 import { getCitationFilePath } from "../../api";
 import { QueryPlanStep, getStepLabel } from "./agentPlanUtils";
-import styles from "./AnalysisPanel.module.css";
+import {
+    ITERATION_SECTION,
+    NO_RESULTS,
+    SECTION_HEADER,
+    STEP_HEADER_CELL,
+    STEP_LABEL,
+    STEP_NUMBER_TEXT,
+    STEP_RESULT,
+    STEP_RESULTS,
+    SUBQUERIES_TABLE,
+    T_CODE_BLOCK
+} from "./analysisPanelStyles";
 import { TokenUsage, TokenUsageGraph } from "./TokenUsageGraph";
 
 SyntaxHighlighter.registerLanguage("json", json);
@@ -92,7 +103,7 @@ const renderDetail = (step: QueryPlanStep) => {
         }
         default:
             return (
-                <SyntaxHighlighter language="json" wrapLines wrapLongLines className={styles.tCodeBlock} style={a11yLight}>
+                <SyntaxHighlighter language="json" wrapLines wrapLongLines className={T_CODE_BLOCK} style={a11yLight}>
                     {JSON.stringify(step, null, 2)}
                 </SyntaxHighlighter>
             );
@@ -190,9 +201,9 @@ export const AgentPlan: React.FC<Props> = ({ queryPlan, onEffortExtracted, onCit
                 const headerLabel = hasMultipleIterations ? `Iteration ${iterationIndex + 1} Execution steps` : "Execution steps";
 
                 return (
-                    <div className={styles.iterationSection} key={`iteration-${iterationIndex}`}>
-                        <div className={styles.header}>{headerLabel}</div>
-                        <table className={styles.subqueriesTable}>
+                    <div className={ITERATION_SECTION} key={`iteration-${iterationIndex}`}>
+                        <div className={SECTION_HEADER}>{headerLabel}</div>
+                        <table className={SUBQUERIES_TABLE}>
                             <thead>
                                 <tr>
                                     <th>Step</th>
@@ -209,21 +220,21 @@ export const AgentPlan: React.FC<Props> = ({ queryPlan, onEffortExtracted, onCit
                                     return (
                                         <tr key={step.id}>
                                             <td>
-                                                <div className={styles.stepHeaderCell}>
-                                                    {stepNumber && <span className={styles.stepNumberText}>{`Step ${stepNumber}:`}</span>}
-                                                    <span className={styles.stepLabel}>{getStepLabel(step)}</span>
+                                                <div className={STEP_HEADER_CELL}>
+                                                    {stepNumber && <span className={STEP_NUMBER_TEXT}>{`Step ${stepNumber}:`}</span>}
+                                                    <span className={STEP_LABEL}>{getStepLabel(step)}</span>
                                                 </div>
                                             </td>
                                             <td>
                                                 {renderDetail(step)}
                                                 {(step.type === "searchIndex" || step.type === "remoteSharePoint" || step.type === "web") &&
                                                     (stepResults.length > 0 ? (
-                                                        <div className={styles.stepResults}>
+                                                        <div className={STEP_RESULTS}>
                                                             {stepResults.map((result, idx) => {
                                                                 // Handle different result types
                                                                 if (result.type === "remoteSharePoint" && result.web_url) {
                                                                     return (
-                                                                        <div key={idx} className={styles.stepResult}>
+                                                                        <div key={idx} className={STEP_RESULT}>
                                                                             <a href={result.web_url} target="_blank" rel="noopener noreferrer">
                                                                                 {result.title || result.web_url}
                                                                             </a>
@@ -232,7 +243,7 @@ export const AgentPlan: React.FC<Props> = ({ queryPlan, onEffortExtracted, onCit
                                                                 } else if (result.url) {
                                                                     // Web result
                                                                     return (
-                                                                        <div key={idx} className={styles.stepResult}>
+                                                                        <div key={idx} className={STEP_RESULT}>
                                                                             <a href={result.url} target="_blank" rel="noopener noreferrer">
                                                                                 {result.title || result.url}
                                                                             </a>
@@ -242,7 +253,7 @@ export const AgentPlan: React.FC<Props> = ({ queryPlan, onEffortExtracted, onCit
                                                                     // Document result - make it clickable to open citation tab
                                                                     const path = getCitationFilePath(result.sourcepage);
                                                                     return (
-                                                                        <div key={idx} className={styles.stepResult}>
+                                                                        <div key={idx} className={STEP_RESULT}>
                                                                             <a
                                                                                 onClick={e => {
                                                                                     e.preventDefault();
@@ -261,7 +272,7 @@ export const AgentPlan: React.FC<Props> = ({ queryPlan, onEffortExtracted, onCit
                                                             })}
                                                         </div>
                                                     ) : (
-                                                        <div className={styles.noResults}>No results found</div>
+                                                        <div className={NO_RESULTS}>No results found</div>
                                                     ))}
                                             </td>
                                             <td title={step.queryTime ?? undefined}>{step.elapsedMs ?? "—"}</td>

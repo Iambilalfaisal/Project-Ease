@@ -3,7 +3,7 @@ import { Light as SyntaxHighlighter } from "react-syntax-highlighter";
 import json from "react-syntax-highlighter/dist/esm/languages/hljs/json";
 import { a11yLight } from "react-syntax-highlighter/dist/esm/styles/hljs";
 
-import styles from "./AnalysisPanel.module.css";
+import { T_CODE_BLOCK, T_LIST, T_LIST_ITEM, T_PROP, T_PROP_ROW, T_STEP } from "./analysisPanelStyles";
 
 import { Thoughts } from "../../api";
 import { AgentPlan } from "./AgentPlan";
@@ -28,20 +28,20 @@ export const ThoughtProcess = ({ thoughts, onCitationClicked }: Props) => {
     const [effort, setEffort] = React.useState<string | undefined>();
 
     return (
-        <ul className={styles.tList}>
+        <ul className={T_LIST}>
             {thoughts.map((t, ind) => {
                 const hasAgenticPlan = Array.isArray(t.props?.query_plan) && t.props.query_plan.length > 0;
                 return (
-                    <li className={styles.tListItem} key={ind}>
-                        <div className={styles.tStep}>{t.title}</div>
-                        <div style={{ display: "flex", gap: "5px" }} className={styles.tPropRow}>
+                    <li className={T_LIST_ITEM} key={ind}>
+                        <div className={T_STEP}>{t.title}</div>
+                        <div style={{ display: "flex", gap: "5px" }} className={T_PROP_ROW}>
                             {t.props &&
                                 (Object.keys(t.props).filter(k => k !== "token_usage" && k !== "query_plan") || []).map((k: any) => (
-                                    <span className={styles.tProp} key={k}>
+                                    <span className={T_PROP} key={k}>
                                         {k}: {truncateImageUrl(JSON.stringify(t.props?.[k]))}
                                     </span>
                                 ))}
-                            {hasAgenticPlan && effort && <span className={styles.tProp}>effort: {effort}</span>}
+                            {hasAgenticPlan && effort && <span className={T_PROP}>effort: {effort}</span>}
                         </div>
                         {t.props?.token_usage && !hasAgenticPlan && (
                             <TokenUsageGraph tokenUsage={t.props.token_usage} reasoningEffort={t.props.reasoning_effort} />
@@ -55,7 +55,7 @@ export const ThoughtProcess = ({ thoughts, onCitationClicked }: Props) => {
                             />
                         )}
                         {Array.isArray(t.description) || (t.description !== null && typeof t.description === "object") ? (
-                            <SyntaxHighlighter language="json" wrapLines wrapLongLines className={styles.tCodeBlock} style={a11yLight}>
+                            <SyntaxHighlighter language="json" wrapLines wrapLongLines className={T_CODE_BLOCK} style={a11yLight}>
                                 {JSON.stringify(t.description, (key, value) => truncateImageUrl(value), 2)}
                             </SyntaxHighlighter>
                         ) : (

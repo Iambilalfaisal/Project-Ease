@@ -6,7 +6,12 @@
 // invalidating the ["team"] query for any other consumer.
 
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import {
+    MUTED, SETTINGS_CARD_TITLE, PERM_LIST, PERM_ROW, PERM_CHECK, PERM_LABEL, PERM_SUMMARY,
+    BADGE_GREEN, BADGE_GRAY, BADGE_GOLD, SUCCESS_BANNER, ERROR_BANNER, FORM_INPUT,
+    PANEL_CONTENT, LIMIT_BANNER, LIMIT_UPGRADE_BTN, PANEL_TOOLBAR, RESULT_COUNT,
+    ACTION_BTN, ACTION_BTN_DANGER, FORM_GROUP, FORM_LABEL, FORM_SELECT,
+} from "../ownerStyles";
 import { Table, Modal, Button } from "../../../components/ui";
 import type { TeamMember } from "../types";
 import { fmtDate } from "../types";
@@ -100,13 +105,13 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
             title={`Settings — ${member.name}`}
             footer={<Button variant="ghost" onClick={onClose}>Close</Button>}
         >
-                <p className={styles.muted} style={{ fontSize: "0.82rem", marginBottom: "1rem" }}>
+                <p className={MUTED} style={{ fontSize: "0.82rem", marginBottom: "1rem" }}>
                     Manage document access and WhatsApp configuration for this team member.
                 </p>
 
                 {/* Document Category Permissions */}
                 <div style={{ marginBottom: "1.25rem" }}>
-                    <div className={styles.settingsCardTitle} style={{ marginBottom: "0.6rem" }}>
+                    <div className={SETTINGS_CARD_TITLE} style={{ marginBottom: "0.6rem" }}>
                         Document Access
                     </div>
                     {loading ? (
@@ -116,26 +121,26 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
                             No categories yet. Create categories in the Documents tab first.
                         </div>
                     ) : (
-                        <div className={styles.permList}>
+                        <div className={PERM_LIST}>
                             {categories.map(cat => (
-                                <label key={cat.category_id} className={styles.permRow}>
+                                <label key={cat.category_id} className={PERM_ROW}>
                                     <input
                                         type="checkbox"
-                                        className={styles.permCheck}
+                                        className={PERM_CHECK}
                                         checked={grantedIds.has(cat.category_id)}
                                         onChange={() => toggle(cat.category_id)}
                                     />
-                                    <span className={styles.permLabel}>{cat.name}</span>
+                                    <span className={PERM_LABEL}>{cat.name}</span>
                                     {grantedIds.has(cat.category_id)
-                                        ? <span className={styles.badgeGreen} style={{ marginLeft: "auto" }}>Access granted</span>
-                                        : <span className={styles.badgeGray}  style={{ marginLeft: "auto" }}>No access</span>
+                                        ? <span className={BADGE_GREEN} style={{ marginLeft: "auto" }}>Access granted</span>
+                                        : <span className={BADGE_GRAY}  style={{ marginLeft: "auto" }}>No access</span>
                                     }
                                 </label>
                             ))}
                         </div>
                     )}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem" }}>
-                        <span className={styles.permSummary}>{grantedIds.size} of {categories.length} categories accessible</span>
+                        <span className={PERM_SUMMARY}>{grantedIds.size} of {categories.length} categories accessible</span>
                         <Button size="sm" onClick={save} disabled={setPermissionsMutation.isPending || categories.length === 0}>
                             {setPermissionsMutation.isPending ? "Saving…" : saved ? "Saved ✓" : "Save Access"}
                         </Button>
@@ -144,20 +149,20 @@ const PermissionsModal = ({ member, onClose }: { member: TeamMember; onClose: ()
 
                 {/* WhatsApp Number */}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1.1rem" }}>
-                    <div className={styles.settingsCardTitle} style={{ marginBottom: "0.5rem" }}>
+                    <div className={SETTINGS_CARD_TITLE} style={{ marginBottom: "0.5rem" }}>
                         WhatsApp Number
                     </div>
-                    <p className={styles.muted} style={{ fontSize: "0.8rem", marginBottom: "0.75rem" }}>
+                    <p className={MUTED} style={{ fontSize: "0.8rem", marginBottom: "0.75rem" }}>
                         When set, this employee can query their documents directly from WhatsApp. Use E.164 format (e.g. +923001234567).
                     </p>
                     {waMsg && (
-                        <div className={waMsg.ok ? styles.successBanner : styles.errorBanner} style={{ marginBottom: "0.6rem", fontSize: "0.8rem" }}>
+                        <div className={waMsg.ok ? SUCCESS_BANNER : ERROR_BANNER} style={{ marginBottom: "0.6rem", fontSize: "0.8rem" }}>
                             {waMsg.text}
                         </div>
                     )}
                     <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
                         <input
-                            className={styles.formInput}
+                            className={FORM_INPUT}
                             type="tel"
                             placeholder="+923001234567"
                             value={waNumber}
@@ -227,19 +232,19 @@ export const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
     };
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             {/* Seat limit upgrade banner */}
             {(limitReached || atLimit) && (
-                <div className={styles.limitBanner}>
+                <div className={LIMIT_BANNER}>
                     <span>
                         🔒 You've reached your seat limit ({team.length} / {maxUsers} users on your current plan).
                     </span>
-                    <button className={styles.limitUpgradeBtn} onClick={onUpgrade}>Upgrade Plan →</button>
+                    <button className={LIMIT_UPGRADE_BTN} onClick={onUpgrade}>Upgrade Plan →</button>
                 </div>
             )}
 
-            <div className={styles.panelToolbar}>
-                <span className={styles.resultCount}>
+            <div className={PANEL_TOOLBAR}>
+                <span className={RESULT_COUNT}>
                     {team.length} / {maxUsers > 0 ? maxUsers : "∞"} seats used
                 </span>
                 <Button
@@ -266,24 +271,24 @@ export const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
                             return (
                                 <tr key={m.user_id}>
                                     <td><strong>{m.name}</strong></td>
-                                    <td className={styles.muted}>{m.email}</td>
+                                    <td className={MUTED}>{m.email}</td>
                                     <td>
-                                        <span className={m.role === "org_owner" ? styles.badgeGold : styles.badgeGray}>
+                                        <span className={m.role === "org_owner" ? BADGE_GOLD : BADGE_GRAY}>
                                             {ROLE_LABELS[m.role] ?? m.role}
                                         </span>
                                     </td>
-                                    <td className={styles.muted}>{fmtDate(m.joined)}</td>
+                                    <td className={MUTED}>{fmtDate(m.joined)}</td>
                                     <td style={{ display: "flex", gap: "0.5rem" }}>
                                         {m.role !== "org_owner" && (
                                             <>
                                                 <button
-                                                    className={styles.actionBtn}
+                                                    className={ACTION_BTN}
                                                     onClick={() => setPermMember(m)}
                                                 >
                                                     Permissions
                                                 </button>
                                                 <button
-                                                    className={styles.actionBtnDanger}
+                                                    className={ACTION_BTN_DANGER}
                                                     disabled={removing}
                                                     onClick={() => removeMember(m)}
                                                 >
@@ -309,19 +314,19 @@ export const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
                 </>}
             >
                 {inviteError && (
-                    <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {inviteError}</div>
+                    <div className={ERROR_BANNER} style={{ marginBottom: "0.75rem" }}>⚠ {inviteError}</div>
                 )}
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Full Name</label>
-                    <input className={styles.formInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ali Raza" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Full Name</label>
+                    <input className={FORM_INPUT} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ali Raza" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Email Address</label>
-                    <input className={styles.formInput} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="staff@yourfirm.com" type="email" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Email Address</label>
+                    <input className={FORM_INPUT} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="staff@yourfirm.com" type="email" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Role</label>
-                    <select className={styles.formSelect} value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Role</label>
+                    <select className={FORM_SELECT} value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
                         <option value="employee">Employee</option>
                         <option value="org_owner">Firm Owner</option>
                     </select>
@@ -340,16 +345,16 @@ export const TeamPanel = ({ team, setTeam, maxUsers, onUpgrade }: {
                 title="Member Invited ✓"
                 footer={<Button onClick={() => setTempCreds(null)}>Done</Button>}
             >
-                <p className={styles.muted} style={{ marginBottom: "1rem", fontSize: "0.85rem" }}>
+                <p className={MUTED} style={{ marginBottom: "1rem", fontSize: "0.85rem" }}>
                     Share these temporary credentials with the new member. They will be prompted to set a new password on first login.
                 </p>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Email</label>
-                    <input className={styles.formInput} readOnly value={tempCreds?.email ?? ""} />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Email</label>
+                    <input className={FORM_INPUT} readOnly value={tempCreds?.email ?? ""} />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Temporary Password</label>
-                    <input className={styles.formInput} readOnly value={tempCreds?.password ?? ""} />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Temporary Password</label>
+                    <input className={FORM_INPUT} readOnly value={tempCreds?.password ?? ""} />
                 </div>
             </Modal>
         </div>

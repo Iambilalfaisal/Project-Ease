@@ -1,5 +1,5 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import { PANEL_CONTENT, SECTION_TITLE, FORM_SELECT, MUTED } from "../ownerStyles";
 import { Table } from "../../../components/ui";
 import { useOutstandingDuesQuery } from "../../../hooks/useOutstandingDues";
 
@@ -15,16 +15,16 @@ export const OutstandingDuesPanel = () => {
     const bucketColour = (b: string) => b === "Current" ? "#16a34a" : b === "0-30 days" ? "#f59e0b" : b === "31-60 days" ? "#f97316" : b === "60+ days" ? "#dc2626" : "var(--text-2)";
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-                <h2 className={styles.sectionTitle} style={{ margin: 0 }}>💰 Outstanding Dues</h2>
+                <h2 className={SECTION_TITLE} style={{ margin: 0 }}>💰 Outstanding Dues</h2>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                    <select className={styles.formSelect} value={bucket} onChange={e => setBucket(e.target.value)} style={{ width: "auto" }}>
+                    <select className={FORM_SELECT} value={bucket} onChange={e => setBucket(e.target.value)} style={{ width: "auto" }}>
                         {buckets.map(b => <option key={b}>{b}</option>)}
                     </select>
                 </div>
             </div>
-            <p className={styles.muted} style={{ margin: "0.35rem 0 1rem" }}>Aging report of all unpaid invoices across matters. Filter by overdue bucket.</p>
+            <p className={MUTED} style={{ margin: "0.35rem 0 1rem" }}>Aging report of all unpaid invoices across matters. Filter by overdue bucket.</p>
 
             {!loading && (
                 <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", flexWrap: "wrap" }}>

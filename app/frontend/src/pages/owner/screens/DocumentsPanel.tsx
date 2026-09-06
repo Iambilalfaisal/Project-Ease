@@ -1,5 +1,14 @@
 import { useRef, useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import {
+    PANEL_CONTENT, LIMIT_BANNER, LIMIT_UPGRADE_BTN, PANEL_TOOLBAR, RESULT_COUNT, FORM_SELECT,
+    USAGE_METER, USAGE_METER_LABEL, USAGE_WARN, USAGE_MUTED, USAGE_WARN_TEXT, USAGE_BAR, USAGE_BAR_FILL, USAGE_BAR_WARN,
+    DROP_ZONE, DROP_ZONE_ACTIVE, DROP_ICON, DROP_TITLE, DROP_SUB,
+    UPLOAD_QUEUE, QUEUE_HEADER, QUEUE_SUMMARY, QUEUE_DONE, QUEUE_ERR, QUEUE_LIMIT_WARN, QUEUE_LIST,
+    QUEUE_ROW, QUEUE_FILE_NAME, QUEUE_SIZE_WARN, QUEUE_NAME, QUEUE_SIZE, QUEUE_ROW_RIGHT,
+    QUEUE_STATUS_QUEUED, QUEUE_STATUS_UPLOADING, QUEUE_STATUS_DONE, QUEUE_STATUS_ERROR, QUEUE_RETRY, QUEUE_REMOVE,
+    ERROR_BANNER, ERROR_DISMISS, FILE_NAME_CELL, FILE_ICON, MUTED, CAT_CHIP,
+    BADGE_GREEN, BADGE_RED, BADGE_AMBER, ACTION_BTN_DANGER, FORM_GROUP, FORM_LABEL, FORM_INPUT,
+} from "../ownerStyles";
 import { Table, Modal, Button } from "../../../components/ui";
 import type { DocFile, Usage } from "../types";
 import { useCategories, useCreateCategory, useDeleteDocument, useUploadDocument } from "../../../hooks/useDocuments";
@@ -175,22 +184,22 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
         : docs.filter(d => d.category_id === filterCat);
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             {/* Doc limit upgrade banner */}
             {docLimitReached && (
-                <div className={styles.limitBanner}>
+                <div className={LIMIT_BANNER}>
                     <span>
                         🔒 Document limit reached ({usage.total_docs} / {limit} docs on your current plan).
                     </span>
-                    <button className={styles.limitUpgradeBtn} onClick={onUpgrade}>Upgrade Plan →</button>
+                    <button className={LIMIT_UPGRADE_BTN} onClick={onUpgrade}>Upgrade Plan →</button>
                 </div>
             )}
 
             {/* Toolbar */}
-            <div className={styles.panelToolbar}>
-                <span className={styles.resultCount}>{docs.length} document{docs.length !== 1 ? "s" : ""}</span>
+            <div className={PANEL_TOOLBAR}>
+                <span className={RESULT_COUNT}>{docs.length} document{docs.length !== 1 ? "s" : ""}</span>
                 <select
-                    className={styles.formSelect}
+                    className={FORM_SELECT}
                     style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
                     value={filterCat}
                     onChange={e => setFilterCat(e.target.value)}
@@ -216,19 +225,19 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
 
             {/* Usage meter */}
             {limit !== Infinity && (
-                <div className={styles.usageMeter}>
-                    <div className={styles.usageMeterLabel}>
+                <div className={USAGE_METER}>
+                    <div className={USAGE_METER_LABEL}>
                         <span>{usage.total_docs} / {limit} documents used</span>
-                        <span className={usagePct >= 80 ? styles.usageWarn : styles.usageMuted}>{usagePct}%</span>
+                        <span className={usagePct >= 80 ? USAGE_WARN : USAGE_MUTED}>{usagePct}%</span>
                     </div>
-                    <div className={styles.usageBar}>
+                    <div className={USAGE_BAR}>
                         <div
-                            className={`${styles.usageBarFill} ${usagePct >= 80 ? styles.usageBarWarn : ""}`}
+                            className={`${USAGE_BAR_FILL} ${usagePct >= 80 ? USAGE_BAR_WARN : ""}`}
                             style={{ width: `${usagePct}%` }}
                         />
                     </div>
                     {usagePct >= 80 && (
-                        <div className={styles.usageWarnText}>
+                        <div className={USAGE_WARN_TEXT}>
                             ⚠ Approaching your plan limit.{" "}
                             <button
                                 style={{ background: "none", border: "none", color: "var(--gold)", cursor: "pointer", padding: 0, fontSize: "inherit", fontWeight: 600 }}
@@ -241,30 +250,30 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
 
             {/* Drop zone */}
             <div
-                className={`${styles.dropZone} ${dragging ? styles.dropZoneActive : ""}`}
+                className={`${DROP_ZONE} ${dragging ? DROP_ZONE_ACTIVE : ""}`}
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={e => { e.preventDefault(); setDragging(false); addToQueue(Array.from(e.dataTransfer.files)); }}
                 onClick={() => fileRef.current?.click()}
             >
-                <div className={styles.dropIcon}>↑</div>
-                <div className={styles.dropTitle}>Drag & drop files here, or click to browse</div>
-                <div className={styles.dropSub}>PDF · Word · PowerPoint · Excel · Images · TXT &nbsp;·&nbsp; Up to {MAX_FILE_MB} MB per file</div>
+                <div className={DROP_ICON}>↑</div>
+                <div className={DROP_TITLE}>Drag & drop files here, or click to browse</div>
+                <div className={DROP_SUB}>PDF · Word · PowerPoint · Excel · Images · TXT &nbsp;·&nbsp; Up to {MAX_FILE_MB} MB per file</div>
             </div>
 
             {/* Upload Queue */}
             {queue.length > 0 && (
-                <div className={styles.uploadQueue}>
+                <div className={UPLOAD_QUEUE}>
                     {/* Queue header */}
-                    <div className={styles.queueHeader}>
-                        <div className={styles.queueSummary}>
+                    <div className={QUEUE_HEADER}>
+                        <div className={QUEUE_SUMMARY}>
                             <span>{queue.length} file{queue.length !== 1 ? "s" : ""} selected</span>
-                            {doneCount  > 0 && <span className={styles.queueDone}> · {doneCount} done</span>}
-                            {errorCount > 0 && <span className={styles.queueErr}> · {errorCount} failed</span>}
+                            {doneCount  > 0 && <span className={QUEUE_DONE}> · {doneCount} done</span>}
+                            {errorCount > 0 && <span className={QUEUE_ERR}> · {errorCount} failed</span>}
                         </div>
                         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                             <select
-                                className={styles.formSelect}
+                                className={FORM_SELECT}
                                 style={{ width: "auto", fontSize: "0.78rem", padding: "0.3rem 0.6rem" }}
                                 value={queueCatId}
                                 onChange={e => setQueueCatId(e.target.value)}
@@ -292,37 +301,37 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
 
                     {/* Limit warning */}
                     {batchWillExceed && (
-                        <div className={styles.queueLimitWarn}>
+                        <div className={QUEUE_LIMIT_WARN}>
                             ⚠ Only {remainingSlots} slot{remainingSlots !== 1 ? "s" : ""} remaining on your plan.
                             Remove {queuedCount - remainingSlots} file{queuedCount - remainingSlots !== 1 ? "s" : ""} or upgrade your plan.
                         </div>
                     )}
 
                     {/* Per-file rows */}
-                    <div className={styles.queueList}>
+                    <div className={QUEUE_LIST}>
                         {queue.map(item => {
                             const mb   = item.file.size / (1024 * 1024);
                             const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(item.file.size / 1024)} KB`;
                             const oversize = mb > MAX_FILE_MB;
                             return (
-                                <div key={item.id} className={styles.queueRow}>
-                                    <div className={styles.queueFileName}>
-                                        {oversize && <span className={styles.queueSizeWarn} title={`File exceeds ${MAX_FILE_MB} MB`}>⚠</span>}
-                                        <span className={styles.queueName}>{item.file.name}</span>
-                                        <span className={styles.queueSize}>{size}</span>
+                                <div key={item.id} className={QUEUE_ROW}>
+                                    <div className={QUEUE_FILE_NAME}>
+                                        {oversize && <span className={QUEUE_SIZE_WARN} title={`File exceeds ${MAX_FILE_MB} MB`}>⚠</span>}
+                                        <span className={QUEUE_NAME}>{item.file.name}</span>
+                                        <span className={QUEUE_SIZE}>{size}</span>
                                     </div>
-                                    <div className={styles.queueRowRight}>
-                                        {item.status === "queued"    && <span className={styles.queueStatusQueued}>Queued</span>}
-                                        {item.status === "uploading" && <span className={styles.queueStatusUploading}>Uploading…</span>}
-                                        {item.status === "done"      && <span className={styles.queueStatusDone}>✓ Done</span>}
+                                    <div className={QUEUE_ROW_RIGHT}>
+                                        {item.status === "queued"    && <span className={QUEUE_STATUS_QUEUED}>Queued</span>}
+                                        {item.status === "uploading" && <span className={QUEUE_STATUS_UPLOADING}>Uploading…</span>}
+                                        {item.status === "done"      && <span className={QUEUE_STATUS_DONE}>✓ Done</span>}
                                         {item.status === "error"     && (
-                                            <span className={styles.queueStatusError} title={item.error}>✗ Failed</span>
+                                            <span className={QUEUE_STATUS_ERROR} title={item.error}>✗ Failed</span>
                                         )}
                                         {item.status === "error" && !isUploading && (
-                                            <button className={styles.queueRetry} onClick={() => retryFile(item)}>Retry</button>
+                                            <button className={QUEUE_RETRY} onClick={() => retryFile(item)}>Retry</button>
                                         )}
                                         {(item.status === "queued" || item.status === "error") && !isUploading && (
-                                            <button className={styles.queueRemove} onClick={() => removeFromQueue(item.id)}>✕</button>
+                                            <button className={QUEUE_REMOVE} onClick={() => removeFromQueue(item.id)}>✕</button>
                                         )}
                                     </div>
                                 </div>
@@ -334,9 +343,9 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
 
             {/* Error banner */}
             {uploadError && (
-                <div className={styles.errorBanner}>
+                <div className={ERROR_BANNER}>
                     ⚠ {uploadError}
-                    <button className={styles.errorDismiss} onClick={() => setUploadError(null)}>×</button>
+                    <button className={ERROR_DISMISS} onClick={() => setUploadError(null)}>×</button>
                 </div>
             )}
 
@@ -356,30 +365,30 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
                     {visibleDocs.map(doc => (
                         <tr key={doc.doc_id}>
                             <td>
-                                <div className={styles.fileName}>
-                                    <span className={styles.fileIcon}>F</span>
+                                <div className={FILE_NAME_CELL}>
+                                    <span className={FILE_ICON}>F</span>
                                     {doc.name}
                                 </div>
                             </td>
-                            <td className={styles.muted}>
+                            <td className={MUTED}>
                                 {doc.category_name
-                                    ? <span className={styles.catChip}>{doc.category_name}</span>
-                                    : <span className={styles.muted}>—</span>
+                                    ? <span className={CAT_CHIP}>{doc.category_name}</span>
+                                    : <span className={MUTED}>—</span>
                                 }
                             </td>
-                            <td className={styles.muted}>{doc.size}</td>
-                            <td className={styles.muted}>{doc.uploaded}</td>
+                            <td className={MUTED}>{doc.size}</td>
+                            <td className={MUTED}>{doc.uploaded}</td>
                             <td>
                                 {doc.status === "ready"
-                                    ? <span className={styles.badgeGreen}>Ready</span>
+                                    ? <span className={BADGE_GREEN}>Ready</span>
                                     : doc.status === "error"
-                                    ? <span className={styles.badgeRed}>Error</span>
-                                    : <span className={styles.badgeAmber}>Processing…</span>
+                                    ? <span className={BADGE_RED}>Error</span>
+                                    : <span className={BADGE_AMBER}>Processing…</span>
                                 }
                             </td>
                             <td>
                                 <button
-                                    className={styles.actionBtnDanger}
+                                    className={ACTION_BTN_DANGER}
                                     disabled={deleting === doc.doc_id}
                                     onClick={() => setConfirmDelete(doc)}
                                 >
@@ -401,7 +410,7 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
                     <Button variant="danger" onClick={() => confirmDelete && handleDelete(confirmDelete)}>Delete</Button>
                 </>}
             >
-                <p className={styles.muted} style={{ fontSize: "0.85rem" }}>
+                <p className={MUTED} style={{ fontSize: "0.85rem" }}>
                     This will permanently delete <strong style={{ color: "var(--text-1)" }}>{confirmDelete?.name}</strong> from the index and storage. This cannot be undone.
                 </p>
             </Modal>
@@ -416,10 +425,10 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
                     <Button onClick={addCategory}>Create</Button>
                 </>}
             >
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Category Name</label>
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Category Name</label>
                     <input
-                        className={styles.formInput}
+                        className={FORM_INPUT}
                         placeholder="e.g. Contracts, HR, Finance…"
                         value={newCatName}
                         onChange={e => setNewCatName(e.target.value)}
@@ -427,7 +436,7 @@ export const DocumentsPanel = ({ docs, setDocs, usage, plan, onUpgrade }: {
                         autoFocus
                     />
                 </div>
-                {catError && <div className={styles.errorBanner} style={{ marginBottom: "0.75rem" }}>⚠ {catError}</div>}
+                {catError && <div className={ERROR_BANNER} style={{ marginBottom: "0.75rem" }}>⚠ {catError}</div>}
             </Modal>
         </div>
     );

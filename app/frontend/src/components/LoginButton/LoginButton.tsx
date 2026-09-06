@@ -1,8 +1,7 @@
-import { Button } from "@fluentui/react-components";
 import { useMsal } from "@azure/msal-react";
 import { useTranslation } from "react-i18next";
 
-import styles from "./LoginButton.module.css";
+import { Button } from "@/components/ui";
 import { getRedirectUri, loginRequest, appServicesLogout, getActiveOrFirstAccount, getUsername, checkLoggedIn } from "../../authConfig";
 import { useState, useEffect, useContext } from "react";
 import { LoginContext } from "../../loginContext";
@@ -61,8 +60,8 @@ export const LoginButton = () => {
         }
     };
     return (
-        <Button className={styles.loginButton} onClick={loggedIn ? handleLogoutPopup : handleLoginPopup}>
-            {loggedIn ? `${t("logout")}\n${username}` : `${t("login")}`}
+        <Button variant="ghost" size="sm" onClick={loggedIn ? handleLogoutPopup : handleLoginPopup}>
+            {loggedIn ? `${t("logout")} ${username}` : `${t("login")}`}
         </Button>
     );
 };

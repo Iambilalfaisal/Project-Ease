@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import { PANEL_CONTENT, SECTION_TITLE, MUTED, FORM_LABEL, FORM_INPUT, FORM_GROUP, FORM_SELECT } from "../ownerStyles";
 import { Button, Modal, Badge, Table } from "../../../components/ui";
 import type { StaffMember } from "../types";
 import {
@@ -93,16 +93,16 @@ export const StaffPanel = () => {
     salaryList.forEach(p => { salaryMap[p.staff_id] = (salaryMap[p.staff_id] || 0) + p.net_paid_pkr; });
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-                <h2 className={styles.sectionTitle} style={{ margin: 0 }}>👥 Staff & Salary</h2>
+                <h2 className={SECTION_TITLE} style={{ margin: 0 }}>👥 Staff & Salary</h2>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                     {(["staff", "attendance", "salary"] as const).map(t => (
                         <Button key={t} variant={tab === t ? "primary" : "ghost"} style={{ fontSize: "0.8rem", textTransform: "capitalize" }} onClick={() => setTab(t)}>{t === "staff" ? "👤 Staff" : t === "attendance" ? "📋 Attendance" : "💵 Salary"}</Button>
                     ))}
                 </div>
             </div>
-            <p className={styles.muted} style={{ margin: "0.35rem 0 1rem" }}>Manage office staff — advocates, clerks, and support — with daily attendance and monthly salary records.</p>
+            <p className={MUTED} style={{ margin: "0.35rem 0 1rem" }}>Manage office staff — advocates, clerks, and support — with daily attendance and monthly salary records.</p>
 
             {/* ── Staff tab ── */}
             {tab === "staff" && (<>
@@ -146,9 +146,9 @@ export const StaffPanel = () => {
             {/* ── Attendance tab ── */}
             {tab === "attendance" && (<>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                    <label className={styles.formLabel}>Date:</label>
-                    <input type="date" className={styles.formInput} value={attDate} onChange={e => setAttDate(e.target.value)} style={{ width: 160 }} />
-                    {attendanceMutation.isPending && <span className={styles.muted} style={{ fontSize: "0.78rem" }}>Saving…</span>}
+                    <label className={FORM_LABEL}>Date:</label>
+                    <input type="date" className={FORM_INPUT} value={attDate} onChange={e => setAttDate(e.target.value)} style={{ width: 160 }} />
+                    {attendanceMutation.isPending && <span className={MUTED} style={{ fontSize: "0.78rem" }}>Saving…</span>}
                 </div>
                 <Table empty={staffList.length === 0} emptyMessage="No staff found. Add staff members first.">
                     <thead><tr>
@@ -166,17 +166,17 @@ export const StaffPanel = () => {
                                     <td><strong>{s.name}</strong></td>
                                     <td style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>{s.role}</td>
                                     <td>
-                                        <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.82rem" }} value={att.status}
+                                        <select className={FORM_SELECT} style={{ width: "auto", fontSize: "0.82rem" }} value={att.status}
                                             onChange={e => saveAttendance(s.staff_id, e.target.value, att.time_in, att.time_out)}>
                                             {ATT_STATUSES.map(a => <option key={a}>{a}</option>)}
                                         </select>
                                     </td>
                                     <td>
-                                        <input type="time" className={styles.formInput} style={{ width: 110, fontSize: "0.82rem" }} value={att.time_in}
+                                        <input type="time" className={FORM_INPUT} style={{ width: 110, fontSize: "0.82rem" }} value={att.time_in}
                                             onChange={e => saveAttendance(s.staff_id, att.status, e.target.value, att.time_out)} />
                                     </td>
                                     <td>
-                                        <input type="time" className={styles.formInput} style={{ width: 110, fontSize: "0.82rem" }} value={att.time_out}
+                                        <input type="time" className={FORM_INPUT} style={{ width: 110, fontSize: "0.82rem" }} value={att.time_out}
                                             onChange={e => saveAttendance(s.staff_id, att.status, att.time_in, e.target.value)} />
                                     </td>
                                 </tr>
@@ -264,47 +264,47 @@ export const StaffPanel = () => {
                     <Button onClick={saveStaff} disabled={saveStaffMutation.isPending}>{saveStaffMutation.isPending ? "Saving…" : "Save"}</Button>
                 </>}
             >
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Full Name *</label>
-                            <input className={styles.formInput} value={staffForm.name} onChange={e => setStaffForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" />
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Full Name *</label>
+                            <input className={FORM_INPUT} value={staffForm.name} onChange={e => setStaffForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" />
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Role</label>
-                                <select className={styles.formInput} value={staffForm.role} onChange={e => setStaffForm(f => ({ ...f, role: e.target.value }))}>
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Role</label>
+                                <select className={FORM_INPUT} value={staffForm.role} onChange={e => setStaffForm(f => ({ ...f, role: e.target.value }))}>
                                     {STAFF_ROLES.map(r => <option key={r}>{r}</option>)}
                                 </select>
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Status</label>
-                                <select className={styles.formInput} value={staffForm.status} onChange={e => setStaffForm(f => ({ ...f, status: e.target.value }))}>
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Status</label>
+                                <select className={FORM_INPUT} value={staffForm.status} onChange={e => setStaffForm(f => ({ ...f, status: e.target.value }))}>
                                     {["Active","On Leave","Resigned","Terminated"].map(s => <option key={s}>{s}</option>)}
                                 </select>
                             </div>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Monthly Salary (PKR)</label>
-                                <input type="number" min={0} className={styles.formInput} value={staffForm.monthly_salary_pkr} onChange={e => setStaffForm(f => ({ ...f, monthly_salary_pkr: parseFloat(e.target.value) || 0 }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Monthly Salary (PKR)</label>
+                                <input type="number" min={0} className={FORM_INPUT} value={staffForm.monthly_salary_pkr} onChange={e => setStaffForm(f => ({ ...f, monthly_salary_pkr: parseFloat(e.target.value) || 0 }))} />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Join Date</label>
-                                <input type="date" className={styles.formInput} value={staffForm.join_date} onChange={e => setStaffForm(f => ({ ...f, join_date: e.target.value }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Join Date</label>
+                                <input type="date" className={FORM_INPUT} value={staffForm.join_date} onChange={e => setStaffForm(f => ({ ...f, join_date: e.target.value }))} />
                             </div>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>CNIC</label>
-                                <input className={styles.formInput} value={staffForm.cnic} onChange={e => setStaffForm(f => ({ ...f, cnic: e.target.value }))} placeholder="xxxxx-xxxxxxx-x" />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>CNIC</label>
+                                <input className={FORM_INPUT} value={staffForm.cnic} onChange={e => setStaffForm(f => ({ ...f, cnic: e.target.value }))} placeholder="xxxxx-xxxxxxx-x" />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Phone</label>
-                                <input className={styles.formInput} value={staffForm.phone} onChange={e => setStaffForm(f => ({ ...f, phone: e.target.value }))} placeholder="03xx-xxxxxxx" />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Phone</label>
+                                <input className={FORM_INPUT} value={staffForm.phone} onChange={e => setStaffForm(f => ({ ...f, phone: e.target.value }))} placeholder="03xx-xxxxxxx" />
                             </div>
                         </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Notes</label>
-                            <textarea className={styles.formInput} rows={2} value={staffForm.notes} onChange={e => setStaffForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Notes</label>
+                            <textarea className={FORM_INPUT} rows={2} value={staffForm.notes} onChange={e => setStaffForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                         </div>
                         {staffErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{staffErr}</div>}
             </Modal>
@@ -321,43 +321,43 @@ export const StaffPanel = () => {
                 </>}
             >
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Month</label>
-                                <input type="month" className={styles.formInput} value={salaryForm.month} onChange={e => setSalaryForm(f => ({ ...f, month: e.target.value }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Month</label>
+                                <input type="month" className={FORM_INPUT} value={salaryForm.month} onChange={e => setSalaryForm(f => ({ ...f, month: e.target.value }))} />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Gross (PKR)</label>
-                                <input type="number" min={0} className={styles.formInput} value={salaryForm.gross_pkr} onChange={e => setSalaryForm(f => ({ ...f, gross_pkr: parseFloat(e.target.value) || 0 }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Gross (PKR)</label>
+                                <input type="number" min={0} className={FORM_INPUT} value={salaryForm.gross_pkr} onChange={e => setSalaryForm(f => ({ ...f, gross_pkr: parseFloat(e.target.value) || 0 }))} />
                             </div>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Advance Deduction (PKR)</label>
-                                <input type="number" min={0} className={styles.formInput} value={salaryForm.advance_deduction} onChange={e => setSalaryForm(f => ({ ...f, advance_deduction: parseFloat(e.target.value) || 0 }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Advance Deduction (PKR)</label>
+                                <input type="number" min={0} className={FORM_INPUT} value={salaryForm.advance_deduction} onChange={e => setSalaryForm(f => ({ ...f, advance_deduction: parseFloat(e.target.value) || 0 }))} />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Absence Deduction (PKR)</label>
-                                <input type="number" min={0} className={styles.formInput} value={salaryForm.absence_deduction} onChange={e => setSalaryForm(f => ({ ...f, absence_deduction: parseFloat(e.target.value) || 0 }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Absence Deduction (PKR)</label>
+                                <input type="number" min={0} className={FORM_INPUT} value={salaryForm.absence_deduction} onChange={e => setSalaryForm(f => ({ ...f, absence_deduction: parseFloat(e.target.value) || 0 }))} />
                             </div>
                         </div>
                         <div style={{ background: "var(--bg-1)", border: "1px solid var(--gold)", borderRadius: "var(--radius)", padding: "0.5rem 0.75rem", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
                             Net Payable: <strong>PKR {Math.max(0, salaryForm.gross_pkr - salaryForm.advance_deduction - salaryForm.absence_deduction).toLocaleString()}</strong>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Payment Date</label>
-                                <input type="date" className={styles.formInput} value={salaryForm.paid_date} onChange={e => setSalaryForm(f => ({ ...f, paid_date: e.target.value }))} />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Payment Date</label>
+                                <input type="date" className={FORM_INPUT} value={salaryForm.paid_date} onChange={e => setSalaryForm(f => ({ ...f, paid_date: e.target.value }))} />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Payment Mode</label>
-                                <select className={styles.formInput} value={salaryForm.payment_mode} onChange={e => setSalaryForm(f => ({ ...f, payment_mode: e.target.value }))}>
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Payment Mode</label>
+                                <select className={FORM_INPUT} value={salaryForm.payment_mode} onChange={e => setSalaryForm(f => ({ ...f, payment_mode: e.target.value }))}>
                                     {["Cash","Bank Transfer","Cheque","JazzCash","Easypaisa"].map(m => <option key={m}>{m}</option>)}
                                 </select>
                             </div>
                         </div>
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Notes</label>
-                            <textarea className={styles.formInput} rows={2} value={salaryForm.notes} onChange={e => setSalaryForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Notes</label>
+                            <textarea className={FORM_INPUT} rows={2} value={salaryForm.notes} onChange={e => setSalaryForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                         </div>
                         {salaryErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{salaryErr}</div>}
             </Modal>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import { PANEL_CONTENT, FORM_INPUT, MUTED } from "../ownerStyles";
 import { Table, Badge, Button, BadgeTone } from "../../../components/ui";
 import { useVakalatnamaRegister, useUpdateVakalatnamaStatus } from "../../../hooks/useVakalatnama";
 
@@ -29,14 +29,14 @@ export const VakalatnamaPanel = () => {
     register.forEach(e => { if (e.vakalatnama_status in counts) (counts as Record<string, number>)[e.vakalatnama_status]++; });
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem", alignItems: "center" }}>
                 {(["All", "Pending", "Filed", "Rejected"] as const).map(f => (
                     <Button key={f} size="sm" variant={filter === f ? "primary" : "ghost"} onClick={() => setFilter(f)}>
                         {f} ({counts[f]})
                     </Button>
                 ))}
-                <input className={styles.formInput} placeholder="Search matter / client…" value={search}
+                <input className={FORM_INPUT} placeholder="Search matter / client…" value={search}
                     onChange={e => setSearch(e.target.value)} style={{ marginLeft: "auto", width: 220 }} />
             </div>
             <Table
@@ -56,10 +56,10 @@ export const VakalatnamaPanel = () => {
                 <tbody>
                     {visible.map(e => (
                         <tr key={e.matter_id}>
-                            <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{e.matter_no || "—"}</td>
+                            <td className={MUTED} style={{ fontSize: "0.8rem" }}>{e.matter_no || "—"}</td>
                             <td><strong style={{ fontSize: "0.88rem" }}>{e.title}</strong></td>
-                            <td className={styles.muted}>{e.client_name}</td>
-                            <td className={styles.muted} style={{ fontSize: "0.8rem" }}>{e.court_name || "—"}</td>
+                            <td className={MUTED}>{e.client_name}</td>
+                            <td className={MUTED} style={{ fontSize: "0.8rem" }}>{e.court_name || "—"}</td>
                             <td><span style={{ fontSize: "0.78rem" }}>{e.status}</span></td>
                             <td>
                                 <Badge tone={VAKALATNAMA_TONE[e.vakalatnama_status] ?? "gray"}>
@@ -68,7 +68,7 @@ export const VakalatnamaPanel = () => {
                             </td>
                             <td>
                                 <select
-                                    className={styles.formInput}
+                                    className={FORM_INPUT}
                                     style={{ fontSize: "0.78rem", padding: "2px 6px" }}
                                     value={e.vakalatnama_status}
                                     disabled={updateStatusMutation.isPending && updateStatusMutation.variables?.matterId === e.matter_id}

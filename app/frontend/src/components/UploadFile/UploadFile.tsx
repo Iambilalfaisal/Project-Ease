@@ -1,12 +1,12 @@
 import React, { useState, ChangeEvent } from "react";
-import { Button, Popover, PopoverTrigger, PopoverSurface, Label, Text } from "@fluentui/react-components";
 import { Add24Regular, Delete24Regular } from "@fluentui/react-icons";
 import { useMsal } from "@azure/msal-react";
 import { useTranslation } from "react-i18next";
 
+import { Button, Popover } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import { SimpleAPIResponse, uploadFileApi, deleteUploadedFileApi, listUploadedFilesApi } from "../../api";
 import { useLogin, getToken } from "../../authConfig";
-import styles from "./UploadFile.module.css";
 
 interface Props {
     className?: string;
@@ -102,61 +102,63 @@ export const UploadFile: React.FC<Props> = ({ className, disabled }: Props) => {
     };
 
     return (
-        <div className={`${styles.container} ${className ?? ""}`}>
+        <div className={cn("flex items-center gap-1.5", className)}>
             <Popover
                 open={isCalloutVisible}
-                onOpenChange={(_e, data) => {
-                    setIsCalloutVisible(data.open);
-                }}
-                trapFocus
-            >
-                <PopoverTrigger disableButtonEnhancement>
-                    <Button icon={<Add24Regular />} disabled={disabled} onClick={handleButtonClick}>
-                        {t("upload.manageFileUploads")}
+                onOpenChange={setIsCalloutVisible}
+                maxWidth={360}
+                trigger={
+                    <Button variant="ghost" size="sm" disabled={disabled} onClick={handleButtonClick}>
+                        <span className="inline-flex items-center gap-1.5">
+                            <Add24Regular className="h-4 w-4" /> {t("upload.manageFileUploads")}
+                        </span>
                     </Button>
-                </PopoverTrigger>
-                <PopoverSurface role="dialog" className={styles.callout}>
-                    <form encType="multipart/form-data">
-                        <div>
-                            <Label>{t("upload.fileLabel")}</Label>
-                            <input
-                                accept=".txt, .md, .json, .png, .jpg, .jpeg, .bmp, .heic, .tiff, .pdf, .docx, .xlsx, .pptx, .html"
-                                className={styles.chooseFiles}
-                                type="file"
-                                onChange={handleUploadFile}
-                            />
-                        </div>
-                    </form>
+                }
+            >
+                <form encType="multipart/form-data">
+                    <div>
+                        <label className="mb-1 block text-sm text-ink-2">{t("upload.fileLabel")}</label>
+                        <input
+                            accept=".txt, .md, .json, .png, .jpg, .jpeg, .bmp, .heic, .tiff, .pdf, .docx, .xlsx, .pptx, .html"
+                            className="text-sm text-ink-2"
+                            type="file"
+                            onChange={handleUploadFile}
+                        />
+                    </div>
+                </form>
 
-                    {/* Show a loading message while files are being uploaded */}
-                    {isUploading && <Text>{t("upload.uploadingFiles")}</Text>}
-                    {!isUploading && uploadedFileError && <Text>{uploadedFileError}</Text>}
-                    {!isUploading && uploadedFile && <Text>{uploadedFile.message}</Text>}
+                {/* Show a loading message while files are being uploaded */}
+                {isUploading && <p className="text-sm text-ink-2">{t("upload.uploadingFiles")}</p>}
+                {!isUploading && uploadedFileError && <p className="text-sm text-danger">{uploadedFileError}</p>}
+                {!isUploading && uploadedFile && <p className="text-sm text-ink-2">{uploadedFile.message}</p>}
 
-                    {/* Display the list of already uploaded */}
-                    <h3>{t("upload.uploadedFilesLabel")}</h3>
+                {/* Display the list of already uploaded */}
+                <h3 className="mb-2 mt-3 font-serif text-sm font-bold text-ink-1">{t("upload.uploadedFilesLabel")}</h3>
 
-                    {isLoading && <Text>{t("upload.loading")}</Text>}
-                    {!isLoading && uploadedFiles.length === 0 && <Text>{t("upload.noFilesUploaded")}</Text>}
-                    {uploadedFiles.map((filename, index) => {
-                        return (
-                            <div key={index} className={styles.list}>
-                                <div className={styles.item}>{filename}</div>
-                                {/* Button to remove a file from the list */}
-                                <Button
-                                    icon={<Delete24Regular />}
-                                    onClick={() => handleRemoveFile(filename)}
-                                    disabled={deletionStatus[filename] === "pending" || deletionStatus[filename] === "success"}
-                                >
+                {isLoading && <p className="text-sm text-ink-2">{t("upload.loading")}</p>}
+                {!isLoading && uploadedFiles.length === 0 && <p className="text-sm text-ink-2">{t("upload.noFilesUploaded")}</p>}
+                {uploadedFiles.map((filename, index) => {
+                    return (
+                        <div key={index} className="flex items-center justify-between gap-2 py-1">
+                            <div className="max-w-[15.625em] truncate text-sm text-ink-1">{filename}</div>
+                            {/* Button to remove a file from the list */}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveFile(filename)}
+                                disabled={deletionStatus[filename] === "pending" || deletionStatus[filename] === "success"}
+                            >
+                                <span className="inline-flex items-center gap-1.5">
+                                    <Delete24Regular className="h-4 w-4" />
                                     {!deletionStatus[filename] && t("upload.deleteFile")}
                                     {deletionStatus[filename] == "pending" && t("upload.deletingFile")}
                                     {deletionStatus[filename] == "error" && t("upload.errorDeleting")}
                                     {deletionStatus[filename] == "success" && t("upload.fileDeleted")}
-                                </Button>
-                            </div>
-                        );
-                    })}
-                </PopoverSurface>
+                                </span>
+                            </Button>
+                        </div>
+                    );
+                })}
             </Popover>
         </div>
     );

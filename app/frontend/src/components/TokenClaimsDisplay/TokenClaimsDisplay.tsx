@@ -1,17 +1,7 @@
-import { Label } from "@fluentui/react-components";
 import { useMsal } from "@azure/msal-react";
-import {
-    DataGridBody,
-    DataGridRow,
-    DataGrid,
-    DataGridHeader,
-    DataGridHeaderCell,
-    DataGridCell,
-    createTableColumn,
-    TableColumnDefinition
-} from "@fluentui/react-table";
 import { getTokenClaims } from "../../authConfig";
 import { useState, useEffect } from "react";
+import { Table } from "@/components/ui";
 
 type Claim = {
     name: string;
@@ -52,46 +42,27 @@ export const TokenClaimsDisplay = () => {
             return { name: key, value: ToString((o ?? {})[originalKey]) };
         });
     };
-    const items: Claim[] = createClaims(claims);
-
-    const columns: TableColumnDefinition<Claim>[] = [
-        createTableColumn<Claim>({
-            columnId: "name",
-            compare: (a: Claim, b: Claim) => {
-                return a.name.localeCompare(b.name);
-            },
-            renderHeaderCell: () => {
-                return "Name";
-            },
-            renderCell: item => {
-                return item.name;
-            }
-        }),
-        createTableColumn<Claim>({
-            columnId: "value",
-            compare: (a: Claim, b: Claim) => {
-                return a.value.localeCompare(b.value);
-            },
-            renderHeaderCell: () => {
-                return "Value";
-            },
-            renderCell: item => {
-                return item.value;
-            }
-        })
-    ];
+    const items: Claim[] = createClaims(claims).sort((a, b) => a.name.localeCompare(b.name));
 
     return (
-        <div style={{ marginTop: "20px" }}>
-            <Label>ID Token Claims</Label>
-            <DataGrid items={items} columns={columns} sortable getRowId={(item: Claim) => item.name}>
-                <DataGridHeader>
-                    <DataGridRow>{({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}</DataGridRow>
-                </DataGridHeader>
-                <DataGridBody<Claim>>
-                    {({ item, rowId }) => <DataGridRow<Claim> key={rowId}>{({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}</DataGridRow>}
-                </DataGridBody>
-            </DataGrid>
+        <div className="mt-5">
+            <div className="mb-2 text-sm font-weight-semibold text-ink-2">ID Token Claims</div>
+            <Table empty={items.length === 0} dense>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {items.map(item => (
+                        <tr key={item.name}>
+                            <td>{item.name}</td>
+                            <td>{item.value}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
         </div>
     );
 };

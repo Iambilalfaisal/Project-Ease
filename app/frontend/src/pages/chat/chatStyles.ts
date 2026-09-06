@@ -1,0 +1,14 @@
+export const CONTAINER = "mt-4 flex flex-1 flex-col bg-bg-0 md:mt-5";
+export const CHAT_ROOT = "flex flex-1";
+export const CHAT_CONTAINER = "flex w-full flex-1 flex-col items-center";
+export const CHAT_EMPTY_STATE = "flex max-h-[64rem] flex-1 flex-col items-center justify-start pt-16 md:pt-15";
+export const CHAT_EMPTY_STATE_TITLE = "mb-2 mt-0 text-[2rem] font-semibold text-ink-1 md:text-[2.75rem]";
+export const CHAT_EMPTY_STATE_SUBTITLE = "mb-6 font-normal text-ink-2";
+export const CHAT_MESSAGE_STREAM = "flex w-full max-h-[64rem] flex-1 flex-col overflow-y-auto px-8";
+export const CHAT_MESSAGE_GPT = "mb-5 flex max-w-full lg:min-w-[31.25rem] lg:max-w-[80%]";
+export const CHAT_MESSAGE_GPT_MIN_WIDTH = "mb-5 max-w-[31.25rem]";
+export const CHAT_INPUT = "sticky bottom-0 w-full max-w-[64.25rem] flex-none bg-bg-0 p-4 md:px-6 md:pb-6 md:pt-3";
+export const CHAT_ANALYSIS_PANEL = "flex-1 overflow-y-auto max-h-[85vh] mx-5";
+export const COMMANDS_SPLIT_CONTAINER = "flex justify-between";
+export const COMMANDS_CONTAINER = "flex items-end gap-1 px-4 lg:px-0";
+export const COMMAND_BUTTON = "mb-5";

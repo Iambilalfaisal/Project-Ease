@@ -1,7 +1,11 @@
 // Fees & invoicing, time tracking, expenses, court fees, associate fees, and
 // cheque tracking tabs for a matter's detail view.
 import { useEffect, useState } from "react";
-import styles from "../../OwnerPortal.module.css";
+import {
+    MUTED, BADGE_GREEN, BADGE_GRAY, BADGE_BLUE, ACTION_BTN, ACTION_BTN_DANGER,
+    FORM_GROUP, FORM_LABEL, FORM_INPUT, FORM_SELECT,
+    TIMER_WIDGET, TIMER_DISPLAY, TIMER_CONTROLS, BTN_GOLD, TIME_SUMMARY_ROW,
+} from "../../ownerStyles";
 import { Button, Modal, Table } from "../../../../components/ui";
 import type { Matter, Fee, TimeEntry, MatterExpense, CourtFeePayment, AssociateFee, MatterCheque } from "../../types";
 import {
@@ -105,22 +109,22 @@ export function MatterFeesTab({ matter }: { matter: Matter }) {
                 <tbody>
                     {fees.map(fee => (
                         <tr key={fee.fee_id} style={{ opacity: fee.is_paid ? 0.6 : 1 }}>
-                            <td>{fee.description}{fee.notes && <span className={styles.muted}> · {fee.notes}</span>}</td>
-                            <td className={styles.muted}>{fee.fee_type}</td>
-                            <td className={styles.muted}>{fee.fee_date}</td>
+                            <td>{fee.description}{fee.notes && <span className={MUTED}> · {fee.notes}</span>}</td>
+                            <td className={MUTED}>{fee.fee_type}</td>
+                            <td className={MUTED}>{fee.fee_date}</td>
                             <td style={{ textAlign: "right", fontWeight: 600 }}>{fee.amount.toLocaleString("en-PK")}</td>
                             <td>
                                 <button
-                                    className={fee.is_paid ? styles.badgeGreen : styles.badgeGray}
+                                    className={fee.is_paid ? BADGE_GREEN : BADGE_GRAY}
                                     style={{ border: "none", cursor: "pointer", fontSize: "0.72rem" }}
                                     onClick={() => toggleFeePaid(fee)}>
                                     {fee.is_paid ? "Paid" : "Unpaid"}
                                 </button>
                             </td>
-                            <td className={styles.muted}>{fee.invoice_id ? <span className={styles.badgeBlue} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
+                            <td className={MUTED}>{fee.invoice_id ? <span className={BADGE_BLUE} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
                             <td style={{ display: "flex", gap: "0.35rem" }}>
-                                <button className={styles.actionBtn} onClick={() => openFeeModal(fee)}>Edit</button>
-                                <button className={styles.actionBtnDanger} onClick={() => removeFee(fee)}>Delete</button>
+                                <button className={ACTION_BTN} onClick={() => openFeeModal(fee)}>Edit</button>
+                                <button className={ACTION_BTN_DANGER} onClick={() => removeFee(fee)}>Delete</button>
                             </td>
                         </tr>
                     ))}
@@ -143,29 +147,29 @@ export function MatterFeesTab({ matter }: { matter: Matter }) {
                     <Button variant="ghost" onClick={() => setShowFeeModal(false)} disabled={feeSaving}>Cancel</Button>
                     <Button onClick={saveFee} disabled={feeSaving}>{feeSaving ? "Saving…" : editFee ? "Save Changes" : "Add Fee"}</Button>
                 </>}>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Description *</label>
-                    <input className={styles.formInput} value={feeForm.description} onChange={e => setFeeForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Court appearance — Session 1" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Description *</label>
+                    <input className={FORM_INPUT} value={feeForm.description} onChange={e => setFeeForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Court appearance — Session 1" />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Type</label>
-                        <select className={styles.formSelect} value={feeForm.fee_type} onChange={e => setFeeForm(f => ({ ...f, fee_type: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Type</label>
+                        <select className={FORM_SELECT} value={feeForm.fee_type} onChange={e => setFeeForm(f => ({ ...f, fee_type: e.target.value }))}>
                             {FEE_TYPES.map(t => <option key={t}>{t}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Amount (PKR) *</label>
-                        <input type="number" min="0" className={styles.formInput} value={feeForm.amount} onChange={e => setFeeForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 25000" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Amount (PKR) *</label>
+                        <input type="number" min="0" className={FORM_INPUT} value={feeForm.amount} onChange={e => setFeeForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 25000" />
                     </div>
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Date *</label>
-                    <input type="date" className={styles.formInput} value={feeForm.fee_date} onChange={e => setFeeForm(f => ({ ...f, fee_date: e.target.value }))} />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Date *</label>
+                    <input type="date" className={FORM_INPUT} value={feeForm.fee_date} onChange={e => setFeeForm(f => ({ ...f, fee_date: e.target.value }))} />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Notes</label>
-                    <input className={styles.formInput} value={feeForm.notes} onChange={e => setFeeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Notes</label>
+                    <input className={FORM_INPUT} value={feeForm.notes} onChange={e => setFeeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
                 </div>
                 {feeErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{feeErr}</div>}
             </Modal>
@@ -287,13 +291,13 @@ export function MatterTimeTab({ matter }: { matter: Matter }) {
 
     return (
         <>
-            <div className={styles.timerWidget}>
-                <div className={styles.timerDisplay}>{fmtElapsed(timerElapsed)}</div>
-                <div className={styles.timerControls}>
+            <div className={TIMER_WIDGET}>
+                <div className={TIMER_DISPLAY}>{fmtElapsed(timerElapsed)}</div>
+                <div className={TIMER_CONTROLS}>
                     {!timerRunning ? (
                         <Button size="sm" onClick={startTimer}>▶ Start Timer</Button>
                     ) : (
-                        <button className={styles.btnGold} style={{ fontSize: "0.82rem" }} onClick={stopTimer}>⏹ Stop &amp; Log</button>
+                        <button className={BTN_GOLD} style={{ fontSize: "0.82rem" }} onClick={stopTimer}>⏹ Stop &amp; Log</button>
                     )}
                     {timerElapsed > 0 && !timerRunning && (
                         <Button variant="ghost" size="sm" onClick={resetTimer}>Reset</Button>
@@ -302,7 +306,7 @@ export function MatterTimeTab({ matter }: { matter: Matter }) {
                 </div>
             </div>
 
-            <div className={styles.timeSummaryRow}>
+            <div className={TIME_SUMMARY_ROW}>
                 <span>Total: <strong>{fmtDuration(totalMins)}</strong></span>
                 <span>Unbilled billable: <strong style={{ color: "var(--gold)" }}>{fmtDuration(billMins)}</strong></span>
                 <span>Value: <strong>{totalValue.toLocaleString("en-PK")} PKR</strong></span>
@@ -339,16 +343,16 @@ export function MatterTimeTab({ matter }: { matter: Matter }) {
                                             }} />
                                     )}
                                 </td>
-                                <td className={styles.muted}>{e.entry_date}</td>
-                                <td>{e.description || <span className={styles.muted}>—</span>}</td>
+                                <td className={MUTED}>{e.entry_date}</td>
+                                <td>{e.description || <span className={MUTED}>—</span>}</td>
                                 <td><strong>{fmtDuration(e.duration_minutes)}</strong></td>
-                                <td className={styles.muted}>{e.hourly_rate > 0 ? e.hourly_rate.toLocaleString("en-PK") : "—"}</td>
+                                <td className={MUTED}>{e.hourly_rate > 0 ? e.hourly_rate.toLocaleString("en-PK") : "—"}</td>
                                 <td>{val > 0 ? val.toLocaleString("en-PK") : "—"}</td>
-                                <td>{e.billable === 1 ? <span className={styles.badgeGreen} style={{ fontSize: "0.68rem" }}>Yes</span> : <span className={styles.badgeGray} style={{ fontSize: "0.68rem" }}>No</span>}</td>
-                                <td>{e.fee_id ? <span className={styles.badgeBlue} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
+                                <td>{e.billable === 1 ? <span className={BADGE_GREEN} style={{ fontSize: "0.68rem" }}>Yes</span> : <span className={BADGE_GRAY} style={{ fontSize: "0.68rem" }}>No</span>}</td>
+                                <td>{e.fee_id ? <span className={BADGE_BLUE} style={{ fontSize: "0.68rem" }}>Billed</span> : "—"}</td>
                                 <td style={{ display: "flex", gap: "0.35rem" }}>
-                                    <button className={styles.actionBtn} onClick={() => openTimeModal(e)} disabled={!!e.fee_id}>Edit</button>
-                                    <button className={styles.actionBtnDanger} onClick={() => removeTimeEntry(e)} disabled={!!e.fee_id}>Delete</button>
+                                    <button className={ACTION_BTN} onClick={() => openTimeModal(e)} disabled={!!e.fee_id}>Edit</button>
+                                    <button className={ACTION_BTN_DANGER} onClick={() => removeTimeEntry(e)} disabled={!!e.fee_id}>Delete</button>
                                 </td>
                             </tr>
                         );
@@ -364,9 +368,9 @@ export function MatterTimeTab({ matter }: { matter: Matter }) {
                 <p style={{ fontSize: "0.85rem", color: "var(--text-2)", marginBottom: "1rem" }}>
                     This will create a single fee entry from {selectedEntries.size} selected time entries and mark them as billed.
                 </p>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Fee Description</label>
-                    <input className={styles.formInput} value={billDesc}
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Fee Description</label>
+                    <input className={FORM_INPUT} value={billDesc}
                         onChange={e => setBillDesc(e.target.value)}
                         placeholder="e.g. Legal services — July 2025" />
                 </div>
@@ -378,38 +382,38 @@ export function MatterTimeTab({ matter }: { matter: Matter }) {
                     <Button variant="ghost" onClick={() => setShowTimeModal(false)} disabled={timeSaving}>Cancel</Button>
                     <Button onClick={saveTimeEntry} disabled={timeSaving}>{timeSaving ? "Saving…" : editTimeEntry ? "Save Changes" : "Log Time"}</Button>
                 </>}>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Description</label>
-                    <input className={styles.formInput} value={timeForm.description}
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Description</label>
+                    <input className={FORM_INPUT} value={timeForm.description}
                         onChange={e => setTimeForm(f => ({ ...f, description: e.target.value }))}
                         placeholder="e.g. Court appearance, research, drafting" autoFocus />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Hours</label>
-                        <input type="number" min="0" className={styles.formInput} value={timeForm.hours}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Hours</label>
+                        <input type="number" min="0" className={FORM_INPUT} value={timeForm.hours}
                             onChange={e => setTimeForm(f => ({ ...f, hours: e.target.value }))} placeholder="0" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Minutes</label>
-                        <input type="number" min="0" max="59" className={styles.formInput} value={timeForm.minutes}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Minutes</label>
+                        <input type="number" min="0" max="59" className={FORM_INPUT} value={timeForm.minutes}
                             onChange={e => setTimeForm(f => ({ ...f, minutes: e.target.value }))} placeholder="30" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Date</label>
-                        <input type="date" className={styles.formInput} value={timeForm.entry_date}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Date</label>
+                        <input type="date" className={FORM_INPUT} value={timeForm.entry_date}
                             onChange={e => setTimeForm(f => ({ ...f, entry_date: e.target.value }))} />
                     </div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Hourly Rate (PKR)</label>
-                        <input type="number" min="0" className={styles.formInput} value={timeForm.hourly_rate}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Hourly Rate (PKR)</label>
+                        <input type="number" min="0" className={FORM_INPUT} value={timeForm.hourly_rate}
                             onChange={e => setTimeForm(f => ({ ...f, hourly_rate: e.target.value }))} placeholder="e.g. 5000" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Billable?</label>
-                        <select className={styles.formSelect} value={timeForm.billable ? "yes" : "no"}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Billable?</label>
+                        <select className={FORM_SELECT} value={timeForm.billable ? "yes" : "no"}
                             onChange={e => setTimeForm(f => ({ ...f, billable: e.target.value === "yes" }))}>
                             <option value="yes">Yes</option>
                             <option value="no">No</option>
@@ -471,7 +475,7 @@ export function MatterExpensesTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>
                     {matterExpenses.length} expense{matterExpenses.length !== 1 ? "s" : ""} · Total: PKR {matterExpenses.reduce((s, e) => s + e.amount_pkr, 0).toLocaleString()}
                     {matterExpenses.some(e => e.billable) && (
                         <> · Billable: PKR {matterExpenses.filter(e => e.billable).reduce((s, e) => s + e.amount_pkr, 0).toLocaleString()}</>
@@ -520,33 +524,33 @@ export function MatterExpensesTab({ matter }: { matter: Matter }) {
                     <Button variant="ghost" onClick={() => setShowExpenseModal(false)}>Cancel</Button>
                     <Button onClick={saveExpense} disabled={createExpense.isPending || updateExpense.isPending}>{(createExpense.isPending || updateExpense.isPending) ? "Saving…" : "Save"}</Button>
                 </>}>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Description *</label>
-                    <input className={styles.formInput} value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. High Court filing fee" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Description *</label>
+                    <input className={FORM_INPUT} value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. High Court filing fee" />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Amount (PKR) *</label>
-                        <input type="number" min="0" className={styles.formInput} value={expenseForm.amount_pkr} onChange={e => setExpenseForm(f => ({ ...f, amount_pkr: e.target.value }))} placeholder="0" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Amount (PKR) *</label>
+                        <input type="number" min="0" className={FORM_INPUT} value={expenseForm.amount_pkr} onChange={e => setExpenseForm(f => ({ ...f, amount_pkr: e.target.value }))} placeholder="0" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Date *</label>
-                        <input type="date" className={styles.formInput} value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Date *</label>
+                        <input type="date" className={FORM_INPUT} value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} />
                     </div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Category</label>
-                        <select className={styles.formInput} value={expenseForm.category} onChange={e => setExpenseForm(f => ({ ...f, category: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Category</label>
+                        <select className={FORM_INPUT} value={expenseForm.category} onChange={e => setExpenseForm(f => ({ ...f, category: e.target.value }))}>
                             {EXPENSE_CATEGORIES_UI.map(c => <option key={c}>{c}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Receipt Ref</label>
-                        <input className={styles.formInput} value={expenseForm.receipt_ref} onChange={e => setExpenseForm(f => ({ ...f, receipt_ref: e.target.value }))} placeholder="Optional" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Receipt Ref</label>
+                        <input className={FORM_INPUT} value={expenseForm.receipt_ref} onChange={e => setExpenseForm(f => ({ ...f, receipt_ref: e.target.value }))} placeholder="Optional" />
                     </div>
                 </div>
-                <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <div className={FORM_GROUP} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <input type="checkbox" id="exp-billable" checked={expenseForm.billable} onChange={e => setExpenseForm(f => ({ ...f, billable: e.target.checked }))} />
                     <label htmlFor="exp-billable" style={{ fontSize: "0.85rem" }}>Billable to client</label>
                 </div>
@@ -601,7 +605,7 @@ export function MatterCourtFeesTab({ matter }: { matter: Matter }) {
         <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                 <div>
-                    <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                    <span className={MUTED} style={{ fontSize: "0.82rem" }}>
                         Total paid: <strong>PKR {courtFeeList.reduce((s, r) => s + r.actual_paid, 0).toLocaleString()}</strong>
                         {" · "}Calculated: <strong>PKR {courtFeeList.reduce((s, r) => s + r.calculated_fee, 0).toLocaleString()}</strong>
                     </span>
@@ -641,14 +645,14 @@ export function MatterCourtFeesTab({ matter }: { matter: Matter }) {
                     <Button onClick={saveCF} disabled={createCourtFee.isPending || updateCourtFee.isPending}>{(createCourtFee.isPending || updateCourtFee.isPending) ? "Saving…" : "Save"}</Button>
                 </>}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Claim Amount (PKR)</label>
-                        <input type="number" className={styles.formInput} min={0} value={cfForm.claim_amount_pkr}
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Claim Amount (PKR)</label>
+                        <input type="number" className={FORM_INPUT} min={0} value={cfForm.claim_amount_pkr}
                             onChange={e => { const v = parseFloat(e.target.value) || 0; setCfForm(f => ({ ...f, claim_amount_pkr: v })); previewCourtFee(v, cfForm.fee_type); }} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Fee Type</label>
-                        <select className={styles.formInput} value={cfForm.fee_type} onChange={e => { setCfForm(f => ({ ...f, fee_type: e.target.value })); previewCourtFee(cfForm.claim_amount_pkr, e.target.value); }}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Fee Type</label>
+                        <select className={FORM_INPUT} value={cfForm.fee_type} onChange={e => { setCfForm(f => ({ ...f, fee_type: e.target.value })); previewCourtFee(cfForm.claim_amount_pkr, e.target.value); }}>
                             {COURT_FEE_TYPES_UI.map(t => <option key={t}>{t}</option>)}
                         </select>
                     </div>
@@ -659,32 +663,32 @@ export function MatterCourtFeesTab({ matter }: { matter: Matter }) {
                     </div>
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Calculated Fee (PKR)</label>
-                        <input type="number" className={styles.formInput} min={0} value={cfForm.calculated_fee} onChange={e => setCfForm(f => ({ ...f, calculated_fee: parseFloat(e.target.value) || 0 }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Calculated Fee (PKR)</label>
+                        <input type="number" className={FORM_INPUT} min={0} value={cfForm.calculated_fee} onChange={e => setCfForm(f => ({ ...f, calculated_fee: parseFloat(e.target.value) || 0 }))} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Actual Paid (PKR)</label>
-                        <input type="number" className={styles.formInput} min={0} value={cfForm.actual_paid} onChange={e => setCfForm(f => ({ ...f, actual_paid: parseFloat(e.target.value) || 0 }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Actual Paid (PKR)</label>
+                        <input type="number" className={FORM_INPUT} min={0} value={cfForm.actual_paid} onChange={e => setCfForm(f => ({ ...f, actual_paid: parseFloat(e.target.value) || 0 }))} />
                     </div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Payment Date</label>
-                        <input type="date" className={styles.formInput} value={cfForm.payment_date} onChange={e => setCfForm(f => ({ ...f, payment_date: e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Payment Date</label>
+                        <input type="date" className={FORM_INPUT} value={cfForm.payment_date} onChange={e => setCfForm(f => ({ ...f, payment_date: e.target.value }))} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Challan No.</label>
-                        <input className={styles.formInput} value={cfForm.challan_no} onChange={e => setCfForm(f => ({ ...f, challan_no: e.target.value }))} placeholder="Treasury challan number" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Challan No.</label>
+                        <input className={FORM_INPUT} value={cfForm.challan_no} onChange={e => setCfForm(f => ({ ...f, challan_no: e.target.value }))} placeholder="Treasury challan number" />
                     </div>
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Court</label>
-                    <input className={styles.formInput} value={cfForm.court} onChange={e => setCfForm(f => ({ ...f, court: e.target.value }))} placeholder="Optional" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Court</label>
+                    <input className={FORM_INPUT} value={cfForm.court} onChange={e => setCfForm(f => ({ ...f, court: e.target.value }))} placeholder="Optional" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Notes</label>
-                    <textarea className={styles.formInput} rows={2} value={cfForm.notes} onChange={e => setCfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Notes</label>
+                    <textarea className={FORM_INPUT} rows={2} value={cfForm.notes} onChange={e => setCfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                 </div>
                 {cfErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{cfErr}</div>}
             </Modal>
@@ -730,7 +734,7 @@ export function MatterAssocFeesTab({ matter }: { matter: Matter }) {
         <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                 <div>
-                    <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Associate / Wakeel appearance fees for this matter</span>
+                    <span className={MUTED} style={{ fontSize: "0.82rem" }}>Associate / Wakeel appearance fees for this matter</span>
                     {assocFeeList.length > 0 && (
                         <span style={{ marginLeft: "0.75rem", fontSize: "0.82rem" }}>
                             Total: <strong>PKR {assocFeeList.reduce((s, r) => s + r.amount_pkr, 0).toLocaleString()}</strong>
@@ -750,7 +754,7 @@ export function MatterAssocFeesTab({ matter }: { matter: Matter }) {
                     {assocFeeList.map(r => (
                         <tr key={r.assoc_fee_id} style={{ background: r.paid ? "transparent" : "rgba(220,38,38,0.04)" }}>
                             <td><strong>{r.advocate_name}</strong></td>
-                            <td className={styles.muted}>{r.bar_no || "—"}</td>
+                            <td className={MUTED}>{r.bar_no || "—"}</td>
                             <td>{r.appearance_date || "—"}</td>
                             <td>PKR {r.amount_pkr.toLocaleString()}</td>
                             <td>
@@ -758,7 +762,7 @@ export function MatterAssocFeesTab({ matter }: { matter: Matter }) {
                                     {r.paid ? "Paid" : "Unpaid"}
                                 </span>
                             </td>
-                            <td className={styles.muted}>{r.payment_date || "—"}</td>
+                            <td className={MUTED}>{r.payment_date || "—"}</td>
                             <td style={{ display: "flex", gap: "0.25rem" }}>
                                 <Button variant="ghost" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => openAFModal(r)}>Edit</Button>
                                 <Button variant="danger" size="sm" style={{ fontSize: "0.75rem", padding: "2px 8px" }} onClick={() => removeAF(r.assoc_fee_id)}>Del</Button>
@@ -774,37 +778,37 @@ export function MatterAssocFeesTab({ matter }: { matter: Matter }) {
                     <Button variant="ghost" onClick={() => setShowAFModal(false)}>Cancel</Button>
                     <Button onClick={saveAF} disabled={createAF.isPending || updateAF.isPending}>{(createAF.isPending || updateAF.isPending) ? "Saving…" : "Save"}</Button>
                 </>}>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Advocate Name *</label>
-                    <input className={styles.formInput} value={afForm.advocate_name} onChange={e => setAfForm(f => ({ ...f, advocate_name: e.target.value }))} placeholder="Full name" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Advocate Name *</label>
+                    <input className={FORM_INPUT} value={afForm.advocate_name} onChange={e => setAfForm(f => ({ ...f, advocate_name: e.target.value }))} placeholder="Full name" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Bar Registration No.</label>
-                    <input className={styles.formInput} value={afForm.bar_no} onChange={e => setAfForm(f => ({ ...f, bar_no: e.target.value }))} placeholder="Optional" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Bar Registration No.</label>
+                    <input className={FORM_INPUT} value={afForm.bar_no} onChange={e => setAfForm(f => ({ ...f, bar_no: e.target.value }))} placeholder="Optional" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Appearance Date</label>
-                    <input type="date" className={styles.formInput} value={afForm.appearance_date} onChange={e => setAfForm(f => ({ ...f, appearance_date: e.target.value }))} />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Appearance Date</label>
+                    <input type="date" className={FORM_INPUT} value={afForm.appearance_date} onChange={e => setAfForm(f => ({ ...f, appearance_date: e.target.value }))} />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Amount (PKR) *</label>
-                    <input type="number" className={styles.formInput} min={0} value={afForm.amount_pkr} onChange={e => setAfForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} placeholder="0" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Amount (PKR) *</label>
+                    <input type="number" className={FORM_INPUT} min={0} value={afForm.amount_pkr} onChange={e => setAfForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} placeholder="0" />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel} style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL} style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
                         <input type="checkbox" checked={!!afForm.paid} onChange={e => setAfForm(f => ({ ...f, paid: e.target.checked ? 1 : 0 }))} />
                         Mark as Paid
                     </label>
                 </div>
                 {afForm.paid ? (
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Payment Date</label>
-                        <input type="date" className={styles.formInput} value={afForm.payment_date} onChange={e => setAfForm(f => ({ ...f, payment_date: e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Payment Date</label>
+                        <input type="date" className={FORM_INPUT} value={afForm.payment_date} onChange={e => setAfForm(f => ({ ...f, payment_date: e.target.value }))} />
                     </div>
                 ) : null}
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Notes</label>
-                    <textarea className={styles.formInput} rows={2} value={afForm.notes} onChange={e => setAfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Notes</label>
+                    <textarea className={FORM_INPUT} rows={2} value={afForm.notes} onChange={e => setAfForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                 </div>
                 {afErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{afErr}</div>}
             </Modal>
@@ -850,7 +854,7 @@ export function MatterChequesTab({ matter }: { matter: Matter }) {
         <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.75rem 0" }}>
                 <div>
-                    <span className={styles.muted} style={{ fontSize: "0.82rem" }}>Post-dated & undated cheques held or presented for this matter</span>
+                    <span className={MUTED} style={{ fontSize: "0.82rem" }}>Post-dated & undated cheques held or presented for this matter</span>
                     {chequeList.length > 0 && (
                         <span style={{ marginLeft: "0.75rem", fontSize: "0.82rem" }}>
                             Total: <strong>PKR {chequeList.reduce((s, c) => s + c.amount_pkr, 0).toLocaleString()}</strong>
@@ -870,9 +874,9 @@ export function MatterChequesTab({ matter }: { matter: Matter }) {
                         return (
                             <tr key={c.cheque_id}>
                                 <td><strong>{c.cheque_no}</strong></td>
-                                <td className={styles.muted}>{c.bank_name || "—"}{c.account_title ? ` / ${c.account_title}` : ""}</td>
+                                <td className={MUTED}>{c.bank_name || "—"}{c.account_title ? ` / ${c.account_title}` : ""}</td>
                                 <td>PKR {c.amount_pkr.toLocaleString()}</td>
-                                <td className={styles.muted}>{c.cheque_date || "Undated"}</td>
+                                <td className={MUTED}>{c.cheque_date || "Undated"}</td>
                                 <td><span style={{ fontSize: "0.78rem" }}>{c.cheque_type}</span></td>
                                 <td><span style={{ fontWeight: 600, fontSize: "0.8rem", color: statusColor }}>{c.status}</span></td>
                                 <td style={{ display: "flex", gap: "0.25rem" }}>
@@ -892,45 +896,45 @@ export function MatterChequesTab({ matter }: { matter: Matter }) {
                     <Button onClick={saveCHQ} disabled={createCheque.isPending || updateCheque.isPending}>{(createCheque.isPending || updateCheque.isPending) ? "Saving…" : "Save"}</Button>
                 </>}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Cheque No. *</label>
-                        <input className={styles.formInput} value={chqForm.cheque_no} onChange={e => setChqForm(f => ({ ...f, cheque_no: e.target.value }))} placeholder="e.g. 000123" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Cheque No. *</label>
+                        <input className={FORM_INPUT} value={chqForm.cheque_no} onChange={e => setChqForm(f => ({ ...f, cheque_no: e.target.value }))} placeholder="e.g. 000123" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Amount (PKR)</label>
-                        <input type="number" className={styles.formInput} min={0} value={chqForm.amount_pkr} onChange={e => setChqForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Amount (PKR)</label>
+                        <input type="number" className={FORM_INPUT} min={0} value={chqForm.amount_pkr} onChange={e => setChqForm(f => ({ ...f, amount_pkr: parseFloat(e.target.value) || 0 }))} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Bank Name</label>
-                        <input className={styles.formInput} value={chqForm.bank_name} onChange={e => setChqForm(f => ({ ...f, bank_name: e.target.value }))} placeholder="e.g. HBL" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Bank Name</label>
+                        <input className={FORM_INPUT} value={chqForm.bank_name} onChange={e => setChqForm(f => ({ ...f, bank_name: e.target.value }))} placeholder="e.g. HBL" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Account Title</label>
-                        <input className={styles.formInput} value={chqForm.account_title} onChange={e => setChqForm(f => ({ ...f, account_title: e.target.value }))} placeholder="Optional" />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Account Title</label>
+                        <input className={FORM_INPUT} value={chqForm.account_title} onChange={e => setChqForm(f => ({ ...f, account_title: e.target.value }))} placeholder="Optional" />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Cheque Date</label>
-                        <input type="date" className={styles.formInput} value={chqForm.cheque_date} onChange={e => setChqForm(f => ({ ...f, cheque_date: e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Cheque Date</label>
+                        <input type="date" className={FORM_INPUT} value={chqForm.cheque_date} onChange={e => setChqForm(f => ({ ...f, cheque_date: e.target.value }))} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Type</label>
-                        <select className={styles.formInput} value={chqForm.cheque_type} onChange={e => setChqForm(f => ({ ...f, cheque_type: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Type</label>
+                        <select className={FORM_INPUT} value={chqForm.cheque_type} onChange={e => setChqForm(f => ({ ...f, cheque_type: e.target.value }))}>
                             {["Post-Dated", "Undated", "Bearer", "Crossed"].map(t => <option key={t}>{t}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Status</label>
-                        <select className={styles.formInput} value={chqForm.status} onChange={e => setChqForm(f => ({ ...f, status: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Status</label>
+                        <select className={FORM_INPUT} value={chqForm.status} onChange={e => setChqForm(f => ({ ...f, status: e.target.value }))}>
                             {["Held", "Presented", "Cleared", "Bounced", "Returned", "Cancelled"].map(s => <option key={s}>{s}</option>)}
                         </select>
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Received Date</label>
-                        <input type="date" className={styles.formInput} value={chqForm.received_date} onChange={e => setChqForm(f => ({ ...f, received_date: e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Received Date</label>
+                        <input type="date" className={FORM_INPUT} value={chqForm.received_date} onChange={e => setChqForm(f => ({ ...f, received_date: e.target.value }))} />
                     </div>
-                    <div className={styles.formGroup} style={{ gridColumn: "1 / -1" }}>
-                        <label className={styles.formLabel}>Notes</label>
-                        <textarea className={styles.formInput} rows={2} value={chqForm.notes} onChange={e => setChqForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
+                    <div className={FORM_GROUP} style={{ gridColumn: "1 / -1" }}>
+                        <label className={FORM_LABEL}>Notes</label>
+                        <textarea className={FORM_INPUT} rows={2} value={chqForm.notes} onChange={e => setChqForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional…" />
                     </div>
                 </div>
                 {chqErr && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{chqErr}</div>}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import { PANEL_CONTENT, MUTED, FORM_GROUP, FORM_LABEL, FORM_INPUT } from "../ownerStyles";
 import { Button, Modal, EmptyState } from "../../../components/ui";
 import {
     useOpposingCounsel, useJudgeNotes, useJudgeStats,
@@ -12,11 +12,11 @@ import type { Counsel, Judge } from "../../../services/intelligence";
 const JudgeStats = ({ judgeId }: { judgeId: string }) => {
     const { data: stats } = useJudgeStats(judgeId);
 
-    if (!stats) return <div className={styles.muted} style={{ fontSize: "0.78rem" }}>Loading track record…</div>;
+    if (!stats) return <div className={MUTED} style={{ fontSize: "0.78rem" }}>Loading track record…</div>;
 
     if (stats.hearings_count === 0 && stats.bail_bonds_count === 0) {
         return (
-            <div className={styles.muted} style={{ fontSize: "0.78rem", fontStyle: "italic" }}>
+            <div className={MUTED} style={{ fontSize: "0.78rem", fontStyle: "italic" }}>
                 No hearing history logged with this judge yet — this builds up automatically as you record hearing outcomes.
             </div>
         );
@@ -92,7 +92,7 @@ export const IntelligencePanel = () => {
     };
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", alignItems: "center" }}>
                 <Button size="sm" variant={tab === "counsel" ? "primary" : "ghost"} onClick={() => setTab("counsel")}>
                     ⚖ Opposing Counsel ({counselList.length})
@@ -105,7 +105,7 @@ export const IntelligencePanel = () => {
                 </Button>
             </div>
             {loading ? (
-                <div className={styles.muted} style={{ textAlign: "center", padding: "2rem" }}>Loading…</div>
+                <div className={MUTED} style={{ textAlign: "center", padding: "2rem" }}>Loading…</div>
             ) : tab === "counsel" ? (
                 counselList.length === 0 ? (
                     <EmptyState message="No opposing counsel records yet. Build your private intelligence file on lawyers you frequently face — their tactics, preferred courts, and contact info." />
@@ -116,8 +116,8 @@ export const IntelligencePanel = () => {
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                     <div>
                                         <strong>{c.name}</strong>
-                                        {c.bar_no && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>Bar: {c.bar_no}</span>}
-                                        {c.firm_name && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>{c.firm_name}</span>}
+                                        {c.bar_no && <span className={MUTED} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>Bar: {c.bar_no}</span>}
+                                        {c.firm_name && <span className={MUTED} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>{c.firm_name}</span>}
                                     </div>
                                     <div style={{ display: "flex", gap: "0.4rem" }}>
                                         <Button variant="ghost" size="sm" onClick={() => setExpanded(expanded === c.counsel_id ? null : c.counsel_id)}>
@@ -128,7 +128,7 @@ export const IntelligencePanel = () => {
                                     </div>
                                 </div>
                                 {(c.phone || c.email || c.court_preference) && (
-                                    <div className={styles.muted} style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>
+                                    <div className={MUTED} style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>
                                         {c.phone && `📞 ${c.phone}`}{c.phone && c.email && " · "}{c.email && `✉ ${c.email}`}
                                         {c.court_preference && ` · Prefers: ${c.court_preference}`}
                                     </div>
@@ -137,7 +137,7 @@ export const IntelligencePanel = () => {
                                     <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px dashed var(--border)" }}>
                                         {c.known_tactics && <div style={{ fontSize: "0.82rem", marginBottom: "0.25rem" }}><strong>Known Tactics:</strong> {c.known_tactics}</div>}
                                         {c.private_notes && <div style={{ fontSize: "0.82rem", color: "var(--text-2)", fontStyle: "italic" }}>{c.private_notes}</div>}
-                                        {!c.known_tactics && !c.private_notes && <div className={styles.muted} style={{ fontSize: "0.8rem" }}>No detailed notes yet.</div>}
+                                        {!c.known_tactics && !c.private_notes && <div className={MUTED} style={{ fontSize: "0.8rem" }}>No detailed notes yet.</div>}
                                     </div>
                                 )}
                             </div>
@@ -154,8 +154,8 @@ export const IntelligencePanel = () => {
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                     <div>
                                         <strong>{j.name}</strong>
-                                        {j.designation && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>{j.designation}</span>}
-                                        {j.court_name && <span className={styles.muted} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>@ {j.court_name}</span>}
+                                        {j.designation && <span className={MUTED} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>{j.designation}</span>}
+                                        {j.court_name && <span className={MUTED} style={{ marginLeft: "0.5rem", fontSize: "0.78rem" }}>@ {j.court_name}</span>}
                                     </div>
                                     <div style={{ display: "flex", gap: "0.4rem" }}>
                                         <Button variant="ghost" size="sm" onClick={() => setExpanded(expanded === j.judge_id ? null : j.judge_id)}>
@@ -169,7 +169,7 @@ export const IntelligencePanel = () => {
                                     <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px dashed var(--border)" }}>
                                         {j.known_for && <div style={{ fontSize: "0.82rem", marginBottom: "0.25rem" }}><strong>Known For:</strong> {j.known_for}</div>}
                                         {j.private_notes && <div style={{ fontSize: "0.82rem", color: "var(--text-2)", fontStyle: "italic" }}>{j.private_notes}</div>}
-                                        {!j.known_for && !j.private_notes && <div className={styles.muted} style={{ fontSize: "0.8rem" }}>No detailed notes yet.</div>}
+                                        {!j.known_for && !j.private_notes && <div className={MUTED} style={{ fontSize: "0.8rem" }}>No detailed notes yet.</div>}
                                         <JudgeStats judgeId={j.judge_id} />
                                     </div>
                                 )}
@@ -188,56 +188,56 @@ export const IntelligencePanel = () => {
                     <Button onClick={save} loading={saving}>Save</Button>
                 </>}
             >
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Full Name *</label>
-                            <input className={styles.formInput} value={form.name || ""} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Ch. Hamid Iqbal" />
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Full Name *</label>
+                            <input className={FORM_INPUT} value={form.name || ""} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Ch. Hamid Iqbal" />
                         </div>
                         {tab === "counsel" ? (<>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Bar Registration No.</label>
-                                    <input className={styles.formInput} value={form.bar_no || ""} onChange={e => setForm(f => ({ ...f, bar_no: e.target.value }))} />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Bar Registration No.</label>
+                                    <input className={FORM_INPUT} value={form.bar_no || ""} onChange={e => setForm(f => ({ ...f, bar_no: e.target.value }))} />
                                 </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Firm Name</label>
-                                    <input className={styles.formInput} value={form.firm_name || ""} onChange={e => setForm(f => ({ ...f, firm_name: e.target.value }))} />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Firm Name</label>
+                                    <input className={FORM_INPUT} value={form.firm_name || ""} onChange={e => setForm(f => ({ ...f, firm_name: e.target.value }))} />
                                 </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Phone</label>
-                                    <input className={styles.formInput} value={form.phone || ""} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Phone</label>
+                                    <input className={FORM_INPUT} value={form.phone || ""} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
                                 </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Email</label>
-                                    <input className={styles.formInput} value={form.email || ""} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Email</label>
+                                    <input className={FORM_INPUT} value={form.email || ""} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
                                 </div>
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Preferred Court</label>
-                                <input className={styles.formInput} value={form.court_preference || ""} onChange={e => setForm(f => ({ ...f, court_preference: e.target.value }))} placeholder="e.g. LHC Banking Court" />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Preferred Court</label>
+                                <input className={FORM_INPUT} value={form.court_preference || ""} onChange={e => setForm(f => ({ ...f, court_preference: e.target.value }))} placeholder="e.g. LHC Banking Court" />
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Known Tactics / Style</label>
-                                <textarea className={styles.formInput} rows={2} value={form.known_tactics || ""} onChange={e => setForm(f => ({ ...f, known_tactics: e.target.value }))} placeholder="e.g. Often requests adjournments, strong on procedure…" />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Known Tactics / Style</label>
+                                <textarea className={FORM_INPUT} rows={2} value={form.known_tactics || ""} onChange={e => setForm(f => ({ ...f, known_tactics: e.target.value }))} placeholder="e.g. Often requests adjournments, strong on procedure…" />
                             </div>
                         </>) : (<>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Court</label>
-                                    <input className={styles.formInput} value={form.court_name || ""} onChange={e => setForm(f => ({ ...f, court_name: e.target.value }))} placeholder="e.g. LHC Civil" />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Court</label>
+                                    <input className={FORM_INPUT} value={form.court_name || ""} onChange={e => setForm(f => ({ ...f, court_name: e.target.value }))} placeholder="e.g. LHC Civil" />
                                 </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Designation</label>
-                                    <input className={styles.formInput} value={form.designation || ""} onChange={e => setForm(f => ({ ...f, designation: e.target.value }))} placeholder="e.g. Senior Civil Judge" />
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Designation</label>
+                                    <input className={FORM_INPUT} value={form.designation || ""} onChange={e => setForm(f => ({ ...f, designation: e.target.value }))} placeholder="e.g. Senior Civil Judge" />
                                 </div>
                             </div>
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Known For</label>
-                                <textarea className={styles.formInput} rows={2} value={form.known_for || ""} onChange={e => setForm(f => ({ ...f, known_for: e.target.value }))} placeholder="e.g. Strict on time limits, favours written submissions…" />
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Known For</label>
+                                <textarea className={FORM_INPUT} rows={2} value={form.known_for || ""} onChange={e => setForm(f => ({ ...f, known_for: e.target.value }))} placeholder="e.g. Strict on time limits, favours written submissions…" />
                             </div>
                         </>)}
-                        <div className={styles.formGroup}>
-                            <label className={styles.formLabel}>Private Notes (not shared with client)</label>
-                            <textarea className={styles.formInput} rows={3} value={form.private_notes || ""} onChange={e => setForm(f => ({ ...f, private_notes: e.target.value }))} placeholder="Confidential observations…" />
+                        <div className={FORM_GROUP}>
+                            <label className={FORM_LABEL}>Private Notes (not shared with client)</label>
+                            <textarea className={FORM_INPUT} rows={3} value={form.private_notes || ""} onChange={e => setForm(f => ({ ...f, private_notes: e.target.value }))} placeholder="Confidential observations…" />
                         </div>
                         {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>

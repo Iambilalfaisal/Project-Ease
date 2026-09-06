@@ -2,7 +2,11 @@
 // deadlines, correspondence log, outcome & disposal, court transfers, and
 // the conflict-of-interest re-check for a single matter.
 import { useState } from "react";
-import styles from "../../OwnerPortal.module.css";
+import {
+    SETTINGS_CARD, FORM_SELECT, FORM_INPUT, EMPTY_HINT, ORDER_CARD, ORDER_CARD_BODY,
+    ORDER_CARD_HEADER, ORDER_DATE, BADGE_GRAY, ACTION_BTN_DANGER, ORDER_BRIEF, MUTED,
+    ORDER_ACTIONS, ACTION_BTN, FORM_GROUP, FORM_LABEL, BADGE_AMBER, BADGE_GREEN, LIM_ALERT_ITEM_CRITICAL,
+} from "../../ownerStyles";
 import { Badge, Button, Modal } from "../../../../components/ui";
 import type { Matter, MatterDeadline, MatterCorrespondence, CourtTransfer, DocRequest } from "../../types";
 import {
@@ -34,26 +38,26 @@ export function MatterNotesTab({ matter }: { matter: Matter }) {
 
     return (
         <>
-            <div className={styles.settingsCard} style={{ marginBottom: "1rem" }}>
+            <div className={SETTINGS_CARD} style={{ marginBottom: "1rem" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 140px auto", gap: "0.5rem", alignItems: "start" }}>
-                    <select className={styles.formSelect} value={form.note_type} onChange={e => setForm(f => ({ ...f, note_type: e.target.value }))}>{NOTE_TYPES_UI.map(t => <option key={t}>{t}</option>)}</select>
-                    <input className={styles.formInput} placeholder="Note text…" value={form.note_text} onChange={e => setForm(f => ({ ...f, note_text: e.target.value }))} />
-                    <input type="date" className={styles.formInput} value={form.note_date} onChange={e => setForm(f => ({ ...f, note_date: e.target.value }))} />
+                    <select className={FORM_SELECT} value={form.note_type} onChange={e => setForm(f => ({ ...f, note_type: e.target.value }))}>{NOTE_TYPES_UI.map(t => <option key={t}>{t}</option>)}</select>
+                    <input className={FORM_INPUT} placeholder="Note text…" value={form.note_text} onChange={e => setForm(f => ({ ...f, note_text: e.target.value }))} />
+                    <input type="date" className={FORM_INPUT} value={form.note_date} onChange={e => setForm(f => ({ ...f, note_date: e.target.value }))} />
                     <Button size="sm" onClick={add} disabled={createNote.isPending}>{createNote.isPending ? "…" : "+ Add"}</Button>
                 </div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.82rem", marginTop: "0.4rem" }}>{err}</div>}
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : notes.length === 0 ? (
-                <div className={styles.emptyHint}>No notes yet.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : notes.length === 0 ? (
+                <div className={EMPTY_HINT}>No notes yet.</div>
             ) : notes.map(n => (
-                <div key={n.note_id} className={styles.orderCard} style={{ marginBottom: "0.5rem" }}>
-                    <div className={styles.orderCardBody}>
-                        <div className={styles.orderCardHeader}>
-                            <div><span className={styles.orderDate}>{n.note_date}</span> <span className={styles.badgeGray}>{n.note_type}</span></div>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm("Delete this note?") && deleteNote.mutate(n.note_id)}>Delete</button>
+                <div key={n.note_id} className={ORDER_CARD} style={{ marginBottom: "0.5rem" }}>
+                    <div className={ORDER_CARD_BODY}>
+                        <div className={ORDER_CARD_HEADER}>
+                            <div><span className={ORDER_DATE}>{n.note_date}</span> <span className={BADGE_GRAY}>{n.note_type}</span></div>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm("Delete this note?") && deleteNote.mutate(n.note_id)}>Delete</button>
                         </div>
-                        <div className={styles.orderBrief}>{n.note_text}</div>
-                        {n.author_name && <div className={styles.muted} style={{ fontSize: "0.75rem" }}>— {n.author_name}</div>}
+                        <div className={ORDER_BRIEF}>{n.note_text}</div>
+                        {n.author_name && <div className={MUTED} style={{ fontSize: "0.75rem" }}>— {n.author_name}</div>}
                     </div>
                 </div>
             ))}
@@ -96,34 +100,34 @@ export function MatterDocRequestsTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{requests.length} request{requests.length !== 1 ? "s" : ""}</span>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>{requests.length} request{requests.length !== 1 ? "s" : ""}</span>
                 <Button size="sm" onClick={() => openModal()}>+ Request Document</Button>
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : requests.length === 0 ? (
-                <div className={styles.emptyHint}>No document requests yet.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : requests.length === 0 ? (
+                <div className={EMPTY_HINT}>No document requests yet.</div>
             ) : requests.map(r => (
-                <div key={r.request_id} className={styles.settingsCard} style={{ marginBottom: "0.75rem" }}>
+                <div key={r.request_id} className={SETTINGS_CARD} style={{ marginBottom: "0.75rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <div><strong>{r.doc_name}</strong> <Badge tone={r.status === "Received" ? "green" : r.status === "Overdue" ? "red" : r.status === "Waived" ? "gray" : "amber"}>{r.status}</Badge></div>
-                        <div className={styles.orderActions}>
-                            <button className={styles.actionBtn} onClick={() => openModal(r)}>Edit</button>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm(`Delete request for "${r.doc_name}"?`) && deleteReq.mutate(r.request_id)}>Delete</button>
+                        <div className={ORDER_ACTIONS}>
+                            <button className={ACTION_BTN} onClick={() => openModal(r)}>Edit</button>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm(`Delete request for "${r.doc_name}"?`) && deleteReq.mutate(r.request_id)}>Delete</button>
                         </div>
                     </div>
-                    <div className={styles.muted} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>Requested {r.requested_date}{r.due_date && ` · Due ${r.due_date}`}</div>
+                    <div className={MUTED} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>Requested {r.requested_date}{r.due_date && ` · Due ${r.due_date}`}</div>
                 </div>
             ))}
 
             <Modal open={showModal} onClose={() => setShowModal(false)} maxWidth={480} title={editing ? "Edit Request" : "Request Document"}
                 footer={<><Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button></>}>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Document Name *</label><input className={styles.formInput} value={form.doc_name} onChange={e => setForm(f => ({ ...f, doc_name: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Document Name *</label><input className={FORM_INPUT} value={form.doc_name} onChange={e => setForm(f => ({ ...f, doc_name: e.target.value }))} /></div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Requested Date</label><input type="date" className={styles.formInput} value={form.requested_date} onChange={e => setForm(f => ({ ...f, requested_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Due Date</label><input type="date" className={styles.formInput} value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Status</label><select className={styles.formSelect} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>{DOC_REQUEST_STATUSES_UI.map(s => <option key={s}>{s}</option>)}</select></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Received Date</label><input type="date" className={styles.formInput} value={form.received_date} onChange={e => setForm(f => ({ ...f, received_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Requested Date</label><input type="date" className={FORM_INPUT} value={form.requested_date} onChange={e => setForm(f => ({ ...f, requested_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Due Date</label><input type="date" className={FORM_INPUT} value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Status</label><select className={FORM_SELECT} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>{DOC_REQUEST_STATUSES_UI.map(s => <option key={s}>{s}</option>)}</select></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Received Date</label><input type="date" className={FORM_INPUT} value={form.received_date} onChange={e => setForm(f => ({ ...f, received_date: e.target.value }))} /></div>
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>
         </>
@@ -166,36 +170,36 @@ export function MatterDeadlinesTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{deadlines.length} internal deadline{deadlines.length !== 1 ? "s" : ""}</span>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>{deadlines.length} internal deadline{deadlines.length !== 1 ? "s" : ""}</span>
                 <Button size="sm" onClick={() => openModal()}>+ Add Deadline</Button>
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : deadlines.length === 0 ? (
-                <div className={styles.emptyHint}>No internal deadlines set.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : deadlines.length === 0 ? (
+                <div className={EMPTY_HINT}>No internal deadlines set.</div>
             ) : deadlines.map(d => (
-                <div key={d.deadline_id} className={styles.settingsCard} style={{ marginBottom: "0.75rem", opacity: d.completed ? 0.6 : 1 }}>
+                <div key={d.deadline_id} className={SETTINGS_CARD} style={{ marginBottom: "0.75rem", opacity: d.completed ? 0.6 : 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                             <input type="checkbox" checked={!!d.completed} onChange={() => toggleDone(d)} />
                             <strong style={{ textDecoration: d.completed ? "line-through" : "none" }}>{d.title}</strong>
                             <Badge tone={d.priority === "High" ? "red" : d.priority === "Medium" ? "amber" : "gray"}>{d.priority}</Badge>
                         </div>
-                        <div className={styles.orderActions}>
-                            <button className={styles.actionBtn} onClick={() => openModal(d)}>Edit</button>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm(`Delete "${d.title}"?`) && deleteDeadline.mutate(d.deadline_id)}>Delete</button>
+                        <div className={ORDER_ACTIONS}>
+                            <button className={ACTION_BTN} onClick={() => openModal(d)}>Edit</button>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm(`Delete "${d.title}"?`) && deleteDeadline.mutate(d.deadline_id)}>Delete</button>
                         </div>
                     </div>
-                    <div className={styles.muted} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>Due {d.due_date}</div>
+                    <div className={MUTED} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>Due {d.due_date}</div>
                 </div>
             ))}
 
             <Modal open={showModal} onClose={() => setShowModal(false)} maxWidth={480} title={editing ? "Edit Deadline" : "Add Deadline"}
                 footer={<><Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button></>}>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Title *</label><input className={styles.formInput} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Title *</label><input className={FORM_INPUT} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Due Date</label><input type="date" className={styles.formInput} value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Priority</label><select className={styles.formSelect} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}>{DEADLINE_PRIORITIES_UI.map(p => <option key={p}>{p}</option>)}</select></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Due Date</label><input type="date" className={FORM_INPUT} value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Priority</label><select className={FORM_SELECT} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}>{DEADLINE_PRIORITIES_UI.map(p => <option key={p}>{p}</option>)}</select></div>
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>
         </>
@@ -237,35 +241,35 @@ export function MatterCorrespondenceTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{corr.length} entr{corr.length !== 1 ? "ies" : "y"}</span>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>{corr.length} entr{corr.length !== 1 ? "ies" : "y"}</span>
                 <Button size="sm" onClick={() => openModal()}>+ Log Correspondence</Button>
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : corr.length === 0 ? (
-                <div className={styles.emptyHint}>No correspondence logged yet.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : corr.length === 0 ? (
+                <div className={EMPTY_HINT}>No correspondence logged yet.</div>
             ) : corr.map(c => (
-                <div key={c.corr_id} className={styles.settingsCard} style={{ marginBottom: "0.75rem" }}>
+                <div key={c.corr_id} className={SETTINGS_CARD} style={{ marginBottom: "0.75rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <div><strong>{c.subject}</strong> <span className={styles.badgeGray}>{c.direction}</span> <span className={styles.muted}>· {c.corr_type} · {c.corr_date}</span></div>
-                        <div className={styles.orderActions}>
-                            <button className={styles.actionBtn} onClick={() => openModal(c)}>Edit</button>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm(`Delete "${c.subject}"?`) && deleteCorr.mutate(c.corr_id)}>Delete</button>
+                        <div><strong>{c.subject}</strong> <span className={BADGE_GRAY}>{c.direction}</span> <span className={MUTED}>· {c.corr_type} · {c.corr_date}</span></div>
+                        <div className={ORDER_ACTIONS}>
+                            <button className={ACTION_BTN} onClick={() => openModal(c)}>Edit</button>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm(`Delete "${c.subject}"?`) && deleteCorr.mutate(c.corr_id)}>Delete</button>
                         </div>
                     </div>
-                    {c.party && <div className={styles.muted} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>{c.direction === "Sent" ? "To" : "From"}: {c.party}</div>}
+                    {c.party && <div className={MUTED} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>{c.direction === "Sent" ? "To" : "From"}: {c.party}</div>}
                 </div>
             ))}
 
             <Modal open={showModal} onClose={() => setShowModal(false)} maxWidth={480} title={editing ? "Edit Entry" : "Log Correspondence"}
                 footer={<><Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button></>}>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Subject *</label><input className={styles.formInput} value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Subject *</label><input className={FORM_INPUT} value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} /></div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Date</label><input type="date" className={styles.formInput} value={form.corr_date} onChange={e => setForm(f => ({ ...f, corr_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Direction</label><select className={styles.formSelect} value={form.direction} onChange={e => setForm(f => ({ ...f, direction: e.target.value }))}>{CORR_DIRECTIONS_UI.map(d => <option key={d}>{d}</option>)}</select></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Type</label><select className={styles.formSelect} value={form.corr_type} onChange={e => setForm(f => ({ ...f, corr_type: e.target.value }))}>{CORR_TYPES_UI.map(t => <option key={t}>{t}</option>)}</select></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Party</label><input className={styles.formInput} value={form.party} onChange={e => setForm(f => ({ ...f, party: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Reference No.</label><input className={styles.formInput} value={form.reference_no} onChange={e => setForm(f => ({ ...f, reference_no: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Date</label><input type="date" className={FORM_INPUT} value={form.corr_date} onChange={e => setForm(f => ({ ...f, corr_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Direction</label><select className={FORM_SELECT} value={form.direction} onChange={e => setForm(f => ({ ...f, direction: e.target.value }))}>{CORR_DIRECTIONS_UI.map(d => <option key={d}>{d}</option>)}</select></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Type</label><select className={FORM_SELECT} value={form.corr_type} onChange={e => setForm(f => ({ ...f, corr_type: e.target.value }))}>{CORR_TYPES_UI.map(t => <option key={t}>{t}</option>)}</select></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Party</label><input className={FORM_INPUT} value={form.party} onChange={e => setForm(f => ({ ...f, party: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Reference No.</label><input className={FORM_INPUT} value={form.reference_no} onChange={e => setForm(f => ({ ...f, reference_no: e.target.value }))} /></div>
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>
         </>
@@ -294,25 +298,25 @@ export function MatterOutcomeTab({ matter }: { matter: Matter }) {
         saveOutcome.mutate(body, { onSuccess: () => setEditing(false), onError: (e: Error) => setErr(e.message || "Save failed.") });
     };
 
-    if (isLoading) return <div className={styles.emptyHint}>Loading…</div>;
+    if (isLoading) return <div className={EMPTY_HINT}>Loading…</div>;
 
     if (!editing) {
         return (
-            <div className={styles.settingsCard}>
+            <div className={SETTINGS_CARD}>
                 {outcome ? (
                     <>
                         <div style={{ display: "flex", justifyContent: "space-between" }}>
-                            <div><Badge tone="blue">{outcome.outcome_type}</Badge> <span className={styles.muted}>{outcome.disposal_date}</span></div>
+                            <div><Badge tone="blue">{outcome.outcome_type}</Badge> <span className={MUTED}>{outcome.disposal_date}</span></div>
                             <Button variant="ghost" size="sm" onClick={startEdit}>Edit</Button>
                         </div>
-                        {outcome.court && <div className={styles.muted} style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>{outcome.court}{outcome.judge && ` · ${outcome.judge}`}</div>}
+                        {outcome.court && <div className={MUTED} style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>{outcome.court}{outcome.judge && ` · ${outcome.judge}`}</div>}
                         {outcome.decree_amount_pkr != null && <div style={{ marginTop: "0.3rem" }}>Decree amount: PKR {outcome.decree_amount_pkr.toLocaleString("en-PK")}</div>}
-                        {!!outcome.appeal_filed && <div className={styles.badgeAmber} style={{ marginTop: "0.3rem", display: "inline-block" }}>Appeal filed{outcome.appeal_deadline && ` — deadline ${outcome.appeal_deadline}`}</div>}
+                        {!!outcome.appeal_filed && <div className={BADGE_AMBER} style={{ marginTop: "0.3rem", display: "inline-block" }}>Appeal filed{outcome.appeal_deadline && ` — deadline ${outcome.appeal_deadline}`}</div>}
                         {outcome.notes && <div style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>{outcome.notes}</div>}
                     </>
                 ) : (
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span className={styles.emptyHint} style={{ margin: 0 }}>No outcome recorded — this matter is still pending disposal.</span>
+                        <span className={EMPTY_HINT} style={{ margin: 0 }}>No outcome recorded — this matter is still pending disposal.</span>
                         <Button size="sm" onClick={startEdit}>Record Outcome</Button>
                     </div>
                 )}
@@ -321,20 +325,20 @@ export function MatterOutcomeTab({ matter }: { matter: Matter }) {
     }
 
     return (
-        <div className={styles.settingsCard}>
+        <div className={SETTINGS_CARD}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Outcome Type</label><select className={styles.formSelect} value={form.outcome_type} onChange={e => setForm(f => ({ ...f, outcome_type: e.target.value }))}>{OUTCOME_TYPES_UI.map(t => <option key={t}>{t}</option>)}</select></div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Disposal Date</label><input type="date" className={styles.formInput} value={form.disposal_date} onChange={e => setForm(f => ({ ...f, disposal_date: e.target.value }))} /></div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Court</label><input className={styles.formInput} value={form.court} onChange={e => setForm(f => ({ ...f, court: e.target.value }))} /></div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Judge</label><input className={styles.formInput} value={form.judge} onChange={e => setForm(f => ({ ...f, judge: e.target.value }))} /></div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Decree Amount (PKR)</label><input type="number" className={styles.formInput} value={form.decree_amount_pkr} onChange={e => setForm(f => ({ ...f, decree_amount_pkr: e.target.value }))} /></div>
-                <div className={styles.formGroup} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Outcome Type</label><select className={FORM_SELECT} value={form.outcome_type} onChange={e => setForm(f => ({ ...f, outcome_type: e.target.value }))}>{OUTCOME_TYPES_UI.map(t => <option key={t}>{t}</option>)}</select></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Disposal Date</label><input type="date" className={FORM_INPUT} value={form.disposal_date} onChange={e => setForm(f => ({ ...f, disposal_date: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Court</label><input className={FORM_INPUT} value={form.court} onChange={e => setForm(f => ({ ...f, court: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Judge</label><input className={FORM_INPUT} value={form.judge} onChange={e => setForm(f => ({ ...f, judge: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Decree Amount (PKR)</label><input type="number" className={FORM_INPUT} value={form.decree_amount_pkr} onChange={e => setForm(f => ({ ...f, decree_amount_pkr: e.target.value }))} /></div>
+                <div className={FORM_GROUP} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <input type="checkbox" id="appealFiled" checked={form.appeal_filed} onChange={e => setForm(f => ({ ...f, appeal_filed: e.target.checked }))} />
                     <label htmlFor="appealFiled">Appeal filed</label>
-                    {form.appeal_filed && <input type="date" className={styles.formInput} style={{ width: "auto" }} value={form.appeal_deadline} onChange={e => setForm(f => ({ ...f, appeal_deadline: e.target.value }))} />}
+                    {form.appeal_filed && <input type="date" className={FORM_INPUT} style={{ width: "auto" }} value={form.appeal_deadline} onChange={e => setForm(f => ({ ...f, appeal_deadline: e.target.value }))} />}
                 </div>
             </div>
-            <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+            <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
             {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
                 <Button onClick={save} disabled={saveOutcome.isPending}>{saveOutcome.isPending ? "Saving…" : "Save Outcome"}</Button>
@@ -378,36 +382,36 @@ export function MatterTransfersTab({ matter }: { matter: Matter }) {
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "0.75rem 0" }}>
-                <span className={styles.muted} style={{ fontSize: "0.82rem" }}>{transfers.length} transfer{transfers.length !== 1 ? "s" : ""}</span>
+                <span className={MUTED} style={{ fontSize: "0.82rem" }}>{transfers.length} transfer{transfers.length !== 1 ? "s" : ""}</span>
                 <Button size="sm" onClick={() => openModal()}>+ Add Transfer</Button>
             </div>
-            {isLoading ? <div className={styles.emptyHint}>Loading…</div> : transfers.length === 0 ? (
-                <div className={styles.emptyHint}>No court transfers recorded.</div>
+            {isLoading ? <div className={EMPTY_HINT}>Loading…</div> : transfers.length === 0 ? (
+                <div className={EMPTY_HINT}>No court transfers recorded.</div>
             ) : transfers.map(t => (
-                <div key={t.transfer_id} className={styles.settingsCard} style={{ marginBottom: "0.75rem" }}>
+                <div key={t.transfer_id} className={SETTINGS_CARD} style={{ marginBottom: "0.75rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <div><strong>{t.from_court}</strong> → <strong>{t.to_court}</strong>{t.transfer_date && <span className={styles.muted}> · {t.transfer_date}</span>}</div>
-                        <div className={styles.orderActions}>
-                            <button className={styles.actionBtn} onClick={() => openModal(t)}>Edit</button>
-                            <button className={styles.actionBtnDanger} onClick={() => confirm("Delete this transfer entry?") && deleteTransfer.mutate(t.transfer_id)}>Delete</button>
+                        <div><strong>{t.from_court}</strong> → <strong>{t.to_court}</strong>{t.transfer_date && <span className={MUTED}> · {t.transfer_date}</span>}</div>
+                        <div className={ORDER_ACTIONS}>
+                            <button className={ACTION_BTN} onClick={() => openModal(t)}>Edit</button>
+                            <button className={ACTION_BTN_DANGER} onClick={() => confirm("Delete this transfer entry?") && deleteTransfer.mutate(t.transfer_id)}>Delete</button>
                         </div>
                     </div>
-                    {t.reason && <div className={styles.muted} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>{t.reason}</div>}
+                    {t.reason && <div className={MUTED} style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>{t.reason}</div>}
                 </div>
             ))}
 
             <Modal open={showModal} onClose={() => setShowModal(false)} maxWidth={480} title={editing ? "Edit Transfer" : "Add Court Transfer"}
                 footer={<><Button variant="ghost" onClick={() => setShowModal(false)} disabled={saving}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button></>}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>From Court *</label><input className={styles.formInput} value={form.from_court} onChange={e => setForm(f => ({ ...f, from_court: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>To Court *</label><input className={styles.formInput} value={form.to_court} onChange={e => setForm(f => ({ ...f, to_court: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>From Judge</label><input className={styles.formInput} value={form.from_judge} onChange={e => setForm(f => ({ ...f, from_judge: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>To Judge</label><input className={styles.formInput} value={form.to_judge} onChange={e => setForm(f => ({ ...f, to_judge: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Transfer Date</label><input type="date" className={styles.formInput} value={form.transfer_date} onChange={e => setForm(f => ({ ...f, transfer_date: e.target.value }))} /></div>
-                    <div className={styles.formGroup}><label className={styles.formLabel}>Order Reference</label><input className={styles.formInput} value={form.order_ref} onChange={e => setForm(f => ({ ...f, order_ref: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>From Court *</label><input className={FORM_INPUT} value={form.from_court} onChange={e => setForm(f => ({ ...f, from_court: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>To Court *</label><input className={FORM_INPUT} value={form.to_court} onChange={e => setForm(f => ({ ...f, to_court: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>From Judge</label><input className={FORM_INPUT} value={form.from_judge} onChange={e => setForm(f => ({ ...f, from_judge: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>To Judge</label><input className={FORM_INPUT} value={form.to_judge} onChange={e => setForm(f => ({ ...f, to_judge: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Transfer Date</label><input type="date" className={FORM_INPUT} value={form.transfer_date} onChange={e => setForm(f => ({ ...f, transfer_date: e.target.value }))} /></div>
+                    <div className={FORM_GROUP}><label className={FORM_LABEL}>Order Reference</label><input className={FORM_INPUT} value={form.order_ref} onChange={e => setForm(f => ({ ...f, order_ref: e.target.value }))} /></div>
                 </div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Reason</label><textarea className={styles.formInput} rows={2} value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} /></div>
-                <div className={styles.formGroup}><label className={styles.formLabel}>Notes</label><textarea className={styles.formInput} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Reason</label><textarea className={FORM_INPUT} rows={2} value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} /></div>
+                <div className={FORM_GROUP}><label className={FORM_LABEL}>Notes</label><textarea className={FORM_INPUT} rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
                 {err && <div style={{ color: "var(--danger, #c94040)", fontSize: "0.83rem" }}>{err}</div>}
             </Modal>
         </>
@@ -424,18 +428,18 @@ export function MatterConflictTab({ matter }: { matter: Matter }) {
     };
 
     return (
-        <div className={styles.settingsCard}>
-            <p className={styles.muted} style={{ fontSize: "0.85rem" }}>
+        <div className={SETTINGS_CARD}>
+            <p className={MUTED} style={{ fontSize: "0.85rem" }}>
                 Re-run a conflict-of-interest check against this matter's client ("{matter.client_name}") and opposing party ("{matter.opposing_party || "—"}") across every other matter and client in the firm.
             </p>
             <Button onClick={runCheck} disabled={checkConflicts.isPending}>{checkConflicts.isPending ? "Checking…" : "Run Conflict Check"}</Button>
             {checkConflicts.data && (
                 checkConflicts.data.length === 0 ? (
-                    <div className={styles.badgeGreen} style={{ marginTop: "0.75rem", display: "inline-block" }}>No conflicts found</div>
+                    <div className={BADGE_GREEN} style={{ marginTop: "0.75rem", display: "inline-block" }}>No conflicts found</div>
                 ) : (
                     <div style={{ marginTop: "0.75rem" }}>
                         {checkConflicts.data.map((c, i) => (
-                            <div key={i} className={styles.limAlertItemCritical} style={{ marginBottom: "0.4rem" }}>{JSON.stringify(c)}</div>
+                            <div key={i} className={LIM_ALERT_ITEM_CRITICAL} style={{ marginBottom: "0.4rem" }}>{JSON.stringify(c)}</div>
                         ))}
                     </div>
                 )

@@ -1,11 +1,19 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
-import { Input, Textarea, Checkbox, Dropdown, Option } from "@fluentui/react-components";
-import type { OptionOnSelectData, SelectionEvents } from "@fluentui/react-components";
 import { HelpCallout } from "../HelpCallout";
 import { VectorSettings } from "../VectorSettings";
 import { RetrievalMode } from "../../api";
-import styles from "./Settings.module.css";
+import {
+    SETTINGS_CHECKBOX,
+    SETTINGS_CHECKBOX_INPUT,
+    SETTINGS_FIELD,
+    SETTINGS_FIELDSET,
+    SETTINGS_LEGEND,
+    SETTINGS_SECTION_HEADER,
+    SETTINGS_SELECT,
+    SETTINGS_INPUT,
+    SETTINGS_TEXTAREA
+} from "./settingsStyles";
 
 export interface SettingsProps {
     promptTemplate: string;
@@ -142,11 +150,13 @@ export const Settings = ({
         <div className={className}>
             {streamingEnabled && (
                 <>
-                    <div className={styles.settingsCheckbox}>
-                        <Checkbox
+                    <div className={SETTINGS_CHECKBOX}>
+                        <input
+                            type="checkbox"
+                            className={SETTINGS_CHECKBOX_INPUT}
                             id={shouldStreamFieldId}
                             checked={webSourceDisablesStreamingAndFollowup ? false : shouldStream}
-                            onChange={(_ev, data) => onChange("shouldStream", !!data.checked)}
+                            onChange={ev => onChange("shouldStream", ev.target.checked)}
                             aria-labelledby={shouldStreamId}
                             disabled={webSourceDisablesStreamingAndFollowup}
                         />
@@ -158,11 +168,13 @@ export const Settings = ({
                         />
                     </div>
 
-                    <div className={styles.settingsCheckbox}>
-                        <Checkbox
+                    <div className={SETTINGS_CHECKBOX}>
+                        <input
+                            type="checkbox"
+                            className={SETTINGS_CHECKBOX_INPUT}
                             id={suggestFollowupQuestionsFieldId}
                             checked={webSourceDisablesStreamingAndFollowup ? false : useSuggestFollowupQuestions}
-                            onChange={(_ev, data) => onChange("useSuggestFollowupQuestions", !!data.checked)}
+                            onChange={ev => onChange("useSuggestFollowupQuestions", ev.target.checked)}
                             aria-labelledby={suggestFollowupQuestionsId}
                             disabled={webSourceDisablesStreamingAndFollowup}
                         />
@@ -176,15 +188,17 @@ export const Settings = ({
                 </>
             )}
 
-            <h3 className={styles.sectionHeader}>{t("searchSettings")}</h3>
+            <h3 className={SETTINGS_SECTION_HEADER}>{t("searchSettings")}</h3>
 
             {showAgenticRetrievalOption && (
                 <>
-                    <div className={styles.settingsCheckbox}>
-                        <Checkbox
+                    <div className={SETTINGS_CHECKBOX}>
+                        <input
+                            type="checkbox"
+                            className={SETTINGS_CHECKBOX_INPUT}
                             id={agenticRetrievalFieldId}
                             checked={useAgenticKnowledgeBase}
-                            onChange={(_ev, data) => onChange("useAgenticKnowledgeBase", !!data.checked)}
+                            onChange={ev => onChange("useAgenticKnowledgeBase", ev.target.checked)}
                             aria-labelledby={agenticRetrievalId}
                         />
                         <HelpCallout
@@ -199,19 +213,19 @@ export const Settings = ({
 
             {showAgenticRetrievalOption && useAgenticKnowledgeBase && (
                 <>
-                    <div className={styles.settingsField}>
+                    <div className={SETTINGS_FIELD}>
                         <HelpCallout
                             labelId={agenticReasoningEffortId}
                             fieldId={agenticReasoningEffortFieldId}
                             helpText={t("helpTexts.agenticReasoningEffort")}
                             label={t("labels.agenticReasoningEffort")}
                         />
-                        <Dropdown
+                        <select
                             id={agenticReasoningEffortFieldId}
-                            selectedOptions={[agenticReasoningEffort]}
-                            value={retrievalReasoningOptions.find(o => o.key === agenticReasoningEffort)?.text || agenticReasoningEffort}
-                            onOptionSelect={(_ev: SelectionEvents, data: OptionOnSelectData) => {
-                                const newValue = data.optionValue ?? agenticReasoningEffort;
+                            className={SETTINGS_SELECT}
+                            value={agenticReasoningEffort}
+                            onChange={ev => {
+                                const newValue = ev.target.value || agenticReasoningEffort;
                                 onChange("agenticReasoningEffort", newValue);
                                 if (newValue === "minimal" && useWebSource) {
                                     onChange("useWebSource", false);
@@ -220,24 +234,26 @@ export const Settings = ({
                             aria-labelledby={agenticReasoningEffortId}
                         >
                             {retrievalReasoningOptions.map(opt => (
-                                <Option key={opt.key} value={opt.key}>
+                                <option key={opt.key} value={opt.key}>
                                     {opt.text}
-                                </Option>
+                                </option>
                             ))}
-                        </Dropdown>
+                        </select>
                     </div>
                 </>
             )}
 
             {showAgenticRetrievalOption && useAgenticKnowledgeBase && showWebSourceOption && (
                 <>
-                    <div className={styles.settingsCheckbox}>
-                        <Checkbox
+                    <div className={SETTINGS_CHECKBOX}>
+                        <input
+                            type="checkbox"
+                            className={SETTINGS_CHECKBOX_INPUT}
                             id={webSourceFieldId}
                             checked={useWebSource}
-                            onChange={(_ev, data) => {
-                                onChange("useWebSource", !!data.checked);
-                                if (data.checked) {
+                            onChange={ev => {
+                                onChange("useWebSource", ev.target.checked);
+                                if (ev.target.checked) {
                                     if (shouldStream) {
                                         onChange("shouldStream", false);
                                     }
@@ -255,11 +271,13 @@ export const Settings = ({
             )}
             {showAgenticRetrievalOption && useAgenticKnowledgeBase && showSharePointSourceOption && (
                 <>
-                    <div className={styles.settingsCheckbox}>
-                        <Checkbox
+                    <div className={SETTINGS_CHECKBOX}>
+                        <input
+                            type="checkbox"
+                            className={SETTINGS_CHECKBOX_INPUT}
                             id={sharePointSourceFieldId}
                             checked={useSharePointSource}
-                            onChange={(_ev, data) => onChange("useSharePointSource", !!data.checked)}
+                            onChange={ev => onChange("useSharePointSource", ev.target.checked)}
                             aria-labelledby={sharePointSourceId}
                             disabled={!useAgenticKnowledgeBase}
                         />
@@ -274,20 +292,21 @@ export const Settings = ({
             )}
             {!useAgenticKnowledgeBase && (
                 <>
-                    <div className={styles.settingsField}>
+                    <div className={SETTINGS_FIELD}>
                         <HelpCallout
                             labelId={searchScoreId}
                             fieldId={searchScoreFieldId}
                             helpText={t("helpTexts.searchScore")}
                             label={t("labels.minimumSearchScore")}
                         />
-                        <Input
+                        <input
+                            className={SETTINGS_INPUT}
                             id={searchScoreFieldId}
                             type="number"
                             min={0}
                             step={0.01}
                             defaultValue={minimumSearchScore.toString()}
-                            onChange={(_ev, data) => onChange("minimumSearchScore", parseFloat(data.value || "0"))}
+                            onChange={ev => onChange("minimumSearchScore", parseFloat(ev.target.value || "0"))}
                             aria-labelledby={searchScoreId}
                         />
                     </div>
@@ -296,21 +315,22 @@ export const Settings = ({
 
             {showSemanticRankerOption && (
                 <>
-                    <div className={styles.settingsField}>
+                    <div className={SETTINGS_FIELD}>
                         <HelpCallout
                             labelId={rerankerScoreId}
                             fieldId={rerankerScoreFieldId}
                             helpText={t("helpTexts.rerankerScore")}
                             label={t("labels.minimumRerankerScore")}
                         />
-                        <Input
+                        <input
+                            className={SETTINGS_INPUT}
                             id={rerankerScoreFieldId}
                             type="number"
                             min={1}
                             max={4}
                             step={0.1}
                             defaultValue={minimumRerankerScore.toString()}
-                            onChange={(_ev, data) => onChange("minimumRerankerScore", parseFloat(data.value || "0"))}
+                            onChange={ev => onChange("minimumRerankerScore", parseFloat(ev.target.value || "0"))}
                             aria-labelledby={rerankerScoreId}
                         />
                     </div>
@@ -319,63 +339,67 @@ export const Settings = ({
 
             {!useAgenticKnowledgeBase && (
                 <>
-                    <div className={styles.settingsField}>
+                    <div className={SETTINGS_FIELD}>
                         <HelpCallout
                             labelId={retrieveCountId}
                             fieldId={retrieveCountFieldId}
                             helpText={t("helpTexts.retrieveNumber")}
                             label={t("labels.retrieveCount")}
                         />
-                        <Input
+                        <input
+                            className={SETTINGS_INPUT}
                             id={retrieveCountFieldId}
                             type="number"
                             min={1}
                             max={50}
                             defaultValue={retrieveCount.toString()}
-                            onChange={(_ev, data) => onChange("retrieveCount", parseInt(data.value || "3"))}
+                            onChange={ev => onChange("retrieveCount", parseInt(ev.target.value || "3"))}
                             aria-labelledby={retrieveCountId}
                         />
                     </div>
                 </>
             )}
-            <div className={styles.settingsField}>
+            <div className={SETTINGS_FIELD}>
                 <HelpCallout
                     labelId={includeCategoryId}
                     fieldId={includeCategoryFieldId}
                     helpText={t("helpTexts.includeCategory")}
                     label={t("labels.includeCategory")}
                 />
-                <Dropdown
+                <select
                     id={includeCategoryFieldId}
-                    selectedOptions={[includeCategory]}
-                    value={includeCategory === "" ? t("labels.includeCategoryOptions.all") : includeCategory}
-                    onOptionSelect={(_ev: SelectionEvents, data: OptionOnSelectData) => onChange("includeCategory", data.optionValue || "")}
+                    className={SETTINGS_SELECT}
+                    value={includeCategory}
+                    onChange={ev => onChange("includeCategory", ev.target.value || "")}
                     aria-labelledby={includeCategoryId}
                 >
-                    <Option value="">{t("labels.includeCategoryOptions.all")}</Option>
-                </Dropdown>
+                    <option value="">{t("labels.includeCategoryOptions.all")}</option>
+                </select>
             </div>
-            <div className={styles.settingsField}>
+            <div className={SETTINGS_FIELD}>
                 <HelpCallout
                     labelId={excludeCategoryId}
                     fieldId={excludeCategoryFieldId}
                     helpText={t("helpTexts.excludeCategory")}
                     label={t("labels.excludeCategory")}
                 />
-                <Input
+                <input
+                    className={SETTINGS_INPUT}
                     id={excludeCategoryFieldId}
                     defaultValue={excludeCategory}
-                    onChange={(_ev, data) => onChange("excludeCategory", data.value || "")}
+                    onChange={ev => onChange("excludeCategory", ev.target.value || "")}
                     aria-labelledby={excludeCategoryId}
                 />
             </div>
             {showSemanticRankerOption && !useAgenticKnowledgeBase && (
                 <>
-                    <div className={styles.settingsCheckbox}>
-                        <Checkbox
+                    <div className={SETTINGS_CHECKBOX}>
+                        <input
+                            type="checkbox"
+                            className={SETTINGS_CHECKBOX_INPUT}
                             id={semanticRankerFieldId}
                             checked={useSemanticRanker}
-                            onChange={(_ev, data) => onChange("useSemanticRanker", !!data.checked)}
+                            onChange={ev => onChange("useSemanticRanker", ev.target.checked)}
                             aria-labelledby={semanticRankerId}
                         />
                         <HelpCallout
@@ -386,11 +410,13 @@ export const Settings = ({
                         />
                     </div>
 
-                    <div className={styles.settingsCheckbox}>
-                        <Checkbox
+                    <div className={SETTINGS_CHECKBOX}>
+                        <input
+                            type="checkbox"
+                            className={SETTINGS_CHECKBOX_INPUT}
                             id={semanticCaptionsFieldId}
                             checked={useSemanticCaptions}
-                            onChange={(_ev, data) => onChange("useSemanticCaptions", !!data.checked)}
+                            onChange={ev => onChange("useSemanticCaptions", ev.target.checked)}
                             disabled={!useSemanticRanker}
                             aria-labelledby={semanticCaptionsId}
                         />
@@ -405,12 +431,14 @@ export const Settings = ({
             )}
             {showQueryRewritingOption && !useAgenticKnowledgeBase && (
                 <>
-                    <div className={styles.settingsCheckbox}>
-                        <Checkbox
+                    <div className={SETTINGS_CHECKBOX}>
+                        <input
+                            type="checkbox"
+                            className={SETTINGS_CHECKBOX_INPUT}
                             id={queryRewritingFieldId}
                             checked={useQueryRewriting}
                             disabled={!useSemanticRanker}
-                            onChange={(_ev, data) => onChange("useQueryRewriting", !!data.checked)}
+                            onChange={ev => onChange("useQueryRewriting", ev.target.checked)}
                             aria-labelledby={queryRewritingId}
                         />
                         <HelpCallout
@@ -438,76 +466,79 @@ export const Settings = ({
 
             {!useWebSource && (
                 <>
-                    <h3 className={styles.sectionHeader}>{t("llmSettings")}</h3>
-                    <div className={styles.settingsField}>
+                    <h3 className={SETTINGS_SECTION_HEADER}>{t("llmSettings")}</h3>
+                    <div className={SETTINGS_FIELD}>
                         <HelpCallout
                             labelId={promptTemplateId}
                             fieldId={promptTemplateFieldId}
                             helpText={t("helpTexts.promptTemplate")}
                             label={t("labels.promptTemplate")}
                         />
-                        <Textarea
+                        <textarea
+                            className={SETTINGS_TEXTAREA}
                             id={promptTemplateFieldId}
                             defaultValue={promptTemplate}
-                            resize="vertical"
-                            onChange={(_ev, data) => onChange("promptTemplate", data.value || "")}
+                            onChange={ev => onChange("promptTemplate", ev.target.value || "")}
                             aria-labelledby={promptTemplateId}
                         />
                     </div>
                     {!showReasoningEffortOption && (
-                        <div className={styles.settingsField}>
+                        <div className={SETTINGS_FIELD}>
                             <HelpCallout
                                 labelId={temperatureId}
                                 fieldId={temperatureFieldId}
                                 helpText={t("helpTexts.temperature")}
                                 label={t("labels.temperature")}
                             />
-                            <Input
+                            <input
+                                className={SETTINGS_INPUT}
                                 id={temperatureFieldId}
                                 type="number"
                                 min={0}
                                 max={1}
                                 step={0.1}
                                 defaultValue={temperature.toString()}
-                                onChange={(_ev, data) => onChange("temperature", parseFloat(data.value || "0"))}
+                                onChange={ev => onChange("temperature", parseFloat(ev.target.value || "0"))}
                                 aria-labelledby={temperatureId}
                             />
                         </div>
                     )}
                     {showReasoningEffortOption && reasoningEffortOptions.length > 0 && (
-                        <div className={styles.settingsField}>
+                        <div className={SETTINGS_FIELD}>
                             <HelpCallout
                                 labelId={reasoningEffortId}
                                 fieldId={reasoningEffortFieldId}
                                 helpText={t("helpTexts.reasoningEffort")}
                                 label={t("labels.reasoningEffort")}
                             />
-                            <Dropdown
+                            <select
                                 id={reasoningEffortFieldId}
-                                selectedOptions={[reasoningEffort]}
-                                value={t(`labels.reasoningEffortOptions.${reasoningEffort}`, { defaultValue: reasoningEffort })}
-                                onOptionSelect={(_ev: SelectionEvents, data: OptionOnSelectData) => onChange("reasoningEffort", data.optionValue || "")}
+                                className={SETTINGS_SELECT}
+                                value={reasoningEffort}
+                                onChange={ev => onChange("reasoningEffort", ev.target.value || "")}
                                 aria-labelledby={reasoningEffortId}
                             >
                                 {reasoningEffortOptions.map(option => (
-                                    <Option key={option} value={option}>
+                                    <option key={option} value={option}>
                                         {t(`labels.reasoningEffortOptions.${option}`)}
-                                    </Option>
+                                    </option>
                                 ))}
-                            </Dropdown>
+                            </select>
                         </div>
                     )}
 
                     {showMultimodalOptions && !useAgenticKnowledgeBase && (
-                        <fieldset className={styles.fieldset + " " + styles.settingsField}>
-                            <legend className={styles.legend}>{t("labels.llmInputs")}</legend>
+                        <fieldset className={`${SETTINGS_FIELDSET} ${SETTINGS_FIELD}`}>
+                            <legend className={SETTINGS_LEGEND}>{t("labels.llmInputs")}</legend>
                             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                                <div className={styles.settingsCheckbox} style={{ marginTop: 0 }}>
-                                    <Checkbox
+                                <div className={SETTINGS_CHECKBOX} style={{ marginTop: 0 }}>
+                                    <input
+                                        type="checkbox"
+                                        className={SETTINGS_CHECKBOX_INPUT}
                                         id="sendTextSources"
                                         checked={sendTextSources}
-                                        onChange={(_ev, data) => {
-                                            onChange("sendTextSources", !!data.checked);
+                                        onChange={ev => {
+                                            onChange("sendTextSources", ev.target.checked);
                                         }}
                                     />
                                     <HelpCallout
@@ -517,12 +548,14 @@ export const Settings = ({
                                         label={t("labels.llmInputsOptions.texts")}
                                     />
                                 </div>
-                                <div className={styles.settingsCheckbox} style={{ marginTop: 0 }}>
-                                    <Checkbox
+                                <div className={SETTINGS_CHECKBOX} style={{ marginTop: 0 }}>
+                                    <input
+                                        type="checkbox"
+                                        className={SETTINGS_CHECKBOX_INPUT}
                                         id="sendImageSources"
                                         checked={sendImageSources}
-                                        onChange={(_ev, data) => {
-                                            onChange("sendImageSources", !!data.checked);
+                                        onChange={ev => {
+                                            onChange("sendImageSources", ev.target.checked);
                                         }}
                                     />
                                     <HelpCallout

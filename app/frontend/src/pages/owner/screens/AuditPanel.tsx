@@ -1,5 +1,5 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import { PANEL_CONTENT, PANEL_TOOLBAR, FORM_SELECT, FORM_INPUT, RESULT_COUNT, MUTED } from "../ownerStyles";
 import { Table, Badge, Button, BadgeTone } from "../../../components/ui";
 import { useAuditLogs } from "../../../hooks/useAudit";
 
@@ -94,20 +94,20 @@ export const AuditPanel = () => {
     const totalPages = Math.ceil(total / PAGE_SIZE);
 
     return (
-        <div className={styles.panelContent}>
+        <div className={PANEL_CONTENT}>
             {/* Toolbar */}
-            <div className={styles.panelToolbar}>
+            <div className={PANEL_TOOLBAR}>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-                    <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                    <select className={FORM_SELECT} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
                         value={filterType} onChange={e => { setFilterType(e.target.value); setPage(0); }}>
                         <option value="all">All events</option>
                         {ALL_EVENT_TYPES.map(t => <option key={t} value={t}>{EVENT_LABELS[t]}</option>)}
                     </select>
-                    <input type="date" className={styles.formInput} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                    <input type="date" className={FORM_INPUT} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
                         value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }} title="From date" />
-                    <input type="date" className={styles.formInput} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                    <input type="date" className={FORM_INPUT} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
                         value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }} title="To date" />
-                    <span className={styles.resultCount}>{total} event{total !== 1 ? "s" : ""}</span>
+                    <span className={RESULT_COUNT}>{total} event{total !== 1 ? "s" : ""}</span>
                 </div>
                 <Button variant="ghost" size="sm" onClick={exportCsv} disabled={logs.length === 0}>
                     ↓ Export CSV
@@ -135,19 +135,19 @@ export const AuditPanel = () => {
                         }
                         return (
                             <tr key={l.log_id}>
-                                <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
+                                <td className={MUTED} style={{ whiteSpace: "nowrap" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
                                 <td>
                                     <Badge tone={badgeClassToTone(EVENT_BADGE[l.event_type])}>
                                         {EVENT_LABELS[l.event_type] ?? l.event_type}
                                     </Badge>
                                 </td>
                                 <td style={{ fontSize: "0.82rem" }}>{l.actor_name ?? "—"}</td>
-                                <td className={styles.muted}>{l.actor_role ?? "—"}</td>
-                                <td className={styles.muted} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <td className={MUTED}>{l.actor_role ?? "—"}</td>
+                                <td className={MUTED} style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {[l.resource_type, l.resource_name].filter(Boolean).join(": ") || "—"}
                                 </td>
-                                <td className={styles.muted} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
-                                <td className={styles.muted} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
+                                <td className={MUTED} style={{ whiteSpace: "nowrap" }}>{l.ip_address ?? "—"}</td>
+                                <td className={MUTED} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={detailStr}>
                                     {detailStr || "—"}
                                 </td>
                             </tr>
@@ -161,7 +161,7 @@ export const AuditPanel = () => {
                         disabled={page === 0} onClick={() => setPage(page - 1)}>
                         ← Prev
                     </Button>
-                    <span className={styles.muted} style={{ fontSize: "0.82rem" }}>
+                    <span className={MUTED} style={{ fontSize: "0.82rem" }}>
                         Page {page + 1} of {totalPages}
                     </span>
                     <Button variant="ghost" size="sm"

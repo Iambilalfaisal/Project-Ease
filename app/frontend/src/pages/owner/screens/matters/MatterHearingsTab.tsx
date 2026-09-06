@@ -1,7 +1,12 @@
 // Court orders / hearing log tab: timeline view, add/edit modal, and the
 // Urdu/English voice-note transcription helper that pre-fills the form.
 import { useRef, useState } from "react";
-import styles from "../../OwnerPortal.module.css";
+import {
+    LIM_BADGE_CRITICAL, BADGE_AMBER, BADGE_GRAY, EMPTY_HINT, MUTED,
+    ORDERS_TIMELINE, ORDER_CARD, ORDER_CARD_LEFT, ORDER_DOT, ORDER_LINE, ORDER_CARD_BODY,
+    ORDER_CARD_HEADER, ORDER_DATE, ORDER_COURT, ORDER_OUTCOME_BADGE, ORDER_BRIEF, ORDER_NEXT_DATE,
+    ORDER_ACTIONS, ACTION_BTN, ACTION_BTN_DANGER, FORM_GROUP, FORM_LABEL, FORM_INPUT, FORM_SELECT,
+} from "../../ownerStyles";
 import { Button, Modal } from "../../../../components/ui";
 import type { Matter, CourtOrder } from "../../types";
 import { useCourtOrders, useCreateCourtOrder, useUpdateCourtOrder, useDeleteCourtOrder, useTranscribeHearingVoiceNote } from "../../../../hooks/useMatterHearings";
@@ -121,7 +126,7 @@ export function MatterOrdersTab({ matter }: { matter: Matter }) {
                     {(() => {
                         const adj = orders.filter(o => o.outcome === "Adjourned").length;
                         return adj > 0 ? (
-                            <span className={adj >= 10 ? styles.limBadgeCritical : adj >= 5 ? styles.badgeAmber : styles.badgeGray}
+                            <span className={adj >= 10 ? LIM_BADGE_CRITICAL : adj >= 5 ? BADGE_AMBER : BADGE_GRAY}
                                 style={{ fontSize: "0.72rem" }}>
                                 {adj} adjournment{adj !== 1 ? "s" : ""}
                             </span>
@@ -131,11 +136,11 @@ export function MatterOrdersTab({ matter }: { matter: Matter }) {
                 <Button size="sm" onClick={() => openOrderModal()}>+ Add Order</Button>
             </div>
             {ordersLoading ? (
-                <div className={styles.emptyHint}>Loading…</div>
+                <div className={EMPTY_HINT}>Loading…</div>
             ) : orders.length === 0 ? (
-                <div className={styles.emptyHint}>No court orders recorded yet. Click "+ Add Order" after each hearing to build the case timeline.</div>
+                <div className={EMPTY_HINT}>No court orders recorded yet. Click "+ Add Order" after each hearing to build the case timeline.</div>
             ) : (
-                <div className={styles.ordersTimeline}>
+                <div className={ORDERS_TIMELINE}>
                     {orders.map((o, idx) => {
                         const outcomeColor: Record<string, string> = {
                             "Adjourned":       "var(--text-3)",
@@ -144,29 +149,29 @@ export function MatterOrdersTab({ matter }: { matter: Matter }) {
                             "Partially Heard": "#c97c2a",
                         };
                         return (
-                            <div key={o.order_id} className={styles.orderCard}>
-                                <div className={styles.orderCardLeft}>
-                                    <div className={styles.orderDot} style={{ background: outcomeColor[o.outcome] ?? "var(--border)" }} />
-                                    {idx < orders.length - 1 && <div className={styles.orderLine} />}
+                            <div key={o.order_id} className={ORDER_CARD}>
+                                <div className={ORDER_CARD_LEFT}>
+                                    <div className={ORDER_DOT} style={{ background: outcomeColor[o.outcome] ?? "var(--border)" }} />
+                                    {idx < orders.length - 1 && <div className={ORDER_LINE} />}
                                 </div>
-                                <div className={styles.orderCardBody}>
-                                    <div className={styles.orderCardHeader}>
+                                <div className={ORDER_CARD_BODY}>
+                                    <div className={ORDER_CARD_HEADER}>
                                         <div>
-                                            <span className={styles.orderDate}>{o.hearing_date}</span>
-                                            {o.court_name && <span className={styles.orderCourt}> · {o.court_name}</span>}
+                                            <span className={ORDER_DATE}>{o.hearing_date}</span>
+                                            {o.court_name && <span className={ORDER_COURT}> · {o.court_name}</span>}
                                         </div>
-                                        <span className={styles.orderOutcomeBadge} style={{ color: outcomeColor[o.outcome] }}>{o.outcome}</span>
+                                        <span className={ORDER_OUTCOME_BADGE} style={{ color: outcomeColor[o.outcome] }}>{o.outcome}</span>
                                     </div>
-                                    <div className={styles.orderBrief}>{o.order_brief}</div>
+                                    <div className={ORDER_BRIEF}>{o.order_brief}</div>
                                     {o.next_date && (
-                                        <div className={styles.orderNextDate}>Next date: <strong>{o.next_date}</strong></div>
+                                        <div className={ORDER_NEXT_DATE}>Next date: <strong>{o.next_date}</strong></div>
                                     )}
                                     {o._offline ? (
-                                        <div className={styles.muted} style={{ fontSize: "0.78rem", marginTop: "0.3rem" }}>⏳ Saved offline — will sync automatically once you're back online.</div>
+                                        <div className={MUTED} style={{ fontSize: "0.78rem", marginTop: "0.3rem" }}>⏳ Saved offline — will sync automatically once you're back online.</div>
                                     ) : (
-                                        <div className={styles.orderActions}>
-                                            <button className={styles.actionBtn} onClick={() => openOrderModal(o)}>Edit</button>
-                                            <button className={styles.actionBtnDanger} onClick={() => removeOrder(o)}>Delete</button>
+                                        <div className={ORDER_ACTIONS}>
+                                            <button className={ACTION_BTN} onClick={() => openOrderModal(o)}>Edit</button>
+                                            <button className={ACTION_BTN_DANGER} onClick={() => removeOrder(o)}>Delete</button>
                                         </div>
                                     )}
                                 </div>
@@ -193,7 +198,7 @@ export function MatterOrdersTab({ matter }: { matter: Matter }) {
                             ⏹ Stop recording…
                         </Button>
                     )}
-                    <span className={styles.muted} style={{ fontSize: "0.78rem" }}>
+                    <span className={MUTED} style={{ fontSize: "0.78rem" }}>
                         {voiceProcessing ? "Transcribing…" : "Speak the outcome in Urdu or English — review before it fills the form."}
                     </span>
                 </div>
@@ -214,33 +219,33 @@ export function MatterOrdersTab({ matter }: { matter: Matter }) {
                 )}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Hearing Date *</label>
-                        <input type="date" className={styles.formInput} value={orderForm.hearing_date} onChange={e => setOrderForm(f => ({ ...f, hearing_date: e.target.value }))} />
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Hearing Date *</label>
+                        <input type="date" className={FORM_INPUT} value={orderForm.hearing_date} onChange={e => setOrderForm(f => ({ ...f, hearing_date: e.target.value }))} />
                     </div>
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Outcome</label>
-                        <select className={styles.formSelect} value={orderForm.outcome} onChange={e => setOrderForm(f => ({ ...f, outcome: e.target.value }))}>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Outcome</label>
+                        <select className={FORM_SELECT} value={orderForm.outcome} onChange={e => setOrderForm(f => ({ ...f, outcome: e.target.value }))}>
                             {["Adjourned", "Heard", "Partially Heard", "Decided"].map(o => <option key={o}>{o}</option>)}
                         </select>
                     </div>
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Court (optional)</label>
-                    <select className={styles.formSelect} value={orderForm.court_name} onChange={e => setOrderForm(f => ({ ...f, court_name: e.target.value }))}>
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Court (optional)</label>
+                    <select className={FORM_SELECT} value={orderForm.court_name} onChange={e => setOrderForm(f => ({ ...f, court_name: e.target.value }))}>
                         <option value="">Same as matter</option>
                         {allCourts.map(c => <option key={c}>{c}</option>)}
                     </select>
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Order Summary *</label>
-                    <textarea className={styles.formInput} rows={4} style={{ resize: "vertical" }} value={orderForm.order_brief} onChange={e => setOrderForm(f => ({ ...f, order_brief: e.target.value }))} placeholder="e.g. Case adjourned on application of plaintiff's counsel. Next date fixed for arguments on maintainability." />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Order Summary *</label>
+                    <textarea className={FORM_INPUT} rows={4} style={{ resize: "vertical" }} value={orderForm.order_brief} onChange={e => setOrderForm(f => ({ ...f, order_brief: e.target.value }))} placeholder="e.g. Case adjourned on application of plaintiff's counsel. Next date fixed for arguments on maintainability." />
                 </div>
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Next Date Fixed</label>
-                    <input type="date" className={styles.formInput} value={orderForm.next_date} onChange={e => setOrderForm(f => ({ ...f, next_date: e.target.value }))} />
+                <div className={FORM_GROUP}>
+                    <label className={FORM_LABEL}>Next Date Fixed</label>
+                    <input type="date" className={FORM_INPUT} value={orderForm.next_date} onChange={e => setOrderForm(f => ({ ...f, next_date: e.target.value }))} />
                 </div>
-                <div className={styles.formGroup} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+                <div className={FORM_GROUP} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
                     <input type="checkbox" id="notifyClientWa" checked={orderForm.notify_client} onChange={e => setOrderForm(f => ({ ...f, notify_client: e.target.checked }))} style={{ marginTop: "0.2rem" }} />
                     <label htmlFor="notifyClientWa" style={{ fontSize: "0.85rem", cursor: "pointer" }}>
                         📲 Notify client via WhatsApp{matter.client_phone ? ` (${matter.client_phone})` : " — no phone number on file for this client"}

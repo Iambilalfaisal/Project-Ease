@@ -2,7 +2,11 @@
 // banners, the matters table, and the "+ New Matter" create modal. Opening a
 // row hands off to MatterDetail by matter_id (no full-object threading).
 import { useState } from "react";
-import styles from "../../OwnerPortal.module.css";
+import {
+    PANEL_CONTENT, PANEL_TOOLBAR, RESULT_COUNT, FORM_SELECT, MUTED, LINK_BTN,
+    LIM_ALERT_BANNER, LIM_ALERT_LIST, LIM_ALERT_ITEM, LIM_ALERT_ITEM_CRITICAL,
+    LIM_BADGE_CRITICAL, LIM_BADGE_WARN, PRIORITY_BADGE, BADGE_GOLD, ACTION_BTN, ACTION_BTN_DANGER,
+} from "../../ownerStyles";
 import { Badge, Button, Modal, Table } from "../../../../components/ui";
 import { useMatters, useCreateMatter, useDeleteMatter, useLimitationAlerts, useCauseListTodayMatches, useClientOptions } from "../../../../hooks/useMatters";
 import { MATTER_STATUSES, MATTER_TYPES, MATTER_PRIORITIES, STATUS_BADGE, badgeClassToTone, limitationDaysRemaining, BLANK_MATTER } from "./matterConstants";
@@ -56,28 +60,28 @@ export const MattersPanel = () => {
     };
 
     return (
-        <div className={styles.panelContent}>
-            <div className={styles.panelToolbar}>
+        <div className={PANEL_CONTENT}>
+            <div className={PANEL_TOOLBAR}>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                    <span className={styles.resultCount}>{filtered.length} matter{filtered.length !== 1 ? "s" : ""}</span>
-                    <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                    <span className={RESULT_COUNT}>{filtered.length} matter{filtered.length !== 1 ? "s" : ""}</span>
+                    <select className={FORM_SELECT} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
                         value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                         <option value="all">All statuses</option>
                         {MATTER_STATUSES.map(s => <option key={s}>{s}</option>)}
                     </select>
-                    <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                    <select className={FORM_SELECT} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
                         value={filterType} onChange={e => setFilterType(e.target.value)}>
                         <option value="all">All types</option>
                         {MATTER_TYPES.map(t => <option key={t}>{t}</option>)}
                     </select>
-                    <select className={styles.formSelect} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                    <select className={FORM_SELECT} style={{ width: "auto", fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
                         value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
                         <option value="all">All priorities</option>
                         {MATTER_PRIORITIES.map(p => <option key={p}>{p}</option>)}
                     </select>
                 </div>
                 {clients.length === 0 ? (
-                    <span className={styles.muted} style={{ fontSize: "0.8rem" }}>Add a client first</span>
+                    <span className={MUTED} style={{ fontSize: "0.8rem" }}>Add a client first</span>
                 ) : (
                     <Button onClick={() => { setForm({ ...BLANK_MATTER }); setFormErr(null); setShowModal(true); }}>
                         + New Matter
@@ -87,17 +91,17 @@ export const MattersPanel = () => {
 
             {/* Today's cause list alert banner */}
             {causeListAlerts.length > 0 && (
-                <div className={styles.limAlertBanner} style={{ borderColor: "var(--gold)", background: "rgba(200,160,40,0.06)" }}>
+                <div className={LIM_ALERT_BANNER} style={{ borderColor: "var(--gold)", background: "rgba(200,160,40,0.06)" }}>
                     <strong>📋 Today's Cause List — {causeListAlerts.length} matter{causeListAlerts.length !== 1 ? "s" : ""} listed in court</strong>
-                    <div className={styles.limAlertList}>
+                    <div className={LIM_ALERT_LIST}>
                         {causeListAlerts.map(a => (
-                            <div key={a.matter_id} className={styles.limAlertItem}>
-                                <button className={styles.linkBtn} onClick={() => setSelectedMatterId(a.matter_id)}>
+                            <div key={a.matter_id} className={LIM_ALERT_ITEM}>
+                                <button className={LINK_BTN} onClick={() => setSelectedMatterId(a.matter_id)}>
                                     {a.matter_title}
                                 </button>
-                                {a.case_number && <span className={styles.muted}> · {a.case_number}</span>}
-                                {a.item_no     && <span className={styles.badgeGold} style={{ fontSize: "0.68rem" }}>Item {a.item_no}</span>}
-                                {a.court_name  && <span className={styles.muted} style={{ fontSize: "0.78rem" }}> · {a.court_name}</span>}
+                                {a.case_number && <span className={MUTED}> · {a.case_number}</span>}
+                                {a.item_no     && <span className={BADGE_GOLD} style={{ fontSize: "0.68rem" }}>Item {a.item_no}</span>}
+                                {a.court_name  && <span className={MUTED} style={{ fontSize: "0.78rem" }}> · {a.court_name}</span>}
                             </div>
                         ))}
                     </div>
@@ -106,18 +110,18 @@ export const MattersPanel = () => {
 
             {/* Limitation alerts banner */}
             {limAlerts.length > 0 && (
-                <div className={styles.limAlertBanner}>
+                <div className={LIM_ALERT_BANNER}>
                     <strong>⚠ Limitation Approaching</strong>
-                    <div className={styles.limAlertList}>
+                    <div className={LIM_ALERT_LIST}>
                         {limAlerts.map(a => {
                             const critical = a.days_remaining <= 30;
                             return (
-                                <div key={a.matter_id} className={critical ? styles.limAlertItemCritical : styles.limAlertItem}>
-                                    <button className={styles.linkBtn} onClick={() => setSelectedMatterId(a.matter_id)}>
+                                <div key={a.matter_id} className={critical ? LIM_ALERT_ITEM_CRITICAL : LIM_ALERT_ITEM}>
+                                    <button className={LINK_BTN} onClick={() => setSelectedMatterId(a.matter_id)}>
                                         {a.title}
                                     </button>
-                                    <span className={styles.muted}> · {a.client_name}</span>
-                                    <span className={critical ? styles.limBadgeCritical : styles.limBadgeWarn}>
+                                    <span className={MUTED}> · {a.client_name}</span>
+                                    <span className={critical ? LIM_BADGE_CRITICAL : LIM_BADGE_WARN}>
                                         {a.days_remaining < 0 ? `EXPIRED ${Math.abs(a.days_remaining)}d ago` : a.days_remaining === 0 ? "EXPIRES TODAY" : `${a.days_remaining}d left`}
                                     </span>
                                 </div>
@@ -138,18 +142,18 @@ export const MattersPanel = () => {
                         return (
                         <tr key={m.matter_id}>
                             <td>
-                                <button className={styles.linkBtn} onClick={() => setSelectedMatterId(m.matter_id)}>{m.title}</button>
+                                <button className={LINK_BTN} onClick={() => setSelectedMatterId(m.matter_id)}>{m.title}</button>
                                 {limDays !== null && limDays <= 60 && (
-                                    <span className={limDays <= 30 ? styles.limBadgeCritical : styles.limBadgeWarn} style={{ marginLeft: "0.4rem" }}>
+                                    <span className={limDays <= 30 ? LIM_BADGE_CRITICAL : LIM_BADGE_WARN} style={{ marginLeft: "0.4rem" }}>
                                         {limDays < 0 ? "LIM EXPIRED" : limDays === 0 ? "LIM TODAY" : `LIM ${limDays}d`}
                                     </span>
                                 )}
                             </td>
-                            <td className={styles.muted}>{m.client_name}</td>
-                            <td className={styles.muted}>{m.matter_type}</td>
+                            <td className={MUTED}>{m.client_name}</td>
+                            <td className={MUTED}>{m.matter_type}</td>
                             <td><Badge tone={badgeClassToTone(STATUS_BADGE[m.status])}>{m.status}</Badge></td>
                             <td>
-                                <span className={styles.priorityBadge} data-priority={m.priority ?? "Normal"}>
+                                <span className={PRIORITY_BADGE} data-priority={m.priority ?? "Normal"}>
                                     {m.priority ?? "Normal"}
                                 </span>
                             </td>
@@ -163,15 +167,15 @@ export const MattersPanel = () => {
                                     <Badge tone={(m.adjournment_count ?? 0) >= 10 ? "red" : (m.adjournment_count ?? 0) >= 5 ? "amber" : "gray"}>
                                         {m.adjournment_count}
                                     </Badge>
-                                ) : <span className={styles.muted}>0</span>}
+                                ) : <span className={MUTED}>0</span>}
                             </td>
-                            <td className={styles.muted}>{m.court_name ?? "—"}</td>
-                            <td className={styles.muted}>{m.case_number ?? "—"}</td>
-                            <td className={styles.muted}>{m.team_name ?? "—"}</td>
-                            <td className={styles.muted}>{m.doc_count ?? 0}</td>
+                            <td className={MUTED}>{m.court_name ?? "—"}</td>
+                            <td className={MUTED}>{m.case_number ?? "—"}</td>
+                            <td className={MUTED}>{m.team_name ?? "—"}</td>
+                            <td className={MUTED}>{m.doc_count ?? 0}</td>
                             <td style={{ display: "flex", gap: "0.4rem" }}>
-                                <button className={styles.actionBtn} onClick={() => setSelectedMatterId(m.matter_id)}>View</button>
-                                <button className={styles.actionBtnDanger} disabled={removing === m.matter_id} onClick={() => removeMatter(m)}>
+                                <button className={ACTION_BTN} onClick={() => setSelectedMatterId(m.matter_id)}>View</button>
+                                <button className={ACTION_BTN_DANGER} disabled={removing === m.matter_id} onClick={() => removeMatter(m)}>
                                     {removing === m.matter_id ? "…" : "Delete"}
                                 </button>
                             </td>

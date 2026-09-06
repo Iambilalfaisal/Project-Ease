@@ -1,5 +1,11 @@
 import { useState } from "react";
-import styles from "../OwnerPortal.module.css";
+import {
+    DRAFTING_WRAP, DRAFTING_HEADER, FILTER_CHIPS, CHIP, CHIP_ACTIVE, EMPTY_HINT,
+    TEMPLATE_GRID, TEMPLATE_CARD, TEMPLATE_CARD_HEAD, TEMPLATE_TYPE_BADGE, TEMPLATE_DATE,
+    TEMPLATE_TITLE, TEMPLATE_DESC, TEMPLATE_VARS, VAR_CHIP, TEMPLATE_CARD_ACTIONS,
+    DRAFT_BTN, EDIT_BTN, DELETE_BTN, FORM_GROUP, FORM_LABEL, FORM_INPUT, FORM_SELECT,
+    VAR_HINT, TEMPLATE_TEXTAREA, VAR_PREVIEW, VAR_PREVIEW_LABEL, DRAFT_BTN_LG, DELETE_CONFIRM_BTN,
+} from "../ownerStyles";
 import { Modal, Button } from "../../../components/ui";
 import type { Template } from "../types";
 import { fmtDate } from "../types";
@@ -259,18 +265,18 @@ export const DraftingPanel = () => {
     if (loading) return <div style={{ padding: "2rem", color: "var(--text-3)" }}>Loading templates…</div>;
 
     return (
-        <div className={styles.draftingWrap}>
+        <div className={DRAFTING_WRAP}>
             {/* Header row */}
-            <div className={styles.draftingHeader}>
-                <div className={styles.filterChips}>
+            <div className={DRAFTING_HEADER}>
+                <div className={FILTER_CHIPS}>
                     <button
-                        className={filterType === "all" ? styles.chipActive : styles.chip}
+                        className={filterType === "all" ? CHIP_ACTIVE : CHIP}
                         onClick={() => setFilterType("all")}
                     >All</button>
                     {TEMPLATE_TYPES_UI.map(t => (
                         <button
                             key={t.value}
-                            className={filterType === t.value ? styles.chipActive : styles.chip}
+                            className={filterType === t.value ? CHIP_ACTIVE : CHIP}
                             onClick={() => setFilterType(t.value)}
                         >{t.label}</button>
                     ))}
@@ -280,37 +286,37 @@ export const DraftingPanel = () => {
 
             {/* Template grid */}
             {filtered.length === 0 ? (
-                <div className={styles.emptyHint}>
+                <div className={EMPTY_HINT}>
                     <p>No templates yet. Create your first template to get started.</p>
                     <Button onClick={openNew}>Create Template</Button>
                 </div>
             ) : (
-                <div className={styles.templateGrid}>
+                <div className={TEMPLATE_GRID}>
                     {filtered.map(t => {
                         const vars = extractVars(t.content);
                         const typeLabel = TEMPLATE_TYPES_UI.find(x => x.value === t.template_type)?.label ?? t.template_type;
                         return (
-                            <div key={t.template_id} className={styles.templateCard}>
-                                <div className={styles.templateCardHead}>
-                                    <span className={styles.templateTypeBadge}>{typeLabel}</span>
-                                    <span className={styles.templateDate}>{fmtDate(t.modified_at)}</span>
+                            <div key={t.template_id} className={TEMPLATE_CARD}>
+                                <div className={TEMPLATE_CARD_HEAD}>
+                                    <span className={TEMPLATE_TYPE_BADGE}>{typeLabel}</span>
+                                    <span className={TEMPLATE_DATE}>{fmtDate(t.modified_at)}</span>
                                 </div>
-                                <div className={styles.templateTitle}>{t.title}</div>
-                                {t.description && <div className={styles.templateDesc}>{t.description}</div>}
+                                <div className={TEMPLATE_TITLE}>{t.title}</div>
+                                {t.description && <div className={TEMPLATE_DESC}>{t.description}</div>}
                                 {vars.length > 0 && (
-                                    <div className={styles.templateVars}>
+                                    <div className={TEMPLATE_VARS}>
                                         {vars.slice(0, 4).map(v => (
-                                            <span key={v} className={styles.varChip}>{v}</span>
+                                            <span key={v} className={VAR_CHIP}>{v}</span>
                                         ))}
-                                        {vars.length > 4 && <span className={styles.varChip}>+{vars.length - 4}</span>}
+                                        {vars.length > 4 && <span className={VAR_CHIP}>+{vars.length - 4}</span>}
                                     </div>
                                 )}
-                                <div className={styles.templateCardActions}>
-                                    <button className={styles.draftBtn} onClick={() => openDraft(t)}>
+                                <div className={TEMPLATE_CARD_ACTIONS}>
+                                    <button className={DRAFT_BTN} onClick={() => openDraft(t)}>
                                         ↓ Draft Document
                                     </button>
-                                    <button className={styles.editBtn} onClick={() => openEdit(t)}>Edit</button>
-                                    <button className={styles.deleteBtn} onClick={() => setDeleteId(t.template_id)}>Delete</button>
+                                    <button className={EDIT_BTN} onClick={() => openEdit(t)}>Edit</button>
+                                    <button className={DELETE_BTN} onClick={() => setDeleteId(t.template_id)}>Delete</button>
                                 </div>
                             </div>
                         );
@@ -333,19 +339,19 @@ export const DraftingPanel = () => {
             >
                         {editorOpen && <>
                             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Title</label>
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Title</label>
                                     <input
-                                        className={styles.formInput}
+                                        className={FORM_INPUT}
                                         value={eTitle}
                                         onChange={e => setETitle(e.target.value)}
                                         placeholder="e.g. Standard Vakalatnama"
                                     />
                                 </div>
-                                <div className={styles.formGroup}>
-                                    <label className={styles.formLabel}>Type</label>
+                                <div className={FORM_GROUP}>
+                                    <label className={FORM_LABEL}>Type</label>
                                     <select
-                                        className={styles.formSelect}
+                                        className={FORM_SELECT}
                                         value={eType}
                                         onChange={e => handleTypeChange(e.target.value)}
                                     >
@@ -356,23 +362,23 @@ export const DraftingPanel = () => {
                                 </div>
                             </div>
 
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>Description (optional)</label>
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>Description (optional)</label>
                                 <input
-                                    className={styles.formInput}
+                                    className={FORM_INPUT}
                                     value={eDesc}
                                     onChange={e => setEDesc(e.target.value)}
                                     placeholder="Brief description of when to use this template"
                                 />
                             </div>
 
-                            <div className={styles.formGroup}>
-                                <label className={styles.formLabel}>
+                            <div className={FORM_GROUP}>
+                                <label className={FORM_LABEL}>
                                     Template Content
-                                    <span className={styles.varHint}>Use &#123;&#123;variable_name&#125;&#125; for auto-fill placeholders</span>
+                                    <span className={VAR_HINT}>Use &#123;&#123;variable_name&#125;&#125; for auto-fill placeholders</span>
                                 </label>
                                 <textarea
-                                    className={styles.templateTextarea}
+                                    className={TEMPLATE_TEXTAREA}
                                     value={eContent}
                                     onChange={e => setEContent(e.target.value)}
                                     rows={20}
@@ -380,11 +386,11 @@ export const DraftingPanel = () => {
                                 />
                             </div>
 
-                            <div className={styles.varPreview}>
-                                <span className={styles.varPreviewLabel}>Variables detected:</span>
+                            <div className={VAR_PREVIEW}>
+                                <span className={VAR_PREVIEW_LABEL}>Variables detected:</span>
                                 {extractVars(eContent).length === 0
-                                    ? <span className={styles.varChip} style={{ opacity: 0.5 }}>none</span>
-                                    : extractVars(eContent).map(v => <span key={v} className={styles.varChip}>{v}</span>)
+                                    ? <span className={VAR_CHIP} style={{ opacity: 0.5 }}>none</span>
+                                    : extractVars(eContent).map(v => <span key={v} className={VAR_CHIP}>{v}</span>)
                                 }
                             </div>
 
@@ -400,7 +406,7 @@ export const DraftingPanel = () => {
                 maxWidth={520}
                 footer={<>
                     <Button variant="ghost" onClick={() => setDraftOpen(false)}>Cancel</Button>
-                    <button className={styles.draftBtnLg} onClick={handleDraft} disabled={drafting}>
+                    <button className={DRAFT_BTN_LG} onClick={handleDraft} disabled={drafting}>
                         {drafting ? "Generating…" : "↓ Download .docx"}
                     </button>
                 </>}
@@ -410,10 +416,10 @@ export const DraftingPanel = () => {
                         Select a matter to auto-fill client and case details. AI will fill any remaining placeholders.
                     </p>
 
-                    <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>Link to Matter (optional)</label>
+                    <div className={FORM_GROUP}>
+                        <label className={FORM_LABEL}>Link to Matter (optional)</label>
                         <select
-                            className={styles.formSelect}
+                            className={FORM_SELECT}
                             value={draftMatter}
                             onChange={e => setDraftMatter(e.target.value)}
                         >
@@ -426,10 +432,10 @@ export const DraftingPanel = () => {
                         </select>
                     </div>
 
-                    <div className={styles.varPreview} style={{ marginTop: "1rem" }}>
-                        <span className={styles.varPreviewLabel}>Variables in this template:</span>
+                    <div className={VAR_PREVIEW} style={{ marginTop: "1rem" }}>
+                        <span className={VAR_PREVIEW_LABEL}>Variables in this template:</span>
                         {extractVars(draftTmpl.content).map(v => (
-                            <span key={v} className={styles.varChip}>{v}</span>
+                            <span key={v} className={VAR_CHIP}>{v}</span>
                         ))}
                     </div>
 
@@ -445,7 +451,7 @@ export const DraftingPanel = () => {
                 maxWidth={420}
                 footer={<>
                     <Button variant="ghost" onClick={() => setDeleteId(null)}>Cancel</Button>
-                    <button className={styles.deleteConfirmBtn} onClick={handleDelete} disabled={deleting}>
+                    <button className={DELETE_CONFIRM_BTN} onClick={handleDelete} disabled={deleting}>
                         {deleting ? "Deleting…" : "Delete"}
                     </button>
                 </>}

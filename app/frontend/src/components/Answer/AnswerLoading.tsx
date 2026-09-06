@@ -1,11 +1,11 @@
 import { animated, useSpring } from "@react-spring/web";
 import { useTranslation } from "react-i18next";
 
-import styles from "./Answer.module.css";
 import { AnswerIcon } from "./AnswerIcon";
+import { ANSWER_CONTAINER, ANSWER_TEXT, LOADING_DOTS } from "./answerStyles";
 
 export const AnswerLoading = () => {
-    const { t, i18n } = useTranslation();
+    const { t } = useTranslation();
     const animatedStyles = useSpring({
         from: { opacity: 0 },
         to: { opacity: 1 }
@@ -13,12 +13,12 @@ export const AnswerLoading = () => {
 
     return (
         <animated.div style={{ ...animatedStyles }}>
-            <div className={styles.answerContainer} style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div className={ANSWER_CONTAINER} style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                 <AnswerIcon />
                 <div style={{ flexGrow: 1 }}>
-                    <p className={styles.answerText}>
+                    <p className={ANSWER_TEXT}>
                         {t("generatingAnswer")}
-                        <span className={styles.loadingdots} />
+                        <span className={LOADING_DOTS} />
                     </p>
                 </div>
             </div>

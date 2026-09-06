@@ -1,8 +1,8 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import styles from "./HistoryItem.module.css";
-import { Button } from "@fluentui/react-components";
 import { Delete24Regular } from "@fluentui/react-icons";
+
+import { Button, Modal } from "@/components/ui";
 
 export interface HistoryData {
     id: string;
@@ -25,12 +25,19 @@ export function HistoryItem({ item, onSelect, onDelete }: HistoryItemProps) {
     }, [item.id, onDelete]);
 
     return (
-        <div className={styles.historyItem}>
-            <button onClick={() => onSelect(item.id)} className={styles.historyItemButton}>
-                <div className={styles.historyItemTitle}>{item.title}</div>
+        <div className="group flex items-center justify-between rounded-sm px-2 py-1 transition-colors duration-150 hover:bg-bg-2">
+            <button
+                onClick={() => onSelect(item.id)}
+                className="mr-1 grow cursor-pointer border-none bg-transparent p-0 text-left"
+            >
+                <div className="truncate text-sm text-ink-1">{item.title}</div>
             </button>
-            <button onClick={() => setIsModalOpen(true)} className={styles.deleteButton} aria-label="delete this chat history">
-                <Delete24Regular className={styles.deleteIcon} />
+            <button
+                onClick={() => setIsModalOpen(true)}
+                aria-label="delete this chat history"
+                className="cursor-pointer rounded-pill border-none bg-transparent p-1 text-ink-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-danger focus:opacity-100"
+            >
+                <Delete24Regular className="h-5 w-5" />
             </button>
             <DeleteHistoryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onConfirm={handleDelete} />
         </div>
@@ -38,22 +45,25 @@ export function HistoryItem({ item, onSelect, onDelete }: HistoryItemProps) {
 }
 
 function DeleteHistoryModal({ isOpen, onClose, onConfirm }: { isOpen: boolean; onClose: () => void; onConfirm: () => void }) {
-    if (!isOpen) return null;
     const { t } = useTranslation();
     return (
-        <div className={styles.modalOverlay}>
-            <div className={styles.modalContent}>
-                <h2 className={styles.modalTitle}>{t("history.deleteModalTitle")}</h2>
-                <p className={styles.modalDescription}>{t("history.deleteModalDescription")}</p>
-                <div className={styles.modalActions}>
-                    <Button onClick={onClose} className={styles.modalCancelButton}>
+        <Modal
+            open={isOpen}
+            onClose={onClose}
+            title={t("history.deleteModalTitle")}
+            maxWidth={400}
+            footer={
+                <>
+                    <Button variant="ghost" size="sm" onClick={onClose}>
                         {t("history.cancelLabel")}
                     </Button>
-                    <Button onClick={onConfirm} className={styles.modalConfirmButton}>
+                    <Button variant="danger" size="sm" onClick={onConfirm}>
                         {t("history.deleteLabel")}
                     </Button>
-                </div>
-            </div>
-        </div>
+                </>
+            }
+        >
+            <p className="m-0 text-sm text-ink-2">{t("history.deleteModalDescription")}</p>
+        </Modal>
     );
 }

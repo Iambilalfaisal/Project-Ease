@@ -1,7 +1,7 @@
-import { Button } from "@fluentui/react-components";
 import { ErrorCircle24Regular } from "@fluentui/react-icons";
 
-import styles from "./Answer.module.css";
+import { Button } from "@/components/ui";
+import { ANSWER_CONTAINER, ANSWER_TEXT } from "./answerStyles";
 
 interface Props {
     error: string;
@@ -10,14 +10,14 @@ interface Props {
 
 export const AnswerError = ({ error, onRetry }: Props) => {
     return (
-        <div className={styles.answerContainer} style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div className={ANSWER_CONTAINER} style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <ErrorCircle24Regular aria-hidden="true" aria-label="Error icon" primaryFill="red" />
 
             <div style={{ flexGrow: 1 }}>
-                <p className={styles.answerText}>{error}</p>
+                <p className={ANSWER_TEXT}>{error}</p>
             </div>
 
-            <Button appearance="primary" className={styles.retryButton} onClick={onRetry}>
+            <Button variant="primary" size="sm" className="w-fit" onClick={onRetry}>
                 Retry
             </Button>
         </div>
